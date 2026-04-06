@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Better Nature",
+    "slug": "better-nature",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/images/logo-circle.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#F9F7F4"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "org.betternature.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F9F7F4"
+      },
+      "package": "org.betternature.app"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-notifications",
+      "expo-image-picker"
+    ]
+  }
+}
