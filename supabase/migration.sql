@@ -6,6 +6,18 @@
 -- Enable UUID generation
 create extension if not exists "uuid-ossp";
 
+-- ── Chapters (created first because users references it) ───
+create table public.chapters (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  city text default '',
+  state text default '',
+  status text not null default 'active'
+    check (status in ('active','inactive','pending')),
+  member_count int not null default 0,
+  created_at timestamptz not null default now()
+);
+
 -- ── Users ──────────────────────────────────────────────────
 -- Extends Supabase Auth. Every signup creates a row here too.
 create table public.users (
@@ -26,18 +38,6 @@ create table public.users (
   hours_logged int not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
-);
-
--- ── Chapters ───────────────────────────────────────────────
-create table public.chapters (
-  id uuid primary key default uuid_generate_v4(),
-  name text not null,
-  city text default '',
-  state text default '',
-  status text not null default 'active'
-    check (status in ('active','inactive','pending')),
-  member_count int not null default 0,
-  created_at timestamptz not null default now()
 );
 
 -- ── Events ─────────────────────────────────────────────────
@@ -71,6 +71,22 @@ create table public.event_signups (
   unique(event_id, user_id)
 );
 
+-- ── Restaurants (before pickups, which references it) ──────
+create table public.restaurants (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  address text,
+  contact_name text,
+  email text,
+  phone text,
+  food_type text,
+  frequency text,
+  status text not null default 'pending'
+    check (status in ('approved','pending','rejected')),
+  user_id uuid references public.users(id),
+  created_at timestamptz not null default now()
+);
+
 -- ── Pickups ────────────────────────────────────────────────
 create table public.pickups (
   id uuid primary key default uuid_generate_v4(),
@@ -87,22 +103,6 @@ create table public.pickups (
   claimed_by uuid references public.users(id),
   claimed_at timestamptz,
   completed_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
--- ── Restaurants ────────────────────────────────────────────
-create table public.restaurants (
-  id uuid primary key default uuid_generate_v4(),
-  name text not null,
-  address text,
-  contact_name text,
-  email text,
-  phone text,
-  food_type text,
-  frequency text,
-  status text not null default 'pending'
-    check (status in ('approved','pending','rejected')),
-  user_id uuid references public.users(id),
   created_at timestamptz not null default now()
 );
 
