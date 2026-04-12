@@ -949,10 +949,45 @@ export async function fetchAllMembers() {
 }
 
 export async function updateUserRole(userId, role) {
-  if (!isSupabaseConfigured) return;
+  if (!isSupabaseConfigured) {
+    const m = mockMembers.find((u) => u.id === userId);
+    if (m) m.role = role;
+    return;
+  }
   const { error } = await supabase
     .from('users')
     .update({ role })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+export async function updateUserChapter(userId, chapterId) {
+  if (!isSupabaseConfigured) {
+    const m = mockMembers.find((u) => u.id === userId);
+    if (m) {
+      m.chapter_id = chapterId;
+      const ch = mockChapters.find((c) => c.id === chapterId);
+      m.chapters = ch ? { name: ch.name } : { name: '' };
+    }
+    return;
+  }
+  const { error } = await supabase
+    .from('users')
+    .update({ chapter_id: chapterId })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+export async function removeUser(userId) {
+  if (!isSupabaseConfigured) {
+    const idx = mockMembers.findIndex((u) => u.id === userId);
+    if (idx >= 0) mockMembers.splice(idx, 1);
+    return;
+  }
+  // Remove the profile row — auth deletion requires admin API / Supabase dashboard
+  const { error } = await supabase
+    .from('users')
+    .delete()
     .eq('id', userId);
   if (error) throw error;
 }
