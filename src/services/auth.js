@@ -24,19 +24,29 @@ export async function signUp({ email, password, name, phone, city, zip, role }) 
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
     password,
+    options: {
+      data: { name },
+    },
   });
   if (authError) throw authError;
 
-  const { error: profileError } = await supabase.from('users').insert({
-    id: authData.user.id,
-    email,
-    name,
-    phone,
-    city,
-    zip,
-  });
-  if (profileError) throw profileError;
-  return authData;
+  // The trigger handle_new_user() auto-creates the profile row. We just
+  // need to fill in the extra fields the trigger doesn't know about.
+  if (authData.user) {
+    await supabase
+      .from('users')
+      .update({ name, phone, city, zip, role: role || 'member' })
+      .eq('id', authData.user.id);
+  }
+
+  // Return the full profile so the caller has role + chapter_id immediately.
+  const profile = authData.user
+    ? await getProfile(authData.user.id)
+    : null;
+  return {
+    user: profile || authData.user,
+    session: authData.session,
+  };
 }
 
 export async function signIn({ email, password, role }) {
@@ -49,7 +59,14 @@ export async function signIn({ email, password, role }) {
     password,
   });
   if (error) throw error;
-  return data;
+
+  // Hydrate the full profile (role, chapter_id, stats) from the users table
+  // so the app can route to the correct portal immediately.
+  const profile = data.user ? await getProfile(data.user.id) : null;
+  return {
+    user: profile || data.user,
+    session: data.session,
+  };
 }
 
 export async function signOut() {

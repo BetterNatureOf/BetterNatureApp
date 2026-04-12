@@ -14,11 +14,11 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signIn } from '../../services/auth';
+import { isSupabaseConfigured } from '../../config/supabase';
 import useAuthStore, { ROLES } from '../../store/authStore';
 
-// Demo credential router. Until real Supabase auth is wired up, the email
-// prefix decides which portal you land in. Real users will get whichever role
-// the database assigns to their account.
+// Demo credential router. When Supabase is live the role comes from the
+// database; in mock mode the email prefix decides which portal you land in.
 function inferRoleFromEmail(email) {
   const lower = email.trim().toLowerCase();
   if (lower.startsWith('exec@') || lower.startsWith('csuite@')) return ROLES.EXECUTIVE;
@@ -54,15 +54,19 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      const role = inferRoleFromEmail(email);
-      const result = await signIn({ email, password, role });
+      // In mock mode, role is inferred from the email prefix.
+      // In production, signIn() hydrates the full profile from Supabase
+      // and the role comes from the database.
+      const demoRole = isSupabaseConfigured ? undefined : inferRoleFromEmail(email);
+      const result = await signIn({ email, password, role: demoRole });
       const user = result?.user
         ? {
             ...result.user,
-            role,
-            name: result.user.name && result.user.name !== 'Demo User'
-              ? result.user.name
-              : nameFromRole(role),
+            role: result.user.role || demoRole || ROLES.MEMBER,
+            name:
+              result.user.name && result.user.name !== 'Demo User' && result.user.name !== ''
+                ? result.user.name
+                : nameFromRole(result.user.role || demoRole),
             chapter_id: result.user.chapter_id || 'ch-memphis',
           }
         : null;

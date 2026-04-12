@@ -46,6 +46,7 @@ import ExecutiveDashboard from '../screens/executive/ExecutiveDashboard';
 import ExecFinance from '../screens/executive/ExecFinance';
 
 import MetricsEditor from '../screens/admin/MetricsEditor';
+import CheckInScreen from '../screens/admin/CheckInScreen';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
 // having to pass params.
@@ -214,6 +215,9 @@ export default function MainNavigator() {
       {/* Metrics editor — same screen, different scope per role. */}
       <Stack.Screen name="ExecMetrics" component={ExecMetricsScreen} />
       <Stack.Screen name="PresMetrics" component={PresMetricsScreen} />
+
+      {/* Check-in — pres/exec verify volunteer attendance */}
+      <Stack.Screen name="CheckIn" component={CheckInScreen} />
     </Stack.Navigator>
   );
 }

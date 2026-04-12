@@ -103,8 +103,22 @@ export async function createEvent(event) {
   return data;
 }
 
+// In-memory signup list for mock mode.
+const _mockSignups = [];
+
 export async function signUpForEvent(eventId, userId) {
-  if (!isSupabaseConfigured) return;
+  if (!isSupabaseConfigured) {
+    _mockSignups.push({
+      id: `su-${Date.now()}`,
+      event_id: eventId,
+      user_id: userId,
+      status: 'signed_up',
+      created_at: new Date().toISOString(),
+    });
+    const ev = mockEvents.find((e) => e.id === eventId);
+    if (ev) ev.filled_spots = (ev.filled_spots || 0) + 1;
+    return;
+  }
   const { error: signupError } = await supabase
     .from('event_signups')
     .insert({ event_id: eventId, user_id: userId });
@@ -123,7 +137,15 @@ export async function signUpForEvent(eventId, userId) {
 }
 
 export async function cancelEventSignup(eventId, userId) {
-  if (!isSupabaseConfigured) return;
+  if (!isSupabaseConfigured) {
+    const idx = _mockSignups.findIndex(
+      (s) => s.event_id === eventId && s.user_id === userId
+    );
+    if (idx >= 0) _mockSignups.splice(idx, 1);
+    const ev = mockEvents.find((e) => e.id === eventId);
+    if (ev) ev.filled_spots = Math.max(0, (ev.filled_spots || 0) - 1);
+    return;
+  }
   const { error: deleteError } = await supabase
     .from('event_signups')
     .delete()
@@ -139,7 +161,11 @@ export async function cancelEventSignup(eventId, userId) {
 }
 
 export async function getUserSignups(userId) {
-  if (!isSupabaseConfigured) return mockUserSignups;
+  if (!isSupabaseConfigured) {
+    return _mockSignups
+      .filter((s) => s.user_id === userId && s.status !== 'cancelled')
+      .map((s) => s.event_id);
+  }
   const { data, error } = await supabase
     .from('event_signups')
     .select('event_id')
@@ -148,7 +174,201 @@ export async function getUserSignups(userId) {
   return data.map((s) => s.event_id);
 }
 
+// Return all signups for an event with user names hydrated.
+export async function fetchEventSignups(eventId) {
+  if (!isSupabaseConfigured) {
+    return _mockSignups
+      .filter((s) => s.event_id === eventId && s.status !== 'cancelled')
+      .map((s) => {
+        const member = mockMembers.find((m) => m.id === s.user_id);
+        return { ...s, user_name: member?.name || 'Volunteer' };
+      });
+  }
+  const { data, error } = await supabase
+    .from('event_signups')
+    .select('*, users(name)')
+    .eq('event_id', eventId)
+    .neq('status', 'cancelled')
+    .order('created_at');
+  if (error) throw error;
+  return data.map((row) => ({
+    ...row,
+    user_name: row.users?.name || 'Volunteer',
+  }));
+}
+
+// ── Check-in + auto-activity ──
+// Called by pres/exec to confirm a volunteer actually showed up.
+// Creates a member_activity row so the leaderboard updates instantly.
+export async function checkInVolunteer({
+  signupId,
+  eventId,
+  userId,
+  checkedInBy,
+  project = 'general',
+  hours = 3,
+  meals = 0,
+}) {
+  const now = new Date().toISOString();
+
+  if (!isSupabaseConfigured) {
+    const su = _mockSignups.find((s) => s.id === signupId);
+    if (su) {
+      su.status = 'checked_in';
+      su.checked_in_by = checkedInBy;
+      su.checked_in_at = now;
+    }
+    // Auto-log activity
+    mockMemberActivity.push({
+      id: `a-ci-${Date.now()}`,
+      user_id: userId,
+      date: now.split('T')[0],
+      project,
+      meals,
+      hours,
+      events: 1,
+      raised: 0,
+      source_type: 'event_checkin',
+      source_id: eventId,
+    });
+    // Update the user's running totals on the mock member
+    const member = mockMembers.find((m) => m.id === userId);
+    if (member) {
+      member.events_attended = (member.events_attended || 0) + 1;
+      member.hours_logged = (member.hours_logged || 0) + hours;
+      member.meals_rescued = (member.meals_rescued || 0) + meals;
+    }
+    return;
+  }
+
+  // 1. Update signup status
+  const { error: suError } = await supabase
+    .from('event_signups')
+    .update({ status: 'checked_in', checked_in_by: checkedInBy, checked_in_at: now })
+    .eq('id', signupId);
+  if (suError) throw suError;
+
+  // 2. Insert activity row
+  const { error: actError } = await supabase.from('member_activity').insert({
+    user_id: userId,
+    date: now.split('T')[0],
+    project,
+    meals,
+    hours,
+    events: 1,
+    raised: 0,
+    source_type: 'event_checkin',
+    source_id: eventId,
+  });
+  if (actError) throw actError;
+
+  // 3. Bump user running totals
+  const { error: userError } = await supabase.rpc('increment_user_stats', {
+    uid: userId,
+    add_events: 1,
+    add_hours: hours,
+    add_meals: meals,
+  });
+  // If the RPC doesn't exist yet, do it manually
+  if (userError) {
+    const profile = await supabase
+      .from('users')
+      .select('events_attended, hours_logged, meals_rescued')
+      .eq('id', userId)
+      .single();
+    if (profile.data) {
+      await supabase
+        .from('users')
+        .update({
+          events_attended: (profile.data.events_attended || 0) + 1,
+          hours_logged: (profile.data.hours_logged || 0) + hours,
+          meals_rescued: (profile.data.meals_rescued || 0) + meals,
+        })
+        .eq('id', userId);
+    }
+  }
+
+  // 4. Send notification to the volunteer
+  await supabase.from('notifications').insert({
+    user_id: userId,
+    title: 'Hours logged!',
+    body: `You were checked in for ${hours}h` +
+      (meals > 0 ? ` and ${meals} meals rescued` : '') +
+      '. Keep it up!',
+    data: { type: 'checkin_confirmed', eventId },
+  });
+}
+
+export async function markNoShow(signupId) {
+  if (!isSupabaseConfigured) {
+    const su = _mockSignups.find((s) => s.id === signupId);
+    if (su) su.status = 'no_show';
+    return;
+  }
+  const { error } = await supabase
+    .from('event_signups')
+    .update({ status: 'no_show' })
+    .eq('id', signupId);
+  if (error) throw error;
+}
+
 // ── Pickups ──
+// Create a new pickup and notify all volunteers in the chapter.
+export async function createPickup(pickup) {
+  if (!isSupabaseConfigured) {
+    const newPk = {
+      id: `pk-mock-${Date.now()}`,
+      status: 'available',
+      ...pickup,
+    };
+    mockPickups.push(newPk);
+    // In mock mode we can't really push-notify, but we add a
+    // mock in-app notification for each chapter member.
+    const chapterMembers = mockMembers.filter(
+      (m) =>
+        (m.chapters?.name || '').toLowerCase().includes('memphis') &&
+        m.role !== 'chapter_pres'
+    );
+    chapterMembers.forEach((m) => {
+      mockNotifications.unshift({
+        id: `n-pk-${Date.now()}-${m.id}`,
+        user_id: m.id,
+        title: 'New pickup available!',
+        body: `${pickup.restaurant_name} has food ready for rescue.`,
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+    });
+    return newPk;
+  }
+
+  const { data, error } = await supabase
+    .from('pickups')
+    .insert({ status: 'available', ...pickup })
+    .select()
+    .single();
+  if (error) throw error;
+
+  // Notify all volunteers in the chapter
+  if (pickup.chapter_id) {
+    const { data: members } = await supabase
+      .from('users')
+      .select('id')
+      .eq('chapter_id', pickup.chapter_id)
+      .in('role', ['member', 'chapter_president']);
+    if (members?.length) {
+      const notifs = members.map((m) => ({
+        user_id: m.id,
+        title: 'New pickup available!',
+        body: `${pickup.restaurant_name} has food ready for rescue at ${pickup.address || 'their location'}.`,
+        data: { type: 'new_pickup', pickupId: data.id },
+      }));
+      await supabase.from('notifications').insert(notifs);
+    }
+  }
+  return data;
+}
+
 export async function fetchPickups(chapterId) {
   if (!isSupabaseConfigured) {
     return chapterId ? mockPickups.filter((p) => p.chapter_id === chapterId) : mockPickups;
@@ -186,13 +406,100 @@ export async function claimPickup(pickupId, userId) {
   return data;
 }
 
-export async function completePickup(pickupId) {
-  if (!isSupabaseConfigured) return;
+// Complete a pickup — marks it done and auto-logs the meals + 1 hour to
+// the volunteer's activity. The volunteer gets a notification too.
+export async function completePickup(pickupId, actualWeightLbs) {
+  if (!isSupabaseConfigured) {
+    const pk = mockPickups.find((p) => p.id === pickupId);
+    if (pk) {
+      pk.status = 'completed';
+      pk.completed_at = new Date().toISOString();
+      const weight = actualWeightLbs || pk.estimated_weight_lbs || 0;
+      const meals = Math.round(weight * 1.2);
+      if (pk.claimed_by) {
+        mockMemberActivity.push({
+          id: `a-pk-${Date.now()}`,
+          user_id: pk.claimed_by,
+          date: new Date().toISOString().split('T')[0],
+          project: 'iris',
+          meals,
+          hours: 1,
+          events: 0,
+          raised: 0,
+          source_type: 'pickup_complete',
+          source_id: pickupId,
+        });
+        const member = mockMembers.find((m) => m.id === pk.claimed_by);
+        if (member) {
+          member.meals_rescued = (member.meals_rescued || 0) + meals;
+          member.hours_logged = (member.hours_logged || 0) + 1;
+        }
+      }
+    }
+    return;
+  }
+
+  // Fetch pickup to get volunteer + weight
+  const { data: pk, error: fetchErr } = await supabase
+    .from('pickups')
+    .select('*')
+    .eq('id', pickupId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const weight = actualWeightLbs || pk.estimated_weight_lbs || 0;
+  const meals = Math.round(weight * 1.2);
+  const now = new Date().toISOString();
+
+  // 1. Mark completed
   const { error } = await supabase
     .from('pickups')
-    .update({ status: 'completed' })
+    .update({
+      status: 'completed',
+      actual_weight_lbs: weight,
+      completed_at: now,
+    })
     .eq('id', pickupId);
   if (error) throw error;
+
+  // 2. Log activity for the volunteer
+  if (pk.claimed_by) {
+    await supabase.from('member_activity').insert({
+      user_id: pk.claimed_by,
+      date: now.split('T')[0],
+      project: 'iris',
+      meals,
+      hours: 1,
+      events: 0,
+      raised: 0,
+      source_type: 'pickup_complete',
+      source_id: pickupId,
+    });
+
+    // Bump user stats
+    const { data: profile } = await supabase
+      .from('users')
+      .select('meals_rescued, hours_logged')
+      .eq('id', pk.claimed_by)
+      .single();
+    if (profile) {
+      await supabase
+        .from('users')
+        .update({
+          meals_rescued: (profile.meals_rescued || 0) + meals,
+          hours_logged: (profile.hours_logged || 0) + 1,
+        })
+        .eq('id', pk.claimed_by);
+    }
+
+    // Notify volunteer
+    await supabase.from('notifications').insert({
+      user_id: pk.claimed_by,
+      title: 'Pickup complete!',
+      body: `You rescued ~${meals} meals from ${pk.restaurant_name}. Amazing work!`,
+      data: { type: 'pickup_complete', pickupId },
+    });
+  }
 }
 
 // ── Restaurants ──

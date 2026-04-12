@@ -79,6 +79,12 @@ export default function PresEvents({ navigation }) {
             ) : null}
             <View style={styles.actions}>
               <TouchableOpacity
+                style={[styles.actionBtn, styles.checkInBtn]}
+                onPress={() => navigation.navigate('CheckIn', { event: ev })}
+              >
+                <Text style={[styles.actionText, styles.checkInText]}>Check In</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={styles.actionBtn}
                 onPress={() => Alert.alert('Edit Event', 'Edit form coming soon.')}
               >
@@ -150,6 +156,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionText: { fontSize: 13, fontWeight: '700', color: Colors.green },
+  checkInBtn: { backgroundColor: Colors.green },
+  checkInText: { color: Colors.white },
   cancelBtn: { backgroundColor: Colors.pinkLight },
   cancelText: { color: Colors.pink },
 });
