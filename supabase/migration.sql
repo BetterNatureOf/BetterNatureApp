@@ -242,9 +242,13 @@ alter table public.org_metrics enable row level security;
 alter table public.notifications enable row level security;
 alter table public.announcements enable row level security;
 
--- Users can read all profiles, update their own
+-- Users can read all profiles, update their own; executives can update anyone
 create policy "Anyone can read users" on public.users for select using (true);
 create policy "Users update own profile" on public.users for update using (auth.uid() = id);
+create policy "Exec can manage users" on public.users for update
+  using (exists (select 1 from public.users where id = auth.uid() and role = 'executive'));
+create policy "Exec can delete users" on public.users for delete
+  using (exists (select 1 from public.users where id = auth.uid() and role = 'executive'));
 
 -- Chapters are public
 create policy "Anyone can read chapters" on public.chapters for select using (true);
@@ -316,12 +320,17 @@ $$ language plpgsql security definer;
 -- ============================================================
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  user_count int;
 begin
-  insert into public.users (id, email, name)
+  select count(*) into user_count from public.users;
+
+  insert into public.users (id, email, name, role)
   values (
     new.id,
     new.email,
-    coalesce(new.raw_user_meta_data->>'name', '')
+    coalesce(new.raw_user_meta_data->>'name', ''),
+    case when user_count = 0 then 'executive' else 'member' end
   );
   return new;
 end;
