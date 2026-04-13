@@ -9,34 +9,48 @@ export const Fonts = {
 export const Type = {
   screenTitle: {
     fontFamily: 'Caveat-Bold',
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '700',
   },
   sectionHeader: {
     fontFamily: 'Caveat-Bold',
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
   },
   heroStat: {
     fontFamily: 'Caveat-Bold',
-    fontSize: 44,
+    fontSize: 46,
     fontWeight: '800',
   },
   statNumber: {
     fontFamily: 'Caveat-Bold',
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
   },
   body: {
     fontSize: 15,
     fontWeight: '400',
+    lineHeight: 22,
+  },
+  bodyMedium: {
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 22,
   },
   caption: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#5C6370',
+    lineHeight: 18,
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
   },
   button: {
     fontSize: 15,
     fontWeight: '600',
+    letterSpacing: 0.3,
   },
 };

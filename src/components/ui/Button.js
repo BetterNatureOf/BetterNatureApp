@@ -1,11 +1,12 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type } from '../../config/theme';
 import { Radius, Shadows } from '../../config/theme';
 import { hp } from '../../config/scale';
 
 /**
- * Button — primary pink pill, secondary outline, or small variant.
+ * Button — gradient primary, outlined secondary, or small variant.
  * variant: 'primary' | 'secondary' | 'small'
  */
 export default function Button({
@@ -19,31 +20,55 @@ export default function Button({
   const isPrimary = variant === 'primary';
   const isSmall = variant === 'small';
 
+  if (isPrimary || isSmall) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={disabled || loading}
+        activeOpacity={0.85}
+        style={[
+          (disabled || loading) && styles.disabled,
+          style,
+        ]}
+      >
+        <LinearGradient
+          colors={Colors.gradient.pink}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[
+            styles.base,
+            isPrimary && styles.primary,
+            isSmall && styles.small,
+          ]}
+        >
+          {loading ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <Text style={[styles.text, styles.primaryText, isSmall && styles.smallText]}>
+              {title}
+            </Text>
+          )}
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.8}
+      activeOpacity={0.85}
       style={[
         styles.base,
-        isPrimary && styles.primary,
-        variant === 'secondary' && styles.secondary,
-        isSmall && styles.small,
+        styles.secondary,
         (disabled || loading) && styles.disabled,
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={isPrimary ? Colors.white : Colors.pink} />
+        <ActivityIndicator color={Colors.pink} />
       ) : (
-        <Text
-          style={[
-            styles.text,
-            isPrimary && styles.primaryText,
-            variant === 'secondary' && styles.secondaryText,
-            isSmall && styles.smallText,
-          ]}
-        >
+        <Text style={[styles.text, styles.secondaryText]}>
           {title}
         </Text>
       )}
@@ -57,10 +82,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
   },
   primary: {
-    backgroundColor: Colors.pink,
     ...Shadows.button,
   },
   secondary: {
@@ -69,10 +93,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.pink,
   },
   small: {
-    height: hp(36),
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.pink,
+    height: hp(38),
+    borderRadius: 19,
+    paddingHorizontal: 18,
   },
   disabled: {
     opacity: 0.5,

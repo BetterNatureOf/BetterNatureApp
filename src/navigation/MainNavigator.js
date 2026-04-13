@@ -47,6 +47,7 @@ import ExecFinance from '../screens/executive/ExecFinance';
 
 import MetricsEditor from '../screens/admin/MetricsEditor';
 import CheckInScreen from '../screens/admin/CheckInScreen';
+import FoodInsecurityMap from '../screens/projects/FoodInsecurityMap';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
 // having to pass params.
@@ -70,21 +71,39 @@ function PresMetricsScreen(props) {
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
+const TAB_ICONS = {
+  Home: { default: '\u25CB', active: '\u25CF' },     // circle outline / filled
+  Projects: { default: '\u25B3', active: '\u25B2' },  // triangle outline / filled
+  Impact: { default: '\u2606', active: '\u2605' },     // star outline / filled
+  Donate: { default: '\u2661', active: '\u2665' },     // heart outline / filled
+  Org: { default: '\u25A1', active: '\u25A0' },        // square outline / filled
+  Chapter: { default: '\u25A1', active: '\u25A0' },
+  Profile: { default: '\u2299', active: '\u2299' },    // circled dot
+};
+
 function TabIcon({ label, focused }) {
+  const icons = TAB_ICONS[label] || TAB_ICONS.Home;
   return (
     <View style={styles.tabIcon}>
-      <View
+      {focused && <View style={styles.activeIndicator} />}
+      <Text
+        allowFontScaling={false}
         style={[
-          styles.dot,
-          { backgroundColor: focused ? Colors.pink : 'transparent' },
+          styles.tabIconSymbol,
+          { color: focused ? Colors.green : Colors.grayMid },
         ]}
-      />
+      >
+        {focused ? icons.active : icons.default}
+      </Text>
       <Text
         numberOfLines={1}
         allowFontScaling={false}
         style={[
           styles.tabLabel,
-          { color: focused ? Colors.pink : Colors.grayMid },
+          {
+            color: focused ? Colors.green : Colors.grayMid,
+            fontWeight: focused ? '700' : '500',
+          },
         ]}
       >
         {label}
@@ -218,6 +237,9 @@ export default function MainNavigator() {
 
       {/* Check-in — pres/exec verify volunteer attendance */}
       <Stack.Screen name="CheckIn" component={CheckInScreen} />
+
+      {/* Food Insecurity Map — IRIS project feature */}
+      <Stack.Screen name="FoodInsecurityMap" component={FoodInsecurityMap} />
     </Stack.Navigator>
   );
 }
@@ -225,30 +247,38 @@ export default function MainNavigator() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: Colors.white,
-    borderTopWidth: 0,
-    height: Platform.OS === 'ios' ? hp(85) : hp(70),
-    paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? hp(20) : 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
+    borderTopWidth: 1,
+    borderTopColor: Colors.grayLight + '80',
+    height: Platform.OS === 'ios' ? hp(88) : hp(72),
+    paddingTop: 6,
+    paddingBottom: Platform.OS === 'ios' ? hp(22) : 8,
+    shadowColor: '#1A1F2E',
+    shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowRadius: 12,
     elevation: 8,
   },
   tabIcon: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 60,
+    position: 'relative',
   },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: 4,
+  activeIndicator: {
+    position: 'absolute',
+    top: -8,
+    width: 20,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Colors.green,
+  },
+  tabIconSymbol: {
+    fontSize: 18,
+    marginBottom: 2,
   },
   tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 10,
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
 });

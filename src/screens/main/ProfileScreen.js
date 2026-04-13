@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import StatCard from '../../components/ui/StatCard';
@@ -16,10 +17,10 @@ import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 
 const MENU_ITEMS = [
-  { key: 'settings', label: 'Settings', emoji: '⚙️', screen: 'Settings' },
-  { key: 'about', label: 'About Better Nature', emoji: '🌿', screen: 'About' },
-  { key: 'slack', label: 'Open Slack', emoji: '💬', action: 'slack' },
-  { key: 'chapter', label: 'Chapter Info', emoji: '📍', screen: 'ChapterChecklist' },
+  { key: 'settings', label: 'Settings', emoji: '\u2699\uFE0F', screen: 'Settings' },
+  { key: 'about', label: 'About Better Nature', emoji: '\u{1F33F}', screen: 'About' },
+  { key: 'slack', label: 'Open Slack', emoji: '\u{1F4AC}', action: 'slack' },
+  { key: 'chapter', label: 'Chapter Info', emoji: '\u{1F4CD}', screen: 'ChapterChecklist' },
 ];
 
 export default function ProfileScreen({ navigation }) {
@@ -53,28 +54,37 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Avatar & Name */}
-      <View style={styles.header}>
-        {user?.avatar_url ? (
-          <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Text style={styles.avatarInitial}>
-              {(user?.name || '?')[0].toUpperCase()}
-            </Text>
-          </View>
-        )}
+      {/* Profile Header */}
+      <LinearGradient
+        colors={Colors.gradient.green}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerGradient}
+      >
+        <View style={styles.avatarRing}>
+          {user?.avatar_url ? (
+            <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Text style={styles.avatarInitial}>
+                {(user?.name || '?')[0].toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </View>
         <BrushText variant="screenTitle" style={styles.name}>
           {user?.name || 'Volunteer'}
         </BrushText>
-        <Text style={styles.role}>
-          {user?.role?.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()) ||
-            'Volunteer'}
-        </Text>
+        <View style={styles.rolePill}>
+          <Text style={styles.roleText}>
+            {user?.role?.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()) ||
+              'Volunteer'}
+          </Text>
+        </View>
         {user?.chapter?.name && (
           <Text style={styles.chapter}>{user.chapter.name} Chapter</Text>
         )}
-      </View>
+      </LinearGradient>
 
       {/* Stats */}
       <View style={styles.statsRow}>
@@ -101,20 +111,24 @@ export default function ProfileScreen({ navigation }) {
       <BrushDivider />
 
       {/* Menu */}
-      {MENU_ITEMS.map((item) => (
-        <TouchableOpacity
-          key={item.key}
-          style={styles.menuItem}
-          onPress={() => handleMenuPress(item)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.menuEmoji}>{item.emoji}</Text>
-          <Text style={styles.menuLabel}>{item.label}</Text>
-          <Text style={styles.menuArrow}>›</Text>
-        </TouchableOpacity>
-      ))}
-
-      <BrushDivider />
+      <View style={styles.menuCard}>
+        {MENU_ITEMS.map((item, i) => (
+          <React.Fragment key={item.key}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => handleMenuPress(item)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.menuIconWrap}>
+                <Text style={styles.menuEmoji}>{item.emoji}</Text>
+              </View>
+              <Text style={styles.menuLabel}>{item.label}</Text>
+              <Text style={styles.menuArrow}>{'\u203A'}</Text>
+            </TouchableOpacity>
+            {i < MENU_ITEMS.length - 1 && <View style={styles.menuDivider} />}
+          </React.Fragment>
+        ))}
+      </View>
 
       <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
         <Text style={styles.signOutText}>Sign Out</Text>
@@ -125,34 +139,84 @@ export default function ProfileScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
-  content: { paddingTop: 60, paddingBottom: 40 },
-  header: { alignItems: 'center', paddingHorizontal: 24 },
-  avatar: { width: 90, height: 90, borderRadius: 45, marginBottom: 12 },
+  content: { paddingBottom: 40 },
+  headerGradient: {
+    paddingTop: 70,
+    paddingBottom: 32,
+    alignItems: 'center',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  avatarRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: Colors.white },
   avatarPlaceholder: {
-    backgroundColor: Colors.pinkLight,
+    backgroundColor: Colors.cream,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontSize: 36, fontWeight: '700', color: Colors.pink },
-  name: { color: Colors.green, textAlign: 'center' },
-  role: { fontSize: 14, color: Colors.gray, marginTop: 2, textTransform: 'capitalize' },
-  chapter: { ...Type.caption, marginTop: 2 },
+  avatarInitial: { fontSize: 36, fontWeight: '700', color: Colors.green },
+  name: { color: Colors.white, textAlign: 'center' },
+  rolePill: {
+    marginTop: 6,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  roleText: { fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: '600', textTransform: 'capitalize' },
+  chapter: { color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 6, fontWeight: '500' },
   statsRow: {
     flexDirection: 'row',
     paddingHorizontal: 24,
-    marginTop: 20,
+    marginTop: 22,
     gap: 10,
   },
   statItem: { flex: 1 },
+  menuCard: {
+    marginHorizontal: 24,
+    backgroundColor: Colors.white,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    overflow: 'hidden',
+    ...Shadows.soft,
+  },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
   },
-  menuEmoji: { fontSize: 22, marginRight: 14, width: 30 },
+  menuIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: Colors.grayFaint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  menuEmoji: { fontSize: 18 },
   menuLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: Colors.dark },
   menuArrow: { fontSize: 22, color: Colors.grayMid },
-  signOutBtn: { alignItems: 'center', paddingVertical: 16 },
+  menuDivider: {
+    height: 1,
+    backgroundColor: Colors.grayLight,
+    marginHorizontal: 18,
+    opacity: 0.5,
+  },
+  signOutBtn: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    marginTop: 8,
+  },
   signOutText: { fontSize: 15, color: '#EF4444', fontWeight: '600' },
 });

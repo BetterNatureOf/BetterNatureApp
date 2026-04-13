@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
@@ -14,8 +15,6 @@ import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { fetchLeaderboard } from '../../services/database';
 
-// Filter option lists — kept at module scope so the chip rows aren't
-// recreated on every render.
 const TIME_FILTERS = [
   { key: 'all', label: 'All time' },
   { key: 'year', label: 'Year' },
@@ -58,9 +57,6 @@ function metricLabel(sortBy) {
   return sortBy;
 }
 
-// Embeddable body — used both by the standalone screen and by ImpactScreen
-// when the leaderboard is rendered inline beneath the badges. Renders no
-// scroll container of its own so it can sit inside any parent ScrollView.
 export function LeaderboardBody({ embedded = false }) {
   const user = useAuthStore((s) => s.user);
   const { isWide } = useBreakpoint();
@@ -132,7 +128,9 @@ export function LeaderboardBody({ embedded = false }) {
 
       {!loading && rows.length === 0 && (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyEmoji}>🌱</Text>
+          <View style={styles.emptyIconWrap}>
+            <Text style={styles.emptyEmoji}>{'\u{1F331}'}</Text>
+          </View>
           <Text style={styles.emptyText}>
             No activity matches these filters yet. Try widening the time
             range or picking a different project.
@@ -147,7 +145,7 @@ export function LeaderboardBody({ embedded = false }) {
               rank={2}
               row={top3[1]}
               sortBy={sortBy}
-              color={Colors.grayMid}
+              colors={['#A8B4C0', '#8E9AAA']}
               height={120}
             />
           )}
@@ -156,7 +154,7 @@ export function LeaderboardBody({ embedded = false }) {
               rank={1}
               row={top3[0]}
               sortBy={sortBy}
-              color="#E8B931"
+              colors={['#E8C44E', '#D4A72C']}
               height={150}
             />
           )}
@@ -165,7 +163,7 @@ export function LeaderboardBody({ embedded = false }) {
               rank={3}
               row={top3[2]}
               sortBy={sortBy}
-              color="#C97A3D"
+              colors={['#D4956E', '#C07A3D']}
               height={100}
             />
           )}
@@ -173,7 +171,12 @@ export function LeaderboardBody({ embedded = false }) {
       )}
 
       {myRow && (
-        <View style={styles.youCard}>
+        <LinearGradient
+          colors={Colors.gradient.green}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.youCard}
+        >
           <Text style={styles.youLabel}>YOUR RANK</Text>
           <View style={styles.youRow}>
             <Text style={styles.youRank}>#{myRow.rank}</Text>
@@ -186,7 +189,7 @@ export function LeaderboardBody({ embedded = false }) {
               <Text style={styles.youUnit}>{metricLabel(sortBy)}</Text>
             </View>
           </View>
-        </View>
+        </LinearGradient>
       )}
 
       {!loading && rest.length > 0 && (
@@ -204,7 +207,7 @@ export function LeaderboardBody({ embedded = false }) {
       )}
 
       <Text style={styles.footnote}>
-        Overall score = meals + hours×8 + events×25 + dollars raised. Pickups,
+        Overall score = meals + hours{'\u00D7'}8 + events{'\u00D7'}25 + dollars raised. Pickups,
         event check-ins, and donations all count automatically.
       </Text>
     </View>
@@ -217,7 +220,7 @@ export default function LeaderboardScreen({ navigation }) {
       <ResponsiveContainer maxWidth={900}>
         {navigation && (
           <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.back}>‹ Back</Text>
+            <Text style={styles.back}>{'\u2039'} Back</Text>
           </TouchableOpacity>
         )}
         <LeaderboardBody />
@@ -248,6 +251,7 @@ function FilterRow({ label, options, value, onChange, colorize = false }) {
                 active && { backgroundColor: tint, borderColor: tint },
               ]}
             >
+              {active && colorize && <View style={[styles.chipDot, { backgroundColor: Colors.white }]} />}
               <Text
                 style={[styles.chipText, active && styles.chipTextActive]}
               >
@@ -261,16 +265,23 @@ function FilterRow({ label, options, value, onChange, colorize = false }) {
   );
 }
 
-function PodiumCard({ rank, row, sortBy, color, height }) {
+function PodiumCard({ rank, row, sortBy, colors, height }) {
   return (
     <View style={styles.podiumCol}>
       <View style={styles.podiumAvatarWrap}>
-        <View style={[styles.podiumAvatar, { borderColor: color }]}>
-          <Text style={styles.podiumInitial}>
-            {row.name?.[0] || '?'}
-          </Text>
-        </View>
-        <View style={[styles.medalDot, { backgroundColor: color }]}>
+        <LinearGradient
+          colors={colors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.podiumAvatarRing}
+        >
+          <View style={styles.podiumAvatar}>
+            <Text style={styles.podiumInitial}>
+              {row.name?.[0] || '?'}
+            </Text>
+          </View>
+        </LinearGradient>
+        <View style={[styles.medalDot, { backgroundColor: colors[0] }]}>
           <Text style={styles.medalText}>{rank}</Text>
         </View>
       </View>
@@ -280,15 +291,15 @@ function PodiumCard({ rank, row, sortBy, color, height }) {
       <Text style={styles.podiumChapter} numberOfLines={1}>
         {row.chapter}
       </Text>
-      <View
-        style={[
-          styles.podiumBar,
-          { height, backgroundColor: color },
-        ]}
+      <LinearGradient
+        colors={colors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={[styles.podiumBar, { height }]}
       >
         <Text style={styles.podiumValue}>{metricValue(row, sortBy)}</Text>
         <Text style={styles.podiumUnit}>{metricLabel(sortBy)}</Text>
-      </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -297,9 +308,12 @@ function LeaderboardRow({ row, sortBy, isMe, wide }) {
   return (
     <View style={[styles.row, isMe && styles.rowMe, wide && styles.rowWide]}>
       <Text style={styles.rank}>#{row.rank}</Text>
-      <View style={styles.avatarSmall}>
+      <LinearGradient
+        colors={Colors.gradient.sage}
+        style={styles.avatarSmall}
+      >
         <Text style={styles.avatarSmallText}>{row.name?.[0] || '?'}</Text>
-      </View>
+      </LinearGradient>
       <View style={{ flex: 1, marginLeft: 10 }}>
         <Text style={styles.rowName} numberOfLines={1}>
           {row.name}
@@ -311,7 +325,7 @@ function LeaderboardRow({ row, sortBy, isMe, wide }) {
       <View style={styles.rowStats}>
         <Text style={styles.rowValue}>{metricValue(row, sortBy)}</Text>
         <Text style={styles.rowSub}>
-          {fmt(row.meals)}m · {fmt(row.hours)}h · {fmtMoney(row.raised)}
+          {fmt(row.meals)}m {'\u00B7'} {fmt(row.hours)}h {'\u00B7'} {fmtMoney(row.raised)}
         </Text>
       </View>
     </View>
@@ -321,28 +335,34 @@ function LeaderboardRow({ row, sortBy, isMe, wide }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
-  back: { fontSize: 16, color: Colors.green, marginBottom: 8 },
+  back: { fontSize: 16, color: Colors.green, marginBottom: 8, fontWeight: '500' },
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 18 },
 
-  filterRow: { marginBottom: 12 },
+  filterRow: { marginBottom: 14 },
   filterLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    color: Colors.gray,
-    marginBottom: 6,
+    ...Type.eyebrow,
+    color: Colors.grayMid,
+    marginBottom: 8,
+    fontSize: 10,
   },
   chips: { gap: 8, paddingRight: 8 },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1.5,
     borderColor: Colors.grayLight,
     backgroundColor: Colors.white,
-    marginRight: 8,
+    marginRight: 0,
+    gap: 5,
+  },
+  chipDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   chipText: { fontSize: 13, color: Colors.dark, fontWeight: '600' },
   chipTextActive: { color: Colors.white },
@@ -351,13 +371,24 @@ const styles = StyleSheet.create({
 
   emptyCard: {
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     padding: 32,
     alignItems: 'center',
     marginTop: 16,
-    ...Shadows.card,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    ...Shadows.soft,
   },
-  emptyEmoji: { fontSize: 40, marginBottom: 8 },
+  emptyIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  emptyEmoji: { fontSize: 28 },
   emptyText: { ...Type.body, color: Colors.gray, textAlign: 'center' },
 
   // Podium
@@ -366,35 +397,43 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 18,
+    marginTop: 20,
     marginBottom: 24,
   },
   podiumCol: { flex: 1, alignItems: 'center', maxWidth: 140 },
   podiumAvatarWrap: { alignItems: 'center', marginBottom: 6 },
-  podiumAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 3,
-    backgroundColor: Colors.cream,
+  podiumAvatarRing: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  podiumAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: Colors.cream,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.white,
+  },
   podiumInitial: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: Colors.green,
   },
   medalDot: {
     position: 'absolute',
     bottom: -4,
-    right: 8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    right: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: Colors.cream,
   },
   medalText: { color: Colors.white, fontSize: 11, fontWeight: '800' },
@@ -406,55 +445,52 @@ const styles = StyleSheet.create({
   },
   podiumChapter: {
     fontSize: 11,
-    color: Colors.gray,
+    color: Colors.grayMid,
     textAlign: 'center',
     marginBottom: 6,
   },
   podiumBar: {
     width: '100%',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    paddingTop: 14,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    paddingTop: 16,
     alignItems: 'center',
     justifyContent: 'flex-start',
     minHeight: 80,
   },
   podiumValue: {
     color: Colors.white,
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '800',
     fontFamily: 'Caveat-Bold',
   },
-  podiumUnit: { color: Colors.white, fontSize: 11, opacity: 0.85 },
+  podiumUnit: { color: 'rgba(255,255,255,0.8)', fontSize: 11 },
 
   // You card
   youCard: {
-    backgroundColor: Colors.green,
     borderRadius: Radius.lg,
-    padding: 16,
+    padding: 18,
     marginBottom: 16,
-    ...Shadows.card,
   },
   youLabel: {
-    color: '#A5C3B6',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    color: 'rgba(255,255,255,0.55)',
+    ...Type.eyebrow,
+    fontSize: 10,
     marginBottom: 8,
   },
   youRow: { flexDirection: 'row', alignItems: 'center' },
   youRank: {
     color: '#fff',
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
     fontFamily: 'Caveat-Bold',
-    minWidth: 44,
+    minWidth: 48,
   },
   youName: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  youChapter: { color: '#C8DDD4', fontSize: 12 },
+  youChapter: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '500' },
   youMetric: { alignItems: 'flex-end' },
   youValue: { color: '#fff', fontSize: 22, fontWeight: '800' },
-  youUnit: { color: '#C8DDD4', fontSize: 11 },
+  youUnit: { color: 'rgba(255,255,255,0.6)', fontSize: 11 },
 
   // List
   list: { flexDirection: 'column', gap: 8 },
@@ -463,30 +499,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.white,
-    borderRadius: Radius.md,
+    borderRadius: Radius.lg,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    ...Shadows.card,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    ...Shadows.soft,
   },
   rowWide: { flexBasis: '47%', flexGrow: 1, minWidth: 280 },
-  rowMe: { borderWidth: 2, borderColor: Colors.pink },
+  rowMe: { borderColor: Colors.pink, borderWidth: 2 },
   rank: {
     width: 36,
     fontSize: 14,
     fontWeight: '800',
-    color: Colors.gray,
+    color: Colors.grayMid,
   },
   avatarSmall: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.sage,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarSmallText: { color: Colors.white, fontWeight: '800' },
+  avatarSmallText: { color: Colors.white, fontWeight: '800', fontSize: 14 },
   rowName: { fontSize: 14, fontWeight: '700', color: Colors.dark },
-  rowChapter: { fontSize: 11, color: Colors.gray },
+  rowChapter: { fontSize: 11, color: Colors.grayMid },
   rowStats: { alignItems: 'flex-end' },
   rowValue: { fontSize: 16, fontWeight: '800', color: Colors.green },
   rowSub: { fontSize: 10, color: Colors.grayMid, marginTop: 2 },
@@ -496,5 +533,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 24,
+    fontSize: 12,
   },
 });

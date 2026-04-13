@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import StatCard from '../../components/ui/StatCard';
@@ -54,35 +55,42 @@ export default function ImpactScreen() {
         Better Nature Overall
       </BrushText>
 
-      <View style={styles.orgCard}>
-        <View style={styles.orgStat}>
-          <BrushText variant="heroStat" style={{ color: Colors.green }}>
-            2,400+
-          </BrushText>
-          <Text style={styles.orgLabel}>Meals Rescued</Text>
+      <LinearGradient
+        colors={Colors.gradient.green}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.orgHero}
+      >
+        <View style={styles.orgHeroRow}>
+          <View style={styles.orgStat}>
+            <BrushText variant="heroStat" style={styles.orgNumber}>
+              2,400+
+            </BrushText>
+            <Text style={styles.orgLabel}>Meals Rescued</Text>
+          </View>
+          <View style={styles.orgDivider} />
+          <View style={styles.orgStat}>
+            <BrushText variant="heroStat" style={styles.orgNumber}>
+              150+
+            </BrushText>
+            <Text style={styles.orgLabel}>Animals Helped</Text>
+          </View>
         </View>
-        <View style={styles.orgDivider} />
-        <View style={styles.orgStat}>
-          <BrushText variant="heroStat" style={{ color: Colors.sage }}>
-            150+
-          </BrushText>
-          <Text style={styles.orgLabel}>Animals Helped</Text>
-        </View>
-      </View>
+      </LinearGradient>
 
       <View style={styles.orgCard}>
         <View style={styles.orgStat}>
           <BrushText variant="heroStat" style={{ color: Colors.sky }}>
             $12K
           </BrushText>
-          <Text style={styles.orgLabel}>Raised for Clean Water</Text>
+          <Text style={styles.orgLabelDark}>Raised for Clean Water</Text>
         </View>
-        <View style={styles.orgDivider} />
+        <View style={styles.orgDividerDark} />
         <View style={styles.orgStat}>
           <BrushText variant="heroStat" style={{ color: Colors.pink }}>
             500+
           </BrushText>
-          <Text style={styles.orgLabel}>Active Volunteers</Text>
+          <Text style={styles.orgLabelDark}>Active Volunteers</Text>
         </View>
       </View>
 
@@ -93,7 +101,9 @@ export default function ImpactScreen() {
         Your Badges
       </BrushText>
       <View style={styles.badgesEmpty}>
-        <Text style={styles.badgeEmoji}>🌱</Text>
+        <View style={styles.badgeIconWrap}>
+          <Text style={styles.badgeEmoji}>{'\u{1F331}'}</Text>
+        </View>
         <Text style={styles.badgesText}>
           Attend your first event to earn your first badge!
         </Text>
@@ -101,7 +111,7 @@ export default function ImpactScreen() {
 
       <BrushDivider />
 
-      {/* Leaderboard — embedded so it inherits this screen's scroll. */}
+      {/* Leaderboard */}
       <BrushText variant="sectionHeader" style={styles.sectionTitle}>
         Leaderboard
       </BrushText>
@@ -125,7 +135,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   gridItem: { width: '47%' },
-  sectionTitle: { color: Colors.green, marginBottom: 12 },
+  sectionTitle: { color: Colors.green, marginBottom: 14 },
+  orgHero: {
+    borderRadius: Radius.xl,
+    padding: 24,
+    marginBottom: 12,
+  },
+  orgHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  orgStat: { flex: 1, alignItems: 'center' },
+  orgNumber: { color: Colors.white },
+  orgLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 2, textAlign: 'center', fontWeight: '500' },
+  orgDivider: { width: 1, height: 50, backgroundColor: 'rgba(255,255,255,0.2)' },
   orgCard: {
     backgroundColor: Colors.white,
     borderRadius: Radius.xl,
@@ -133,24 +156,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
     ...Shadows.card,
   },
-  orgStat: { flex: 1, alignItems: 'center' },
-  orgDivider: { width: 1, height: 50, backgroundColor: Colors.grayLight },
-  orgLabel: { ...Type.caption, marginTop: 4, textAlign: 'center' },
+  orgDividerDark: { width: 1, height: 50, backgroundColor: Colors.grayLight },
+  orgLabelDark: { ...Type.caption, marginTop: 4, textAlign: 'center' },
   badgesEmpty: {
     backgroundColor: Colors.white,
     borderRadius: Radius.xl,
     padding: 32,
     alignItems: 'center',
-    ...Shadows.card,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    ...Shadows.soft,
   },
-  badgeEmoji: { fontSize: 48, marginBottom: 12 },
+  badgeIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  badgeEmoji: { fontSize: 32 },
   badgesText: { ...Type.body, color: Colors.gray, textAlign: 'center' },
   leaderIntro: {
     ...Type.caption,
     color: Colors.gray,
-    marginTop: -4,
+    marginTop: -6,
     marginBottom: 12,
   },
 });

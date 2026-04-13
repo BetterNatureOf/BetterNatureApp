@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, TextInput } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
@@ -74,35 +75,48 @@ export default function DonateScreen() {
 
       {/* Amount Selection */}
       <View style={styles.amountsRow}>
-        {AMOUNTS.map((amt) => (
-          <TouchableOpacity
-            key={amt}
-            onPress={() => {
-              setSelectedAmount(amt);
-              setIsCustom(false);
-            }}
-            style={[
-              styles.amountBtn,
-              selectedAmount === amt && !isCustom && styles.amountSelected,
-            ]}
-          >
-            <Text
-              style={[
-                styles.amountText,
-                selectedAmount === amt && !isCustom && styles.amountTextSelected,
-              ]}
+        {AMOUNTS.map((amt) => {
+          const active = selectedAmount === amt && !isCustom;
+          return (
+            <TouchableOpacity
+              key={amt}
+              onPress={() => {
+                setSelectedAmount(amt);
+                setIsCustom(false);
+              }}
+              style={[styles.amountBtn, active && styles.amountSelected]}
             >
-              ${amt}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              {active ? (
+                <LinearGradient
+                  colors={Colors.gradient.green}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.amountGradient}
+                >
+                  <Text style={styles.amountTextSelected}>${amt}</Text>
+                </LinearGradient>
+              ) : (
+                <Text style={styles.amountText}>${amt}</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
         <TouchableOpacity
           onPress={() => setIsCustom(true)}
           style={[styles.amountBtn, isCustom && styles.amountSelected]}
         >
-          <Text style={[styles.amountText, isCustom && styles.amountTextSelected]}>
-            Custom
-          </Text>
+          {isCustom ? (
+            <LinearGradient
+              colors={Colors.gradient.green}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.amountGradient}
+            >
+              <Text style={styles.amountTextSelected}>Custom</Text>
+            </LinearGradient>
+          ) : (
+            <Text style={styles.amountText}>Custom</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -142,7 +156,7 @@ export default function DonateScreen() {
           onPress={() => handlePay('apple')}
           disabled={paying}
         >
-          <Text style={styles.paymentEmoji}></Text>
+          <Text style={styles.paymentEmoji}>{'\uF8FF'}</Text>
           <Text style={styles.applePayText}>Pay</Text>
         </TouchableOpacity>
       )}
@@ -152,9 +166,11 @@ export default function DonateScreen() {
         onPress={() => handlePay('card')}
         disabled={paying}
       >
-        <Text style={styles.paymentEmoji}>💳</Text>
+        <View style={[styles.paymentIconWrap, { backgroundColor: Colors.greenLight }]}>
+          <Text style={styles.paymentEmoji}>{'\u{1F4B3}'}</Text>
+        </View>
         <Text style={styles.paymentText}>Credit / Debit Card</Text>
-        <Text style={styles.arrow}>›</Text>
+        <Text style={styles.arrow}>{'\u203A'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -162,15 +178,17 @@ export default function DonateScreen() {
         onPress={handleZeffyFallback}
         disabled={paying}
       >
-        <Text style={styles.paymentEmoji}>🌐</Text>
+        <View style={[styles.paymentIconWrap, { backgroundColor: Colors.skyLight }]}>
+          <Text style={styles.paymentEmoji}>{'\u{1F310}'}</Text>
+        </View>
         <Text style={styles.paymentText}>Donate via Zeffy (web)</Text>
-        <Text style={styles.arrow}>›</Text>
+        <Text style={styles.arrow}>{'\u203A'}</Text>
       </TouchableOpacity>
 
       <Button
         title={
           paying
-            ? 'Processing…'
+            ? 'Processing\u2026'
             : `Donate $${getAmount() || (isCustom ? '...' : selectedAmount)}${isRecurring ? '/month' : ''}`
         }
         onPress={() => handlePay(isApplePayAvailable ? 'apple' : 'card')}
@@ -179,7 +197,7 @@ export default function DonateScreen() {
       />
 
       <Text style={styles.powered}>
-        Secured by Apple Pay · Tax-deductible receipt sent to your email
+        Secured by Apple Pay {'\u00B7'} Tax-deductible receipt sent to your email
       </Text>
     </ScrollView>
   );
@@ -189,7 +207,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   title: { color: Colors.green },
-  subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
+  subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 28 },
   amountsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -197,25 +215,32 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   amountBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 14,
     borderRadius: Radius.md,
     backgroundColor: Colors.white,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: Colors.grayLight,
-    ...Shadows.card,
+    overflow: 'hidden',
+    ...Shadows.soft,
   },
   amountSelected: {
-    borderColor: Colors.pink,
-    backgroundColor: Colors.pinkLight,
+    borderColor: Colors.green,
+    borderWidth: 0,
+  },
+  amountGradient: {
+    paddingHorizontal: 22,
+    paddingVertical: 14,
   },
   amountText: {
+    paddingHorizontal: 22,
+    paddingVertical: 14,
     fontSize: 16,
     fontWeight: '700',
     color: Colors.dark,
   },
   amountTextSelected: {
-    color: Colors.pink,
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.white,
   },
   customInput: {
     flexDirection: 'row',
@@ -225,10 +250,9 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 20,
     borderWidth: 1.5,
-    borderColor: Colors.pink,
+    borderColor: Colors.green,
   },
   dollar: { fontSize: 20, fontWeight: '700', color: Colors.dark, marginRight: 8 },
-  customHint: { ...Type.caption },
   customField: { flex: 1, fontSize: 18, fontWeight: '600', color: Colors.dark, paddingVertical: 0 },
   recurringRow: {
     flexDirection: 'row',
@@ -236,13 +260,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
-    padding: 16,
-    marginBottom: 24,
+    padding: 18,
+    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
     ...Shadows.card,
   },
   recurringLabel: { fontSize: 15, fontWeight: '600', color: Colors.dark },
   recurringDesc: { ...Type.caption, marginTop: 2 },
-  sectionTitle: { color: Colors.green, marginBottom: 12 },
+  sectionTitle: { color: Colors.green, marginBottom: 14 },
   paymentOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -250,15 +276,26 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: 16,
     marginBottom: 10,
-    ...Shadows.card,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    ...Shadows.soft,
   },
-  paymentEmoji: { fontSize: 24, marginRight: 14 },
+  paymentIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  paymentEmoji: { fontSize: 20 },
   paymentText: { flex: 1, fontSize: 15, fontWeight: '500', color: Colors.dark },
   arrow: { fontSize: 24, color: Colors.grayMid },
   applePayBtn: {
     backgroundColor: '#000',
     justifyContent: 'center',
     paddingVertical: 18,
+    borderColor: '#000',
   },
   applePayText: { color: '#fff', fontSize: 18, fontWeight: '600' },
   donateBtn: { marginTop: 24 },

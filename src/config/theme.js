@@ -11,28 +11,49 @@ export const Spacing = {
 };
 
 export const Radius = {
-  sm: 8,
-  md: 14,
-  lg: 18,
-  xl: 20,
-  pill: 26,
+  sm: 10,
+  md: 16,
+  lg: 20,
+  xl: 24,
+  pill: 28,
   full: 999,
 };
 
 export const Shadows = {
   card: {
-    shadowColor: '#000',
+    shadowColor: '#1A1F2E',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardHover: {
+    shadowColor: '#1A1F2E',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 6,
   },
   button: {
     shadowColor: Colors.pink,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  glow: (color = Colors.pink) => ({
+    shadowColor: color,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
     elevation: 4,
+  }),
+  soft: {
+    shadowColor: '#1A1F2E',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
 };
 

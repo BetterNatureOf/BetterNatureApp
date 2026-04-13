@@ -1,9 +1,9 @@
 import React from 'react';
-import { TouchableOpacity, View, StyleSheet, Animated } from 'react-native';
+import { TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Colors } from '../../config/theme';
 
 /**
- * Toggle — pink/gray switch, 50x28px.
+ * Toggle — green/gray switch, 52x30px.
  */
 export default function Toggle({ value, onToggle, style }) {
   return (
@@ -12,7 +12,7 @@ export default function Toggle({ value, onToggle, style }) {
       onPress={onToggle}
       style={[
         styles.track,
-        { backgroundColor: value ? Colors.pink : Colors.grayLight },
+        { backgroundColor: value ? Colors.green : Colors.grayLight },
         style,
       ]}
     >
@@ -28,10 +28,10 @@ export default function Toggle({ value, onToggle, style }) {
 
 const styles = StyleSheet.create({
   track: {
-    width: 50,
-    height: 28,
-    borderRadius: 14,
-    padding: 3,
+    width: 52,
+    height: 30,
+    borderRadius: 15,
+    padding: 4,
     justifyContent: 'center',
   },
   thumb: {
@@ -40,9 +40,9 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: Colors.white,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View, Alert } from 'react-native';
 import { Colors } from '../../config/theme';
 import useAuthStore from '../../store/authStore';
 import useNotifStore from '../../store/notifStore';
@@ -8,15 +8,31 @@ import ProjectCards from '../../components/sections/ProjectCards';
 import UpcomingEvents from '../../components/sections/UpcomingEvents';
 import DonateCard from '../../components/sections/DonateCard';
 import MemberOfMonth from '../../components/sections/MemberOfMonth';
+import MyPickups from '../../components/sections/MyPickups';
 import BrushDivider from '../../components/ui/BrushDivider';
 import StatCard from '../../components/ui/StatCard';
-import BrushText from '../../components/ui/BrushText';
 import useEvents from '../../hooks/useEvents';
+import usePickups from '../../hooks/usePickups';
 
 export default function DashboardScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const unreadCount = useNotifStore((s) => s.unreadCount);
   const { events } = useEvents();
+  const { pickups, claim } = usePickups();
+
+  function handleClaimPickup(pickup) {
+    Alert.alert(
+      'Claim Pickup',
+      `Claim the pickup from ${pickup.restaurant_name} on ${pickup.scheduled_date} at ${pickup.scheduled_time}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Claim It',
+          onPress: () => claim(pickup.id),
+        },
+      ]
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -53,6 +69,16 @@ export default function DashboardScreen({ navigation }) {
           />
         </View>
 
+        {/* Active Pickups — shows assigned & available pickups */}
+        <MyPickups
+          pickups={pickups}
+          userId={user?.id}
+          onPickupPress={(pickup) => {
+            // Could navigate to pickup detail in future
+          }}
+          onClaimPress={handleClaimPickup}
+        />
+
         <BrushDivider />
 
         <ProjectCards
@@ -88,7 +114,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     paddingHorizontal: 24,
-    marginTop: 20,
+    marginTop: 22,
     gap: 10,
   },
   statItem: {

@@ -8,7 +8,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Colors, Type } from '../../config/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -17,8 +18,6 @@ import { signIn } from '../../services/auth';
 import { isSupabaseConfigured } from '../../config/supabase';
 import useAuthStore, { ROLES } from '../../store/authStore';
 
-// Demo credential router. When Supabase is live the role comes from the
-// database; in mock mode the email prefix decides which portal you land in.
 function inferRoleFromEmail(email) {
   const lower = email.trim().toLowerCase();
   if (lower.startsWith('exec@') || lower.startsWith('csuite@')) return ROLES.EXECUTIVE;
@@ -54,9 +53,6 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      // In mock mode, role is inferred from the email prefix.
-      // In production, signIn() hydrates the full profile from Supabase
-      // and the role comes from the database.
       const demoRole = isSupabaseConfigured ? undefined : inferRoleFromEmail(email);
       const result = await signIn({ email, password, role: demoRole });
       const user = result?.user
@@ -122,17 +118,35 @@ export default function LoginScreen({ navigation }) {
           </Text>
 
           <View style={styles.demoBox}>
-            <Text style={styles.demoTitle}>Demo logins</Text>
-            <Text style={styles.demoLine}>
-              <Text style={styles.demoLabel}>Restaurant: </Text>restaurant@demo.com
-            </Text>
-            <Text style={styles.demoLine}>
-              <Text style={styles.demoLabel}>Chapter President: </Text>president@demo.com
-            </Text>
-            <Text style={styles.demoLine}>
-              <Text style={styles.demoLabel}>Executive: </Text>exec@demo.com
-            </Text>
-            <Text style={styles.demoCaption}>Any password works in demo mode.</Text>
+            <LinearGradient
+              colors={Colors.gradient.green}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.demoHeader}
+            >
+              <Text style={styles.demoTitle}>Demo logins</Text>
+            </LinearGradient>
+            <View style={styles.demoBody}>
+              <View style={styles.demoRow}>
+                <View style={[styles.demoDot, { backgroundColor: Colors.sage }]} />
+                <Text style={styles.demoLine}>
+                  <Text style={styles.demoLabel}>Restaurant: </Text>restaurant@demo.com
+                </Text>
+              </View>
+              <View style={styles.demoRow}>
+                <View style={[styles.demoDot, { backgroundColor: Colors.green }]} />
+                <Text style={styles.demoLine}>
+                  <Text style={styles.demoLabel}>Chapter President: </Text>president@demo.com
+                </Text>
+              </View>
+              <View style={styles.demoRow}>
+                <View style={[styles.demoDot, { backgroundColor: Colors.pink }]} />
+                <Text style={styles.demoLine}>
+                  <Text style={styles.demoLabel}>Executive: </Text>exec@demo.com
+                </Text>
+              </View>
+              <Text style={styles.demoCaption}>Any password works in demo mode.</Text>
+            </View>
           </View>
         </ResponsiveContainer>
       </ScrollView>
@@ -151,21 +165,38 @@ const styles = StyleSheet.create({
   signupBold: { color: Colors.pink, fontWeight: '600' },
   demoBox: {
     marginTop: 32,
-    padding: 16,
-    borderRadius: 14,
-    backgroundColor: Colors.greenLight,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.sage,
+    borderColor: Colors.glassBorder,
+  },
+  demoHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   demoTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.green,
+    color: Colors.white,
     textTransform: 'uppercase',
     letterSpacing: 1,
-    marginBottom: 8,
   },
-  demoLine: { fontSize: 13, color: Colors.dark, marginTop: 3 },
+  demoBody: {
+    padding: 16,
+    backgroundColor: Colors.white,
+  },
+  demoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  demoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  demoLine: { fontSize: 13, color: Colors.dark },
   demoLabel: { fontWeight: '700', color: Colors.green },
   demoCaption: { fontSize: 11, color: Colors.gray, marginTop: 8, fontStyle: 'italic' },
 });

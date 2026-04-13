@@ -17,18 +17,19 @@ export default function Input({
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={styles.label}>{label}</Text>}
-      <TextInput
-        style={[
-          styles.input,
-          focused && styles.focused,
-          error && styles.error,
-          style,
-        ]}
-        placeholderTextColor={Colors.grayMid}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        {...props}
-      />
+      <View style={[
+        styles.inputWrap,
+        focused && styles.focused,
+        error && styles.error,
+      ]}>
+        <TextInput
+          style={[styles.input, style]}
+          placeholderTextColor={Colors.grayMid}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          {...props}
+        />
+      </View>
       {error && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
@@ -36,26 +37,32 @@ export default function Input({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: 18,
   },
   label: {
-    ...Type.body,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     color: Colors.dark,
-    marginBottom: 6,
+    marginBottom: 8,
+    letterSpacing: 0.2,
   },
-  input: {
-    height: 48,
+  inputWrap: {
+    height: 50,
     borderRadius: Radius.md,
     borderWidth: 1.5,
     borderColor: Colors.grayLight,
-    paddingHorizontal: 14,
+    backgroundColor: Colors.white,
+    overflow: 'hidden',
+  },
+  input: {
+    flex: 1,
+    paddingHorizontal: 16,
     fontSize: 15,
     color: Colors.dark,
-    backgroundColor: Colors.white,
   },
   focused: {
-    borderColor: Colors.pink,
+    borderColor: Colors.green,
+    backgroundColor: Colors.greenLight + '40',
   },
   error: {
     borderColor: '#EF4444',
@@ -63,6 +70,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     color: '#EF4444',
-    marginTop: 4,
+    marginTop: 6,
   },
 });
