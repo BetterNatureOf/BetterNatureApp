@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Better Nature — Youth-Led Nonprofit | Food Rescue · Conservation · Clean Water</title>
+  <meta name="description" content="Better Nature is a youth-led 501(c)(3) nonprofit rescuing food, protecting wildlife, and providing clean water through volunteer chapters across the country." />
+  <meta name="theme-color" content="#1B3A2D" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Better Nature — Stand for what sustains you." />
+  <meta property="og:description" content="Youth-led nonprofit: food rescue, conservation, and clean water programs powered by volunteer chapters." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://betternatureofficial.org" />
+
+  <!-- Fonts: DM Serif Display (editorial) + Instrument Sans (clean body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════ NAV ═══════════════════ -->
+  <nav class="nav" id="nav">
+    <div class="nav__inner">
+      <a href="#" class="nav__logo">
+        <span class="nav__logo-leaf">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <path d="M8 28C8 28 6 16 16 8C26 16 24 28 24 28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M16 8V24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M16 16C13 14 10 15 10 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M16 19C19 17 22 18 22 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="nav__logo-text">Better Nature</span>
+      </a>
+
+      <ul class="nav__links" id="navLinks">
+        <li><a href="#about">About Us</a></li>
+        <li class="nav__dropdown">
+          <a href="#programs" class="nav__dropdown-trigger">Projects <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <ul class="nav__dropdown-menu">
+            <li><a href="#programs">Project IRIS</a></li>
+            <li><a href="#programs">Project Evergreen</a></li>
+            <li><a href="#programs">Project Hydro</a></li>
+          </ul>
+        </li>
+        <li><a href="#impact">Impact</a></li>
+        <li><a href="#how-it-works">Get Involved</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+
+      <div class="nav__right">
+        <a href="https://www.zeffy.com/en-US/donation-form" target="_blank" rel="noopener" class="nav__donate-btn">Donate</a>
+        <div class="nav__socials">
+          <a href="https://instagram.com/betternatureofficial" target="_blank" rel="noopener" aria-label="Instagram">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/></svg>
+          </a>
+          <a href="https://twitter.com/betternature24" target="_blank" rel="noopener" aria-label="X / Twitter">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l6.5 8L4 20h2l5.5-6.5L16 20h4l-7-8.5L19.5 4H18l-5 6L9 4H4z"/></svg>
+          </a>
+          <a href="https://facebook.com/betternatureofficial" target="_blank" rel="noopener" aria-label="Facebook">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg>
+          </a>
+        </div>
+      </div>
+
+      <button class="nav__toggle" id="navToggle" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════ HERO ═══════════════════ -->
+  <header class="hero" id="hero">
+    <div class="hero__grain"></div>
+    <div class="hero__shapes">
+      <div class="hero__circle hero__circle--1"></div>
+      <div class="hero__circle hero__circle--2"></div>
+      <div class="hero__circle hero__circle--3"></div>
+    </div>
+    <div class="hero__content">
+      <div class="hero__badge">501(c)(3) Nonprofit Organization</div>
+      <h1 class="hero__title">
+        Stand for what<br/><em>sustains</em> you.
+      </h1>
+      <p class="hero__desc">
+        We rescue surplus food, protect wildlife habitats, and provide clean water
+        access — powered by student-led volunteer chapters across the country.
+      </p>
+      <div class="hero__actions">
+        <a href="#how-it-works" class="btn btn--primary">Get Involved</a>
+        <a href="#programs" class="btn btn--outline">Our Projects</a>
+      </div>
+    </div>
+    <div class="hero__ticker">
+      <div class="hero__ticker-inner">
+        <div class="hero__ticker-item">
+          <span class="hero__ticker-num">2,400+</span>
+          <span class="hero__ticker-label">Meals Rescued</span>
+        </div>
+        <div class="hero__ticker-divider"></div>
+        <div class="hero__ticker-item">
+          <span class="hero__ticker-num">500+</span>
+          <span class="hero__ticker-label">Volunteers</span>
+        </div>
+        <div class="hero__ticker-divider"></div>
+        <div class="hero__ticker-item">
+          <span class="hero__ticker-num">10+</span>
+          <span class="hero__ticker-label">Chapters</span>
+        </div>
+        <div class="hero__ticker-divider"></div>
+        <div class="hero__ticker-item">
+          <span class="hero__ticker-num">$12K+</span>
+          <span class="hero__ticker-label">Raised</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ ABOUT ═══════════════════ -->
+  <section class="section about" id="about">
+    <div class="container">
+      <div class="about__layout">
+        <div class="about__left">
+          <span class="tag">Who We Are</span>
+          <h2 class="section__title">A generation building<br/>a <em>better</em> future.</h2>
+        </div>
+        <div class="about__right">
+          <p class="about__lead">
+            Better Nature is a youth-led 501(c)(3) nonprofit on a mission to create lasting
+            environmental and social impact through community action.
+          </p>
+          <p>
+            Founded by students who believe young people can drive real change, we operate through
+            volunteer chapters at high schools and colleges nationwide. Each chapter runs local
+            programs in food rescue, habitat conservation, and clean water access.
+          </p>
+          <p>
+            Our model is simple: empower volunteers with the tools, training, and community they
+            need to make a measurable difference — then track every meal rescued, every hour
+            volunteered, and every dollar raised with full transparency.
+          </p>
+        </div>
+      </div>
+
+      <div class="values__grid">
+        <div class="value-card">
+          <div class="value-card__number">01</div>
+          <h3>Youth-Led</h3>
+          <p>Students lead every chapter, making decisions and driving impact in their own communities.</p>
+        </div>
+        <div class="value-card">
+          <div class="value-card__number">02</div>
+          <h3>Transparent</h3>
+          <p>Every meal, hour, and dollar is tracked and reported. 100% of donations fund programs.</p>
+        </div>
+        <div class="value-card">
+          <div class="value-card__number">03</div>
+          <h3>Scalable</h3>
+          <p>Our chapter model lets us grow to any school, city, or state without losing local focus.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ PROGRAMS ═══════════════════ -->
+  <section class="section programs" id="programs">
+    <div class="container">
+      <div class="section__header">
+        <span class="tag">Our Projects</span>
+        <h2 class="section__title">Three programs.<br/>One mission.</h2>
+        <p class="section__subtitle">Interconnected initiatives tackling hunger, habitat loss, and water access.</p>
+      </div>
+
+      <!-- IRIS -->
+      <div class="program-row">
+        <div class="program-row__content">
+          <div class="program-row__label">
+            <span class="program-row__index">01</span>
+            <span class="program-row__tag program-row__tag--iris">Food Rescue</span>
+          </div>
+          <h3 class="program-row__name">Project IRIS</h3>
+          <p class="program-row__desc">
+            We partner with local restaurants and grocers to rescue surplus food before it's wasted
+            and deliver it to families, shelters, and food banks in need.
+          </p>
+          <div class="program-row__stats">
+            <div class="program-row__stat">
+              <span class="program-row__stat-num">2,400+</span>
+              <span class="program-row__stat-label">Meals Rescued</span>
+            </div>
+            <div class="program-row__stat">
+              <span class="program-row__stat-num">45</span>
+              <span class="program-row__stat-label">Restaurant Partners</span>
+            </div>
+          </div>
+          <ul class="program-row__features">
+            <li>Volunteer pickup & delivery network</li>
+            <li>Real-time food insecurity hotspot data</li>
+            <li>Restaurant partner onboarding</li>
+            <li>Auto-tracked meals & weight metrics</li>
+          </ul>
+        </div>
+        <div class="program-row__visual program-row__visual--iris">
+          <div class="program-row__icon-wrap">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+              <circle cx="32" cy="28" r="14" stroke="currentColor" stroke-width="2"/>
+              <path d="M22 42h20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M26 46h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M32 14v28" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" opacity="0.4"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evergreen -->
+      <div class="program-row program-row--reverse">
+        <div class="program-row__content">
+          <div class="program-row__label">
+            <span class="program-row__index">02</span>
+            <span class="program-row__tag program-row__tag--evergreen">Conservation</span>
+          </div>
+          <h3 class="program-row__name">Project Evergreen</h3>
+          <p class="program-row__desc">
+            Protecting wildlife and restoring natural habitats through tree planting events,
+            cleanup drives, and conservation education in local communities.
+          </p>
+          <div class="program-row__stats">
+            <div class="program-row__stat">
+              <span class="program-row__stat-num">150+</span>
+              <span class="program-row__stat-label">Animals Helped</span>
+            </div>
+            <div class="program-row__stat">
+              <span class="program-row__stat-num">500+</span>
+              <span class="program-row__stat-label">Trees Planted</span>
+            </div>
+          </div>
+          <ul class="program-row__features">
+            <li>Tree planting & habitat restoration</li>
+            <li>Wildlife protection initiatives</li>
+            <li>Community cleanup events</li>
+            <li>Conservation education workshops</li>
+          </ul>
+        </div>
+        <div class="program-row__visual program-row__visual--evergreen">
+          <div class="program-row__icon-wrap">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+              <path d="M32 8L18 28h8l-6 12h8l-6 12h20l-6-12h8l-6-12h8L32 8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M32 40v16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hydro -->
+      <div class="program-row">
+        <div class="program-row__content">
+          <div class="program-row__label">
+            <span class="program-row__index">03</span>
+            <span class="program-row__tag program-row__tag--hydro">Clean Water</span>
+          </div>
+          <h3 class="program-row__name">Project Hydro</h3>
+          <p class="program-row__desc">
+            Testing water quality, cleaning watersheds, and raising funds to provide clean
+            drinking water access to communities around the world.
+          </p>
+          <div class="program-row__stats">
+            <div class="program-row__stat">
+              <span class="program-row__stat-num">$12K+</span>
+              <span class="program-row__stat-label">Raised</span>
+            </div>
+            <div class="program-row__stat">
+              <span class="program-row__stat-num">20+</span>
+              <span class="program-row__stat-label">Sites Tested</span>
+            </div>
+          </div>
+          <ul class="program-row__features">
+            <li>Water quality testing & reporting</li>
+            <li>Watershed cleanup events</li>
+            <li>Clean water fundraising campaigns</li>
+            <li>Global water access partnerships</li>
+          </ul>
+        </div>
+        <div class="program-row__visual program-row__visual--hydro">
+          <div class="program-row__icon-wrap">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+              <path d="M32 8C32 8 16 28 16 40a16 16 0 0032 0C48 28 32 8 32 8z" stroke="currentColor" stroke-width="2"/>
+              <path d="M24 42c2 4 6 6 10 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ IMPACT ═══════════════════ -->
+  <section class="section impact" id="impact">
+    <div class="container">
+      <div class="section__header section__header--center">
+        <span class="tag tag--light">Our Impact</span>
+        <h2 class="section__title section__title--light">Measurable results.<br/><em>Real</em> change.</h2>
+        <p class="section__subtitle section__subtitle--light">Every action is tracked. Every contribution counts.</p>
+      </div>
+      <div class="impact__grid">
+        <div class="impact-card">
+          <span class="impact-card__num">2,400+</span>
+          <span class="impact-card__label">Meals Rescued</span>
+          <span class="impact-card__context">Surplus food delivered to families & shelters</span>
+        </div>
+        <div class="impact-card">
+          <span class="impact-card__num">500+</span>
+          <span class="impact-card__label">Active Volunteers</span>
+          <span class="impact-card__context">Students across chapters nationwide</span>
+        </div>
+        <div class="impact-card">
+          <span class="impact-card__num">150+</span>
+          <span class="impact-card__label">Animals Helped</span>
+          <span class="impact-card__context">Wildlife protected through habitat restoration</span>
+        </div>
+        <div class="impact-card">
+          <span class="impact-card__num">$12K+</span>
+          <span class="impact-card__label">Raised for Clean Water</span>
+          <span class="impact-card__context">Funding clean water access worldwide</span>
+        </div>
+        <div class="impact-card">
+          <span class="impact-card__num">10+</span>
+          <span class="impact-card__label">Active Chapters</span>
+          <span class="impact-card__context">Schools running local programs</span>
+        </div>
+        <div class="impact-card">
+          <span class="impact-card__num">45</span>
+          <span class="impact-card__label">Restaurant Partners</span>
+          <span class="impact-card__context">Local businesses donating surplus food</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ FOOD INSECURITY ═══════════════════ -->
+  <section class="section insecurity" id="insecurity">
+    <div class="container">
+      <div class="insecurity__layout">
+        <div class="insecurity__text">
+          <span class="tag">IRIS Intelligence</span>
+          <h2 class="section__title">Food Insecurity<br/>Hotspot Data</h2>
+          <p class="insecurity__desc">
+            Our app uses real-time data from the <strong>USDA Food Access Research Atlas</strong>,
+            <strong>Feeding America</strong>, and the <strong>World Food Programme</strong> to identify
+            where food donations are needed most — both in the US and globally.
+          </p>
+          <div class="insecurity__metrics">
+            <div class="insecurity__metric">
+              <span class="insecurity__metric-num">18+</span>
+              <span class="insecurity__metric-label">US Critical Zones Mapped</span>
+            </div>
+            <div class="insecurity__metric">
+              <span class="insecurity__metric-num">14</span>
+              <span class="insecurity__metric-label">Global Crisis Countries</span>
+            </div>
+          </div>
+          <p class="insecurity__note">
+            Volunteers can see severity ratings, child hunger rates, and population data for every
+            hotspot — helping chapters prioritize where to focus rescue efforts.
+          </p>
+        </div>
+        <div class="insecurity__visual">
+          <div class="insecurity__map">
+            <div class="insecurity__dot insecurity__dot--critical" style="top:30%;left:38%;"></div>
+            <div class="insecurity__dot insecurity__dot--critical" style="top:25%;left:52%;"></div>
+            <div class="insecurity__dot insecurity__dot--high" style="top:42%;left:30%;"></div>
+            <div class="insecurity__dot insecurity__dot--crisis" style="top:22%;left:65%;"></div>
+            <div class="insecurity__dot insecurity__dot--critical" style="top:50%;left:45%;"></div>
+            <div class="insecurity__dot insecurity__dot--high" style="top:38%;left:70%;"></div>
+            <div class="insecurity__dot insecurity__dot--moderate" style="top:48%;left:18%;"></div>
+            <div class="insecurity__dot insecurity__dot--crisis" style="top:58%;left:58%;"></div>
+            <div class="insecurity__legend">
+              <div class="insecurity__legend-item"><span class="insecurity__legend-dot" style="background:#ef4444;"></span>Critical</div>
+              <div class="insecurity__legend-item"><span class="insecurity__legend-dot" style="background:#f97316;"></span>High</div>
+              <div class="insecurity__legend-item"><span class="insecurity__legend-dot" style="background:#eab308;"></span>Crisis</div>
+              <div class="insecurity__legend-item"><span class="insecurity__legend-dot" style="background:#6366f1;"></span>Moderate</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ HOW IT WORKS ═══════════════════ -->
+  <section class="section how" id="how-it-works">
+    <div class="container">
+      <div class="section__header section__header--center">
+        <span class="tag">Get Involved</span>
+        <h2 class="section__title">How it works</h2>
+        <p class="section__subtitle">From signing up to making an impact — it's simple.</p>
+      </div>
+      <div class="how__timeline">
+        <div class="how__step">
+          <div class="how__step-marker">
+            <span>1</span>
+          </div>
+          <div class="how__step-content">
+            <h3>Download & Sign Up</h3>
+            <p>Download the Better Nature app, create your account, and join your school's chapter — or start your own.</p>
+          </div>
+        </div>
+        <div class="how__step">
+          <div class="how__step-marker">
+            <span>2</span>
+          </div>
+          <div class="how__step-content">
+            <h3>Join Events & Pick Up</h3>
+            <p>Browse upcoming events, sign up, and claim food pickups from partner restaurants. See who's going and get directions in the app.</p>
+          </div>
+        </div>
+        <div class="how__step">
+          <div class="how__step-marker">
+            <span>3</span>
+          </div>
+          <div class="how__step-content">
+            <h3>Check In & Log Impact</h3>
+            <p>Your chapter president checks you in at events. Hours, meals rescued, and contributions are automatically logged to your profile.</p>
+          </div>
+        </div>
+        <div class="how__step">
+          <div class="how__step-marker">
+            <span>4</span>
+          </div>
+          <div class="how__step-content">
+            <h3>Track & Grow</h3>
+            <p>Watch your impact grow on the leaderboard. Earn badges, see org-wide stats, and compete with other chapters.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ APP FEATURES ═══════════════════ -->
+  <section class="section features" id="features">
+    <div class="container">
+      <div class="section__header">
+        <span class="tag">The App</span>
+        <h2 class="section__title">Built for impact</h2>
+        <p class="section__subtitle">A complete platform for volunteers, chapter presidents, and executives.</p>
+      </div>
+      <div class="features__grid">
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18" stroke-linecap="round" stroke-width="2"/></svg>
+          </div>
+          <h3>Volunteer Dashboard</h3>
+          <p>Personal stats, upcoming events, active pickups with directions — all in one place.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2z"/></svg>
+          </div>
+          <h3>Leaderboard</h3>
+          <p>Ranked by meals, hours, events, or money raised. Filter by time, project, or chapter.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <h3>Event Check-In</h3>
+          <p>Presidents verify attendance in real-time. Hours and meals auto-log. No manual tracking.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          </div>
+          <h3>Food Pickup System</h3>
+          <p>Claim pickups, see restaurant details, get directions, auto-calculate meals by weight.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          </div>
+          <h3>Chapter Management</h3>
+          <p>Presidents manage events, members, and metrics. Executives oversee all chapters and finances.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </div>
+          <h3>Zero-Fee Donations</h3>
+          <p>Powered by Zeffy — 100% of every dollar goes to programs. Apple Pay, card, and recurring.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          </div>
+          <h3>Insecurity Hotspot Map</h3>
+          <p>Real USDA and WFP data showing where food donations are needed most — US and global.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-card__icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+          </div>
+          <h3>Full Transparency</h3>
+          <p>Every metric is tracked: meals, hours, events, donations. Exportable reports for stakeholders.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ CTA ═══════════════════ -->
+  <section class="section cta" id="get-involved">
+    <div class="container">
+      <div class="cta__inner">
+        <h2 class="cta__title">Ready to make<br/>a difference?</h2>
+        <p class="cta__desc">
+          Whether you're a student looking to volunteer, a teacher wanting to start a chapter,
+          a restaurant with surplus food, or a sponsor who wants to fund real impact —
+          there's a place for you at Better Nature.
+        </p>
+        <div class="cta__actions">
+          <a href="mailto:info@betternatureofficial.org" class="btn btn--primary btn--lg">Start a Chapter</a>
+          <a href="https://www.zeffy.com/en-US/donation-form" target="_blank" rel="noopener" class="btn btn--white btn--lg">Donate Now</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ DONATE ═══════════════════ -->
+  <section class="section donate" id="donate">
+    <div class="container">
+      <div class="donate__layout">
+        <div class="donate__text">
+          <span class="tag">Support Our Mission</span>
+          <h2 class="section__title">Every dollar<br/>goes further.</h2>
+          <p>
+            100% of your donation goes directly to Better Nature programs. We use
+            <strong>Zeffy</strong> for zero-fee payment processing — meaning every dollar you
+            give funds food rescue, conservation, and clean water initiatives.
+          </p>
+          <p>All donations are <strong>tax-deductible</strong>. You'll receive a receipt by email.</p>
+          <div class="donate__badges">
+            <span class="donate__badge">Apple Pay</span>
+            <span class="donate__badge">Credit Card</span>
+            <span class="donate__badge">Zeffy</span>
+            <span class="donate__badge">Recurring</span>
+          </div>
+        </div>
+        <div class="donate__card">
+          <div class="donate__card-header">Choose an amount</div>
+          <div class="donate__amounts">
+            <button class="donate__amt">$5</button>
+            <button class="donate__amt">$15</button>
+            <button class="donate__amt donate__amt--active">$25</button>
+            <button class="donate__amt">$50</button>
+            <button class="donate__amt">$100</button>
+            <button class="donate__amt">Custom</button>
+          </div>
+          <a href="https://www.zeffy.com/en-US/donation-form" target="_blank" rel="noopener" class="btn btn--primary btn--full">Donate $25</a>
+          <p class="donate__note">Secure &middot; Tax-deductible &middot; Zero processing fees</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ FOOTER ═══════════════════ -->
+  <footer class="footer" id="contact">
+    <div class="container">
+      <div class="footer__top">
+        <div class="footer__brand">
+          <div class="footer__logo">
+            <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+              <path d="M8 28C8 28 6 16 16 8C26 16 24 28 24 28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M16 8V24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M16 16C13 14 10 15 10 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M16 19C19 17 22 18 22 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span>Better Nature</span>
+          </div>
+          <p class="footer__tagline">Stand for what sustains you.</p>
+          <div class="footer__social">
+            <a href="https://instagram.com/betternatureofficial" target="_blank" rel="noopener" aria-label="Instagram">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/></svg>
+            </a>
+            <a href="https://twitter.com/betternature24" target="_blank" rel="noopener" aria-label="X / Twitter">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l6.5 8L4 20h2l5.5-6.5L16 20h4l-7-8.5L19.5 4H18l-5 6L9 4H4z"/></svg>
+            </a>
+            <a href="https://facebook.com/betternatureofficial" target="_blank" rel="noopener" aria-label="Facebook">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg>
+            </a>
+          </div>
+        </div>
+        <div class="footer__col">
+          <h4>Projects</h4>
+          <a href="#programs">Project IRIS</a>
+          <a href="#programs">Project Evergreen</a>
+          <a href="#programs">Project Hydro</a>
+        </div>
+        <div class="footer__col">
+          <h4>Organization</h4>
+          <a href="#about">About Us</a>
+          <a href="#impact">Our Impact</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#get-involved">Get Involved</a>
+        </div>
+        <div class="footer__col">
+          <h4>Contact</h4>
+          <a href="mailto:info@betternatureofficial.org">info@betternatureofficial.org</a>
+          <a href="https://betternatureofficial.org">betternatureofficial.org</a>
+          <a href="https://www.zeffy.com/en-US/donation-form" target="_blank" rel="noopener">Donate via Zeffy</a>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <p>&copy; 2026 Better Nature. All rights reserved. 501(c)(3) nonprofit organization.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Navbar scroll
+    const nav = document.getElementById('nav');
+    let lastScroll = 0;
+    window.addEventListener('scroll', () => {
+      nav.classList.toggle('nav--scrolled', window.scrollY > 50);
+    });
+
+    // Mobile toggle
+    const toggle = document.getElementById('navToggle');
+    const links = document.getElementById('navLinks');
+    toggle.addEventListener('click', () => {
+      links.classList.toggle('nav__links--open');
+      toggle.classList.toggle('nav__toggle--active');
+      document.body.classList.toggle('menu-open');
+    });
+
+    // Close on link click
+    document.querySelectorAll('.nav__links a').forEach(a => {
+      a.addEventListener('click', () => {
+        links.classList.remove('nav__links--open');
+        toggle.classList.remove('nav__toggle--active');
+        document.body.classList.remove('menu-open');
+      });
+    });
+
+    // Smooth scroll
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          const offset = 80;
+          const top = target.getBoundingClientRect().top + window.pageYOffset - offset;
+          window.scrollTo({ top, behavior: 'smooth' });
+        }
+      });
+    });
+
+    // Intersection Observer — staggered reveals
+    const observerOpts = { threshold: 0.08, rootMargin: '0px 0px -40px 0px' };
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, observerOpts);
+
+    document.querySelectorAll(
+      '.value-card, .program-row, .impact-card, .feature-card, .how__step, .insecurity__layout, .donate__layout, .about__layout'
+    ).forEach((el, i) => {
+      el.classList.add('reveal');
+      el.style.transitionDelay = `${(i % 4) * 0.08}s`;
+      observer.observe(el);
+    });
+
+    // Donate amount selection
+    document.querySelectorAll('.donate__amt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.donate__amt').forEach(b => b.classList.remove('donate__amt--active'));
+        btn.classList.add('donate__amt--active');
+        const donateBtn = document.querySelector('.donate__card .btn');
+        if (donateBtn && btn.textContent !== 'Custom') {
+          donateBtn.textContent = `Donate ${btn.textContent}`;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
