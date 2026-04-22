@@ -53,16 +53,19 @@
   <div class="hero__shape hero__shape--2"></div>
 
   <div class="hero__inner">
-    <div class="hero__eyebrow" id="heroEyebrow"></div>
-    <h1 class="hero__h1">
-      <span id="heroHeadline"></span>
-      <em id="heroHeadlineItalic"></em>
-    </h1>
-    <p class="hero__sub" id="heroSub"></p>
-    <div class="hero__ctas">
-      <a class="btn btn--forest btn--lg" id="heroCta1"></a>
-      <a class="btn btn--outline btn--lg" id="heroCta2"></a>
+    <div class="hero__copy">
+      <div class="hero__eyebrow" id="heroEyebrow"></div>
+      <h1 class="hero__h1">
+        <span id="heroHeadline"></span>
+        <em id="heroHeadlineItalic"></em>
+      </h1>
+      <p class="hero__sub" id="heroSub"></p>
+      <div class="hero__ctas">
+        <a class="btn btn--forest btn--lg" id="heroCta1"></a>
+        <a class="btn btn--outline btn--lg" id="heroCta2"></a>
+      </div>
     </div>
+    <div class="hero__media" id="heroMedia"></div>
   </div>
 
   <div class="ticker">
@@ -263,6 +266,15 @@
 </section>
 
 </main>
+
+<!-- ══════════════════════════ CHAPTER MODAL -->
+<div class="modal" id="chapterModal" aria-hidden="true">
+  <div class="modal__backdrop" data-close></div>
+  <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="chapterModalTitle">
+    <button class="modal__close" data-close aria-label="Close">×</button>
+    <div id="chapterModalBody"></div>
+  </div>
+</div>
 
 <!-- ══════════════════════════ FOOTER -->
 <footer class="footer">

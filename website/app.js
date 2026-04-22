@@ -47,6 +47,13 @@
   ).join('');
   setHTML('#tickerTrack', tickerItems + tickerItems);
 
+  // Hero media collage (trees, fresh water, produce crates)
+  if (C.hero.media && C.hero.media.length) {
+    setHTML('#heroMedia', C.hero.media.map((m, i) =>
+      `<figure class="hero__tile hero__tile--${i + 1}"><img src="${m.src}" alt="${m.alt || ''}" loading="lazy" /></figure>`
+    ).join(''));
+  }
+
   // ── MISSION ─────────────────────────────────────────────────────────
   set('#missionEyebrow', C.mission.eyebrow);
   set('#missionTitle', C.mission.title);
@@ -150,17 +157,62 @@
   set('#chaptersEyebrow', C.chapters.eyebrow);
   set('#chaptersTitle', C.chapters.title);
   set('#chaptersBody', C.chapters.body);
-  setHTML('#chaptersGrid', C.chapters.featured.map(ch => `
-    <div class="chapter reveal">
+  setHTML('#chaptersGrid', C.chapters.featured.map((ch, i) => `
+    <button type="button" class="chapter reveal" data-chapter="${i}">
       <div class="chapter__city">${ch.city}</div>
       <div class="chapter__state">${ch.state}</div>
       <div class="chapter__meta">
         <span>President: ${ch.president}</span>
         <span class="chapter__members">${ch.members} members</span>
       </div>
-    </div>
+      <span class="chapter__more">View chapter →</span>
+    </button>
   `).join(''));
   $('#startChapterBtn').href = C.chapters.startChapterUrl;
+
+  // Chapter modal
+  const modal = $('#chapterModal');
+  const modalBody = $('#chapterModalBody');
+  const openChapter = (idx) => {
+    const ch = C.chapters.featured[idx];
+    if (!ch) return;
+    const roster = (ch.roster || []).map(m => `
+      <li class="chapter-modal__member">
+        <div>
+          <strong>${m.name}</strong>
+          <span>${m.role || ''}</span>
+        </div>
+        ${m.instagram ? `<a href="${m.instagram}" target="_blank" rel="noreferrer" aria-label="${m.name} on Instagram">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
+        </a>` : ''}
+      </li>
+    `).join('') || '<li class="chapter-modal__empty">Roster coming soon.</li>';
+    modalBody.innerHTML = `
+      <div class="eyebrow eyebrow--pink">Chapter</div>
+      <h3 id="chapterModalTitle" class="chapter-modal__title">${ch.city}, ${ch.state}</h3>
+      ${ch.blurb ? `<p class="chapter-modal__blurb">${ch.blurb}</p>` : ''}
+      <div class="chapter-modal__stats">
+        <span><strong>${ch.members}</strong> members</span>
+        <span>President: <strong>${ch.president}</strong></span>
+        ${ch.instagram ? `<a class="chapter-modal__ig" href="${ch.instagram}" target="_blank" rel="noreferrer">@chapter on Instagram ↗</a>` : ''}
+      </div>
+      <h4 class="chapter-modal__subhead">Roster</h4>
+      <ul class="chapter-modal__roster">${roster}</ul>
+    `;
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  };
+  const closeChapter = () => {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  };
+  document.querySelectorAll('[data-chapter]').forEach(btn => {
+    btn.addEventListener('click', () => openChapter(Number(btn.dataset.chapter)));
+  });
+  modal.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', closeChapter));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('is-open')) closeChapter(); });
 
   // ── PARTNERS ────────────────────────────────────────────────────────
   set('#partnersEyebrow', C.partners.eyebrow);

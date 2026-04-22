@@ -402,6 +402,36 @@ function renderChapters() {
     row2.appendChild(input('President name', c.president, v => state.chapters.featured[i].president = v));
     row2.appendChild(input('Member count', c.members, v => state.chapters.featured[i].members = Number(v)||0, { type: 'number' }));
     card.appendChild(row2);
+    card.appendChild(input('Chapter Instagram URL', c.instagram || '', v => state.chapters.featured[i].instagram = v));
+    card.appendChild(input('Short blurb', c.blurb || '', v => state.chapters.featured[i].blurb = v));
+    // Roster editor
+    const rosterWrap = document.createElement('div');
+    rosterWrap.style.marginTop = '14px';
+    rosterWrap.innerHTML = '<div style="font-weight:600;color:var(--forest);margin-bottom:8px;">Roster</div>';
+    state.chapters.featured[i].roster = state.chapters.featured[i].roster || [];
+    const renderRoster = () => {
+      rosterWrap.querySelectorAll('.roster-row').forEach(n => n.remove());
+      state.chapters.featured[i].roster.forEach((m, j) => {
+        const rr = document.createElement('div');
+        rr.className = 'roster-row field--row';
+        rr.appendChild(input('Name', m.name, v => state.chapters.featured[i].roster[j].name = v));
+        rr.appendChild(input('Role', m.role, v => state.chapters.featured[i].roster[j].role = v));
+        rr.appendChild(input('Instagram URL', m.instagram, v => state.chapters.featured[i].roster[j].instagram = v));
+        const del = document.createElement('button');
+        del.className = 'btn btn--ghost btn-small btn-danger';
+        del.textContent = '✕';
+        del.onclick = () => { state.chapters.featured[i].roster.splice(j,1); markDirty(); renderRoster(); };
+        rr.appendChild(del);
+        rosterWrap.appendChild(rr);
+      });
+    };
+    renderRoster();
+    const addMember = document.createElement('button');
+    addMember.className = 'add-row';
+    addMember.textContent = '＋ Add member';
+    addMember.onclick = () => { state.chapters.featured[i].roster.push({ name: 'New member', role: '', instagram: '' }); markDirty(); renderRoster(); };
+    rosterWrap.appendChild(addMember);
+    card.appendChild(rosterWrap);
     const controls = document.createElement('div');
     controls.className = 'row-controls';
     controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
@@ -550,7 +580,7 @@ const ADD_TEMPLATES = {
   impact:       () => state.impact.stats.push({ value: '0', label: 'New stat', sublabel: '' }),
   hero:         () => state.hero.tickerStats.push({ value: '0', label: 'new stat' }),
   team:         () => state.team.members.push({ name: 'New member', role: '', city: '', bio: '', photo: '' }),
-  chapters:     () => state.chapters.featured.push({ city: 'New city', state: '', president: '', members: 0 }),
+  chapters:     () => state.chapters.featured.push({ city: 'New city', state: '', president: '', members: 0, instagram: '', blurb: '', roster: [] }),
   testimonials: () => state.testimonials.push({ quote: '', name: '', role: '', city: '' }),
   events:       () => state.events.push({ date: new Date().toISOString().split('T')[0], time: '10:00 AM', title: 'New event', chapter: '', type: 'Community', href: '' }),
   partners:     () => state.partners.logos.push('New partner'),
