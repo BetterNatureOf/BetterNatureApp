@@ -275,6 +275,80 @@
     });
   }
 
+  // ── GET THE APP ─────────────────────────────────────────────────────
+  if (C.getApp) {
+    set('#getappEyebrow', C.getApp.eyebrow);
+    set('#getappTitle', C.getApp.title);
+    set('#getappBody', C.getApp.body);
+    set('#getappQrNote', C.getApp.qrNote || '');
+    const links = (C.brand && C.brand.appLinks) || {};
+    const webUrl = links.webApp || 'https://app.betternatureofficial.org';
+    const qr = $('#getappQr');
+    if (qr) qr.src = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(webUrl)}`;
+    const ctas = [
+      { href: links.appStore || '#', label: 'App Store', sub: 'Download on the', cls: 'btn--forest' },
+      { href: links.googlePlay || '#', label: 'Google Play', sub: 'Get it on', cls: 'btn--forest' },
+      { href: webUrl, label: 'Open web app', sub: 'app.betternatureofficial.org', cls: 'btn--pink' },
+    ];
+    setHTML('#getappCtas', ctas.map(c =>
+      `<a class="btn ${c.cls} btn--lg storebtn" href="${c.href}" target="_blank" rel="noreferrer"><small>${c.sub}</small><span>${c.label}</span></a>`
+    ).join(''));
+  }
+
+  // ── SIGNUP ──────────────────────────────────────────────────────────
+  if (C.signup) {
+    set('#signupEyebrow', C.signup.eyebrow);
+    set('#signupTitle', C.signup.title);
+    set('#signupBody', C.signup.body);
+    const tracks = C.signup.tracks || [];
+    setHTML('#signupTabs', tracks.map((t, i) =>
+      `<button class="signup__tab ${i === 0 ? 'is-active' : ''}" data-track="${t.key}">${t.label}</button>`
+    ).join(''));
+    const renderField = (f) => {
+      const req = f.required ? 'required' : '';
+      if (f.type === 'textarea') {
+        return `<label><span>${f.label}${f.required ? ' *' : ''}</span><textarea name="${f.name}" rows="3" ${req}></textarea></label>`;
+      }
+      if (f.type === 'select') {
+        const opts = (f.options || []).map(o => `<option value="${o}">${o}</option>`).join('');
+        return `<label><span>${f.label}${f.required ? ' *' : ''}</span><select name="${f.name}" ${req}><option value="">Choose one…</option>${opts}</select></label>`;
+      }
+      return `<label><span>${f.label}${f.required ? ' *' : ''}</span><input type="${f.type}" name="${f.name}" ${req} /></label>`;
+    };
+    setHTML('#signupForms', tracks.map((t, i) => `
+      <form class="signup__form ${i === 0 ? 'is-active' : ''}" data-track="${t.key}" data-mailto="${t.mailto || C.brand.email}">
+        <p class="signup__tagline">${t.tagline || ''}</p>
+        <div class="signup__fields">${(t.fields || []).map(renderField).join('')}</div>
+        <button type="submit" class="btn btn--pink btn--lg">${t.submit || 'Submit'}</button>
+        <p class="signup__status" aria-live="polite"></p>
+      </form>
+    `).join(''));
+
+    document.querySelectorAll('.signup__tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const key = tab.dataset.track;
+        document.querySelectorAll('.signup__tab').forEach(t => t.classList.toggle('is-active', t.dataset.track === key));
+        document.querySelectorAll('.signup__form').forEach(f => f.classList.toggle('is-active', f.dataset.track === key));
+      });
+    });
+
+    document.querySelectorAll('.signup__form').forEach(form => {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const data = new FormData(form);
+        const track = form.dataset.track;
+        const lines = [];
+        data.forEach((v, k) => { if (v) lines.push(`${k}: ${v}`); });
+        const subject = encodeURIComponent(`[${track === 'volunteer' ? 'Volunteer' : 'Business partner'}] ${data.get('businessName') || data.get('fullName') || 'New signup'}`);
+        const body = encodeURIComponent(lines.join('\n'));
+        const to = form.dataset.mailto || C.brand.email;
+        window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+        const status = form.querySelector('.signup__status');
+        if (status) status.textContent = 'Opening your email… we\'ll reply within 24 hours.';
+      });
+    });
+  }
+
   // ── FOOTER ──────────────────────────────────────────────────────────
   set('#footerTagline', C.brand.tagline);
   const fe = $('#footerEmail');

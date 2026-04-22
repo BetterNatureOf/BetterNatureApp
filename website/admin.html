@@ -236,6 +236,12 @@
         <div class="field"><label>Donate URL (Zeffy)</label><input id="brand-donate" /></div>
       </div>
     </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card__title" style="margin-bottom:20px;">App download links</div>
+      <div class="field"><label>Apple App Store URL</label><input id="brand-appstore" placeholder="https://apps.apple.com/..." /></div>
+      <div class="field"><label>Google Play URL</label><input id="brand-googleplay" placeholder="https://play.google.com/..." /></div>
+      <div class="field"><label>Web app URL (drives the QR code)</label><input id="brand-webapp" placeholder="https://app.betternatureofficial.org" /></div>
+    </div>
   </div>
 
 </div>
@@ -528,6 +534,15 @@ function renderBrand() {
   hook('#brand-tw', 'twitter');
   hook('#brand-fb', 'facebook');
   hook('#brand-donate', 'donateUrl');
+
+  state.brand.appLinks = state.brand.appLinks || { appStore: '', googlePlay: '', webApp: '' };
+  $('#brand-appstore').value = state.brand.appLinks.appStore || '';
+  $('#brand-googleplay').value = state.brand.appLinks.googlePlay || '';
+  $('#brand-webapp').value = state.brand.appLinks.webApp || '';
+  const hookApp = (id, key) => $(id).addEventListener('input', () => { state.brand.appLinks[key] = $(id).value; markDirty(); });
+  hookApp('#brand-appstore', 'appStore');
+  hookApp('#brand-googleplay', 'googlePlay');
+  hookApp('#brand-webapp', 'webApp');
 }
 
 // ── Add row templates ──

@@ -21,6 +21,61 @@ window.CONTENT = {
     facebook: "https://facebook.com/betternatureofficial",
     linkedin: "",
     donateUrl: "https://www.zeffy.com/en-US/donation-form",
+    appLinks: {
+      appStore: "#",
+      googlePlay: "#",
+      webApp: "https://app.betternatureofficial.org",
+    },
+  },
+
+  // ── GET THE APP ───────────────────────────────────────────────────────
+  getApp: {
+    eyebrow: "Take it with you",
+    title: "The Better Nature app.",
+    body: "Claim shifts, log pickups, track your impact, and connect with your chapter — wherever you are. Scan the code or grab it from your store.",
+    qrNote: "Scan to download",
+  },
+
+  // ── SIGNUP ────────────────────────────────────────────────────────────
+  signup: {
+    eyebrow: "Join the network",
+    title: "Create your account.",
+    body: "Sign up as a restaurant, grocer, or business partner — or as a volunteer. Same network, different doors in.",
+    tracks: [
+      {
+        key: "business",
+        label: "Restaurant / business",
+        tagline: "Restaurants, grocers, cafés, caterers, corporate kitchens — any business with edible surplus. Free, same-day pickup. Tax-deductible.",
+        fields: [
+          { name: "businessName", label: "Business name", type: "text", required: true },
+          { name: "businessType", label: "Type of business", type: "select", options: ["Restaurant", "Café / bakery", "Grocer / market", "Caterer", "Corporate kitchen", "Hotel", "School / university", "Other"], required: true },
+          { name: "contactName", label: "Your name", type: "text", required: true },
+          { name: "email", label: "Email", type: "email", required: true },
+          { name: "phone", label: "Phone", type: "tel", required: true },
+          { name: "city", label: "City & state", type: "text", required: true },
+          { name: "volume", label: "Est. surplus / week (lbs)", type: "text", required: false },
+          { name: "notes", label: "Anything we should know?", type: "textarea", required: false },
+        ],
+        submit: "Request partner call",
+        mailto: "info@betternatureofficial.org",
+      },
+      {
+        key: "volunteer",
+        label: "Volunteer",
+        tagline: "Pickups, plantings, cleanups. Claim any shift that fits your week.",
+        fields: [
+          { name: "fullName", label: "Full name", type: "text", required: true },
+          { name: "email", label: "Email", type: "email", required: true },
+          { name: "phone", label: "Phone", type: "tel", required: false },
+          { name: "city", label: "City & state", type: "text", required: true },
+          { name: "age", label: "Age", type: "text", required: false },
+          { name: "interests", label: "Which program excites you most?", type: "select", options: ["IRIS — Food rescue", "Evergreen — Conservation", "Hydro — Waterways", "All of them"], required: true },
+          { name: "availability", label: "When are you free?", type: "textarea", required: false },
+        ],
+        submit: "Sign up to volunteer",
+        mailto: "info@betternatureofficial.org",
+      },
+    ],
   },
 
   // ── HERO ──────────────────────────────────────────────────────────────
@@ -30,7 +85,7 @@ window.CONTENT = {
     headlineItalic: "destination.",
     subhead: "Every three seconds, another pound of edible food hits a landfill. One in eight Americans skips a meal. Better Nature moves the first to the second — with restaurants, volunteers, and communities that refuse to waste either.",
     primaryCta: { text: "Read our mission", href: "#mission" },
-    secondaryCta: { text: "Partner your restaurant", href: "#partners" },
+    secondaryCta: { text: "Partner your business", href: "#signup" },
     tickerStats: [
       { value: "1.2M", label: "meals rescued" },
       { value: "38", label: "cities" },
@@ -92,7 +147,7 @@ window.CONTENT = {
           { value: "180", label: "partner restaurants" },
           { value: "< 2hrs", label: "pickup to table" },
         ],
-        cta: { text: "Become a partner restaurant", href: "#partners" },
+        cta: { text: "Become a partner business", href: "#signup" },
       },
       {
         key: "evergreen",
@@ -140,7 +195,7 @@ window.CONTENT = {
     title: "Two ways in. One network.",
     tracks: [
       {
-        label: "For restaurants & businesses",
+        label: "For restaurants, grocers & businesses",
         tagline: "Turn your surplus into tax-deductible impact — free, easy, same-day pickup.",
         steps: [
           { num: "01", title: "15-min partner call", body: "Tell us your kitchen, your volume, your schedule. We match you to a chapter." },
@@ -148,7 +203,7 @@ window.CONTENT = {
           { num: "03", title: "We handle everything", body: "We weigh, photograph, and log every pickup. Your staff just hands us the tray." },
           { num: "04", title: "Tax receipt + impact report", body: "Monthly statement with weight, meal equivalents, CO₂ avoided, and your Bill Emerson Act protection." },
         ],
-        cta: { text: "Become a partner restaurant", href: "mailto:info@betternatureofficial.org?subject=Partner%20my%20restaurant" },
+        cta: { text: "Sign your business up", href: "#signup" },
       },
       {
         label: "For volunteers",
@@ -243,9 +298,9 @@ window.CONTENT = {
 
   // ── PARTNER RESTAURANTS / SPONSORS ────────────────────────────────────
   partners: {
-    eyebrow: "Restaurant & business partners",
-    title: "180+ kitchens that refuse to waste.",
-    body: "From family-owned cafés to regional chains, our partners donate edible surplus every week. All pickups are free, scheduled, and tax-deductible under the Bill Emerson Good Samaritan Food Donation Act.",
+    eyebrow: "Restaurant, grocer & business partners",
+    title: "180+ businesses that refuse to waste.",
+    body: "Restaurants, cafés, grocers, bakeries, caterers, corporate kitchens, hotels, schools — any business with edible surplus. All pickups are free, scheduled, and tax-deductible under the Bill Emerson Good Samaritan Food Donation Act.",
     logos: [
       // Replace with real partner names. Logo images go in website/partners/ when you have them.
       "Add partner 1", "Add partner 2", "Add partner 3", "Add partner 4",
@@ -254,7 +309,7 @@ window.CONTENT = {
     pitch: {
       title: "Turn your surplus into tax-deductible impact.",
       body: "Free. Easy. Same-day pickup. Your leftovers feed a family tonight, and you get a monthly report with weight rescued, meal equivalents, CO₂ avoided, and your tax receipt.",
-      cta: { text: "Start the 15-min partner call", href: "mailto:info@betternatureofficial.org?subject=Partner%20my%20restaurant" },
+      cta: { text: "Start the 15-min partner call", href: "#signup" },
     },
   },
 
