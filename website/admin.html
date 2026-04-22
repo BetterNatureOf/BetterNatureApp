@@ -507,25 +507,24 @@ function renderEvents() {
 function renderPartners() {
   const list = $('#partnersList');
   list.innerHTML = '';
-  state.partners.logos.forEach((name, i) => {
+  state.partners.logos.forEach((p, i) => {
+    // Migrate legacy string entries → object
+    if (typeof p === 'string') { state.partners.logos[i] = { name: p, website: '', instagram: '', logo: '' }; p = state.partners.logos[i]; }
     const card = document.createElement('div');
     card.className = 'card';
-    card.style.padding = '16px 24px';
-    card.style.display = 'flex';
-    card.style.gap = '12px';
-    card.style.alignItems = 'center';
-    const field = input('', name, v => state.partners.logos[i] = v);
-    field.style.flex = '1';
-    field.style.marginBottom = '0';
-    field.querySelector('label').style.display = 'none';
-    card.appendChild(field);
-    const del = document.createElement('button');
-    del.className = 'btn btn--ghost btn-small btn-danger';
-    del.textContent = 'Delete';
-    del.onclick = () => {
-      state.partners.logos.splice(i,1); markDirty(); renderPartners();
-    };
-    card.appendChild(del);
+    card.innerHTML = `<div class="card__head"><div class="card__title">${p.name || 'New partner'}</div></div>`;
+    card.appendChild(input('Partner name', p.name, v => { state.partners.logos[i].name = v; card.querySelector('.card__title').textContent = v || 'New partner'; }));
+    const row = document.createElement('div');
+    row.className = 'field--row';
+    row.appendChild(input('Website URL', p.website || '', v => state.partners.logos[i].website = v));
+    row.appendChild(input('Instagram URL', p.instagram || '', v => state.partners.logos[i].instagram = v));
+    card.appendChild(row);
+    card.appendChild(input('Logo image URL (optional)', p.logo || '', v => state.partners.logos[i].logo = v));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => { state.partners.logos.splice(i,1); markDirty(); renderPartners(); };
+    card.appendChild(controls);
     list.appendChild(card);
   });
 }
@@ -583,7 +582,7 @@ const ADD_TEMPLATES = {
   chapters:     () => state.chapters.featured.push({ city: 'New city', state: '', president: '', members: 0, instagram: '', blurb: '', roster: [] }),
   testimonials: () => state.testimonials.push({ quote: '', name: '', role: '', city: '' }),
   events:       () => state.events.push({ date: new Date().toISOString().split('T')[0], time: '10:00 AM', title: 'New event', chapter: '', type: 'Community', href: '' }),
-  partners:     () => state.partners.logos.push('New partner'),
+  partners:     () => state.partners.logos.push({ name: 'New partner', website: '', instagram: '', logo: '' }),
 };
 const RENDERERS = {
   impact: renderImpact, hero: renderHero, team: renderTeam,

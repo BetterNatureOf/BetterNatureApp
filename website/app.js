@@ -219,7 +219,21 @@
   set('#partnersTitle', C.partners.title);
   set('#partnersBody', C.partners.body);
 
-  const partnerLogos = C.partners.logos.map(name => `<span class="partner-logo">${name}</span>`).join('');
+  const partnerLogos = C.partners.logos.map(p => {
+    const obj = (typeof p === 'string') ? { name: p } : p;
+    const href = obj.website || obj.instagram || '';
+    const inner = obj.logo
+      ? `<img src="${obj.logo}" alt="${obj.name}" /><span>${obj.name}</span>`
+      : `<span>${obj.name}</span>`;
+    const igBadge = obj.instagram && obj.website
+      ? `<a class="partner-logo__ig" href="${obj.instagram}" target="_blank" rel="noreferrer" aria-label="${obj.name} on Instagram" onclick="event.stopPropagation()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
+        </a>`
+      : '';
+    return href
+      ? `<a class="partner-logo is-link" href="${href}" target="_blank" rel="noreferrer">${inner}${igBadge}</a>`
+      : `<span class="partner-logo">${inner}</span>`;
+  }).join('');
   setHTML('#partnerLogos', partnerLogos + partnerLogos);
 
   set('#pitchTitle', C.partners.pitch.title);

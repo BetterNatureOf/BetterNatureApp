@@ -13,7 +13,7 @@ window.CONTENT = {
   // ── BRAND ─────────────────────────────────────────────────────────────
   brand: {
     name: "Better Nature",
-    tagline: "Feed people. Plant forests. Protect the water.",
+    tagline: "Rescue. Restore. Protect.",
     email: "info@betternatureofficial.org",
     phone: "",
     instagram: "https://instagram.com/betternatureofficial",
@@ -321,10 +321,17 @@ window.CONTENT = {
     eyebrow: "Restaurant, grocer & business partners",
     title: "180+ businesses that refuse to waste.",
     body: "Restaurants, cafés, grocers, bakeries, caterers, corporate kitchens, hotels, schools — any business with edible surplus. All pickups are free, scheduled, and tax-deductible under the Bill Emerson Good Samaritan Food Donation Act.",
+    // Each partner: name (required). Optional: website, instagram, logo (image URL).
+    // If website OR instagram is set, the tile becomes clickable.
     logos: [
-      // Replace with real partner names. Logo images go in website/partners/ when you have them.
-      "Add partner 1", "Add partner 2", "Add partner 3", "Add partner 4",
-      "Add partner 5", "Add partner 6", "Add partner 7", "Add partner 8",
+      { name: "Add partner 1", website: "", instagram: "", logo: "" },
+      { name: "Add partner 2", website: "", instagram: "", logo: "" },
+      { name: "Add partner 3", website: "", instagram: "", logo: "" },
+      { name: "Add partner 4", website: "", instagram: "", logo: "" },
+      { name: "Add partner 5", website: "", instagram: "", logo: "" },
+      { name: "Add partner 6", website: "", instagram: "", logo: "" },
+      { name: "Add partner 7", website: "", instagram: "", logo: "" },
+      { name: "Add partner 8", website: "", instagram: "", logo: "" },
     ],
     pitch: {
       title: "Turn your surplus into tax-deductible impact.",

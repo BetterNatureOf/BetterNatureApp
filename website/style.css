@@ -1527,3 +1527,10 @@ a { color: inherit; text-decoration: none; }
 .chapter-modal__member a { color: var(--pink); display: inline-flex; align-items: center; }
 .chapter-modal__member a:hover { color: var(--pink-dark); }
 .chapter-modal__empty { color: #6a7d72; font-style: italic; }
+
+/* ═══════════ CLICKABLE PARTNER LOGOS ═══════════ */
+.partner-logo.is-link { cursor: pointer; text-decoration: none; color: inherit; transition: all 0.2s var(--ease); position: relative; display: inline-flex; align-items: center; gap: 10px; }
+.partner-logo.is-link:hover { color: var(--pink); transform: translateY(-2px); }
+.partner-logo img { height: 28px; width: auto; display: block; }
+.partner-logo__ig { display: inline-flex; align-items: center; color: var(--pink); margin-left: 6px; opacity: 0.7; transition: opacity 0.2s; }
+.partner-logo__ig:hover { opacity: 1; }
