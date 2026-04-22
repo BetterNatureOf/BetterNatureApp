@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Better Nature — Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background: var(--cream); padding-top: 0; }
+    .admin-nav {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--forest); color: var(--cream);
+      padding: 14px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .admin-nav__brand { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+    .admin-nav__brand img { width: 32px; height: 32px; border-radius: 50%; }
+    .admin-nav__actions { display: flex; gap: 10px; align-items: center; }
+    .admin-nav__status { font-size: 13px; color: rgba(247,244,240,.6); margin-right: 10px; }
+    .admin-nav__status.saved { color: #86efac; }
+    .admin-nav__status.dirty { color: var(--pink); }
+
+    .admin { max-width: 1200px; margin: 40px auto; padding: 0 32px; }
+    .admin h1 {
+      font-family: var(--sans); font-weight: 600; font-size: 40px;
+      color: var(--forest); letter-spacing: -.025em; margin-bottom: 12px;
+    }
+    .admin > p.lede {
+      color: var(--ink-60); font-size: 16px; max-width: 700px;
+      margin-bottom: 40px;
+    }
+
+    .admin-tabs {
+      display: flex; gap: 4px; margin-bottom: 24px; overflow-x: auto;
+      border-bottom: 1px solid var(--line);
+    }
+    .admin-tab {
+      padding: 12px 20px; font-size: 14px; font-weight: 600;
+      color: var(--ink-60); border-bottom: 2px solid transparent;
+      margin-bottom: -1px; white-space: nowrap;
+    }
+    .admin-tab.is-active {
+      color: var(--forest); border-bottom-color: var(--pink);
+    }
+
+    .panel { display: none; }
+    .panel.is-active { display: block; }
+
+    .card {
+      background: white; border-radius: 14px; border: 1px solid var(--line);
+      padding: 28px; margin-bottom: 16px;
+    }
+    .card__head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .card__title {
+      font-family: var(--sans); font-weight: 600; font-size: 18px;
+      color: var(--forest); letter-spacing: -.01em;
+    }
+
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--ink-60); margin-bottom: 6px;
+    }
+    .field input, .field textarea {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--line);
+      border-radius: 8px; font-family: var(--sans); font-size: 15px;
+      background: var(--parchment); color: var(--charcoal);
+      transition: border-color .2s;
+    }
+    .field input:focus, .field textarea:focus {
+      outline: none; border-color: var(--pink);
+    }
+    .field textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+    .field--row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field--row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    .btn-small { padding: 8px 14px; font-size: 13px; border-radius: 999px; font-weight: 600; }
+    .btn-danger {
+      background: transparent; color: var(--pink-dark);
+      border: 1.5px solid var(--pink-soft);
+    }
+    .btn-danger:hover { background: var(--pink-soft); }
+
+    .row-controls {
+      display: flex; gap: 8px; justify-content: flex-end;
+      margin-top: 8px;
+    }
+    .add-row {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 18px; border-radius: 999px;
+      background: var(--forest); color: var(--cream); font-size: 14px; font-weight: 600;
+      margin-top: 8px; cursor: pointer;
+    }
+    .add-row:hover { background: var(--forest-ink); }
+
+    .panel__help {
+      background: var(--pink-soft); border-radius: 12px; padding: 16px 20px;
+      margin-bottom: 24px; font-size: 14px; color: var(--forest-ink);
+      border-left: 3px solid var(--pink);
+    }
+    .panel__help strong { color: var(--pink-dark); }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--forest); color: var(--cream);
+      padding: 14px 22px; border-radius: 12px; font-size: 14px; font-weight: 500;
+      box-shadow: 0 10px 30px -10px rgba(0,0,0,.35);
+      transform: translateY(150%); opacity: 0; transition: all .3s var(--ease);
+      z-index: 100;
+    }
+    .toast.is-show { transform: translateY(0); opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="admin-nav">
+  <div class="admin-nav__brand">
+    <img src="logo.png" alt="" />
+    <span>Better Nature Admin</span>
+  </div>
+  <div class="admin-nav__actions">
+    <span class="admin-nav__status saved" id="status">Synced</span>
+    <a class="btn btn--ghost btn-small" href="index.html" style="color:var(--cream);">View site</a>
+    <button class="btn btn--pink btn-small" id="saveBtn">Save changes</button>
+    <button class="btn btn--outline btn-small" id="exportBtn" style="color:var(--cream);border-color:rgba(255,255,255,.3);">Export content.js</button>
+  </div>
+</div>
+
+<div class="admin">
+  <h1>Edit your site</h1>
+  <p class="lede">Change any number, name, or quote below. Hit <strong>Save changes</strong> and your live site updates instantly. When you're ready to make it permanent, click <strong>Export content.js</strong> and replace the file on your server.</p>
+
+  <div class="admin-tabs" id="tabs">
+    <button class="admin-tab is-active" data-panel="impact">Impact stats</button>
+    <button class="admin-tab" data-panel="hero">Hero ticker</button>
+    <button class="admin-tab" data-panel="team">Team</button>
+    <button class="admin-tab" data-panel="chapters">Chapters</button>
+    <button class="admin-tab" data-panel="testimonials">Testimonials</button>
+    <button class="admin-tab" data-panel="events">Events</button>
+    <button class="admin-tab" data-panel="partners">Partners</button>
+    <button class="admin-tab" data-panel="programs">Program stats</button>
+    <button class="admin-tab" data-panel="brand">Contact info</button>
+  </div>
+
+  <!-- IMPACT -->
+  <div class="panel is-active" id="panel-impact">
+    <div class="panel__help">
+      <strong>Impact stats</strong> are the big pink numbers in the "Real numbers. Real neighbors." section.
+    </div>
+    <div id="impactList"></div>
+    <button class="add-row" data-add="impact">＋ Add a stat</button>
+  </div>
+
+  <!-- HERO TICKER -->
+  <div class="panel" id="panel-hero">
+    <div class="panel__help">
+      <strong>Hero ticker</strong> = the scrolling stats bar at the bottom of the homepage hero. Keep labels short.
+    </div>
+    <div id="heroList"></div>
+    <button class="add-row" data-add="hero">＋ Add a ticker stat</button>
+  </div>
+
+  <!-- TEAM -->
+  <div class="panel" id="panel-team">
+    <div class="panel__help">
+      <strong>Team members</strong>. To add a photo: upload the image to your site folder (e.g. <code>website/satvik.jpg</code>) and put <code>/satvik.jpg</code> in the Photo field.
+    </div>
+    <div id="teamList"></div>
+    <button class="add-row" data-add="team">＋ Add a team member</button>
+  </div>
+
+  <!-- CHAPTERS -->
+  <div class="panel" id="panel-chapters">
+    <div class="panel__help">
+      <strong>Featured chapters</strong> shown in the Chapters section grid.
+    </div>
+    <div id="chaptersList"></div>
+    <button class="add-row" data-add="chapters">＋ Add a chapter</button>
+  </div>
+
+  <!-- TESTIMONIALS -->
+  <div class="panel" id="panel-testimonials">
+    <div class="panel__help">
+      Quotes from volunteers, restaurant partners, or community members.
+    </div>
+    <div id="testimonialsList"></div>
+    <button class="add-row" data-add="testimonials">＋ Add a testimonial</button>
+  </div>
+
+  <!-- EVENTS -->
+  <div class="panel" id="panel-events">
+    <div class="panel__help">
+      Use format <code>YYYY-MM-DD</code> for date. Type should be <strong>IRIS</strong>, <strong>Evergreen</strong>, <strong>Hydro</strong>, or <strong>Community</strong>.
+    </div>
+    <div id="eventsList"></div>
+    <button class="add-row" data-add="events">＋ Add an event</button>
+  </div>
+
+  <!-- PARTNERS -->
+  <div class="panel" id="panel-partners">
+    <div class="panel__help">
+      Restaurant/business partner names shown in the scrolling marquee.
+    </div>
+    <div id="partnersList"></div>
+    <button class="add-row" data-add="partners">＋ Add a partner</button>
+  </div>
+
+  <!-- PROGRAM STATS -->
+  <div class="panel" id="panel-programs">
+    <div class="panel__help">
+      Stats displayed inside each program card (IRIS, Evergreen, Hydro).
+    </div>
+    <div id="programsList"></div>
+  </div>
+
+  <!-- BRAND / CONTACT -->
+  <div class="panel" id="panel-brand">
+    <div class="panel__help">
+      Global brand info. Appears in the footer and social links.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Contact & social</div>
+      <div class="field"><label>Email</label><input id="brand-email" /></div>
+      <div class="field"><label>Tagline (footer serif italic)</label><input id="brand-tagline" /></div>
+      <div class="field--row">
+        <div class="field"><label>Instagram URL</label><input id="brand-ig" /></div>
+        <div class="field"><label>X / Twitter URL</label><input id="brand-tw" /></div>
+      </div>
+      <div class="field--row">
+        <div class="field"><label>Facebook URL</label><input id="brand-fb" /></div>
+        <div class="field"><label>Donate URL (Zeffy)</label><input id="brand-donate" /></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="content.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN UI — edits window.CONTENT and persists to localStorage.
+//  The live site (app.js) reads from localStorage first, so changes show up
+//  immediately when you click Save. Use Export to permanently update content.js.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const STORAGE_KEY = 'betternature.content.overrides';
+
+// Load current state (base content + any saved overrides)
+let state = structuredClone(window.CONTENT);
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+  if (saved) state = deepMerge(state, saved);
+} catch (e) {}
+
+function deepMerge(a, b) {
+  if (Array.isArray(b)) return b;
+  if (b && typeof b === 'object') {
+    const out = { ...a };
+    for (const k in b) out[k] = deepMerge(a?.[k], b[k]);
+    return out;
+  }
+  return b;
+}
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+let dirty = false;
+function markDirty() {
+  dirty = true;
+  const s = $('#status');
+  s.textContent = '● Unsaved changes';
+  s.className = 'admin-nav__status dirty';
+}
+function markClean() {
+  dirty = false;
+  const s = $('#status');
+  s.textContent = '✓ Saved';
+  s.className = 'admin-nav__status saved';
+}
+
+function input(label, val, onChange, opts = {}) {
+  const el = document.createElement('div');
+  el.className = 'field';
+  el.innerHTML = `<label>${label}</label>${opts.textarea ? `<textarea></textarea>` : `<input type="${opts.type||'text'}" />`}`;
+  const i = el.querySelector('input,textarea');
+  i.value = val ?? '';
+  i.addEventListener('input', () => { onChange(i.value); markDirty(); });
+  return el;
+}
+
+// ── IMPACT ──
+function renderImpact() {
+  const list = $('#impactList');
+  list.innerHTML = '';
+  state.impact.stats.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">Stat ${i+1}</div></div>`;
+    const row = document.createElement('div');
+    row.className = 'field--row';
+    row.appendChild(input('Value', s.value, v => state.impact.stats[i].value = v));
+    row.appendChild(input('Label', s.label, v => state.impact.stats[i].label = v));
+    card.appendChild(row);
+    card.appendChild(input('Sub-label (small text below)', s.sublabel, v => state.impact.stats[i].sublabel = v));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete this stat?')) return;
+      state.impact.stats.splice(i,1); markDirty(); renderImpact();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── HERO TICKER ──
+function renderHero() {
+  const list = $('#heroList');
+  list.innerHTML = '';
+  state.hero.tickerStats.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">Ticker ${i+1}</div></div>`;
+    const row = document.createElement('div');
+    row.className = 'field--row';
+    row.appendChild(input('Value', s.value, v => state.hero.tickerStats[i].value = v));
+    row.appendChild(input('Label', s.label, v => state.hero.tickerStats[i].label = v));
+    card.appendChild(row);
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.hero.tickerStats.splice(i,1); markDirty(); renderHero();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── TEAM ──
+function renderTeam() {
+  const list = $('#teamList');
+  list.innerHTML = '';
+  state.team.members.forEach((m, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${m.name || 'New member'}</div></div>`;
+    const row1 = document.createElement('div');
+    row1.className = 'field--row';
+    row1.appendChild(input('Name', m.name, v => { state.team.members[i].name = v; card.querySelector('.card__title').textContent = v || 'New member'; }));
+    row1.appendChild(input('Role', m.role, v => state.team.members[i].role = v));
+    card.appendChild(row1);
+    const row2 = document.createElement('div');
+    row2.className = 'field--row';
+    row2.appendChild(input('City', m.city, v => state.team.members[i].city = v));
+    row2.appendChild(input('Photo URL (e.g. /satvik.jpg)', m.photo, v => state.team.members[i].photo = v));
+    card.appendChild(row2);
+    card.appendChild(input('Bio', m.bio, v => state.team.members[i].bio = v, { textarea: true }));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete this member?')) return;
+      state.team.members.splice(i,1); markDirty(); renderTeam();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── CHAPTERS ──
+function renderChapters() {
+  const list = $('#chaptersList');
+  list.innerHTML = '';
+  state.chapters.featured.forEach((c, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${c.city || 'New chapter'}</div></div>`;
+    const row1 = document.createElement('div');
+    row1.className = 'field--row';
+    row1.appendChild(input('City', c.city, v => { state.chapters.featured[i].city = v; card.querySelector('.card__title').textContent = v || 'New chapter'; }));
+    row1.appendChild(input('State', c.state, v => state.chapters.featured[i].state = v));
+    card.appendChild(row1);
+    const row2 = document.createElement('div');
+    row2.className = 'field--row';
+    row2.appendChild(input('President name', c.president, v => state.chapters.featured[i].president = v));
+    row2.appendChild(input('Member count', c.members, v => state.chapters.featured[i].members = Number(v)||0, { type: 'number' }));
+    card.appendChild(row2);
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.chapters.featured.splice(i,1); markDirty(); renderChapters();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── TESTIMONIALS ──
+function renderTestimonials() {
+  const list = $('#testimonialsList');
+  list.innerHTML = '';
+  state.testimonials.forEach((t, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">Quote ${i+1}</div></div>`;
+    card.appendChild(input('Quote', t.quote, v => state.testimonials[i].quote = v, { textarea: true }));
+    const row = document.createElement('div');
+    row.className = 'field--row3';
+    row.appendChild(input('Name', t.name, v => state.testimonials[i].name = v));
+    row.appendChild(input('Role', t.role, v => state.testimonials[i].role = v));
+    row.appendChild(input('City', t.city, v => state.testimonials[i].city = v));
+    card.appendChild(row);
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.testimonials.splice(i,1); markDirty(); renderTestimonials();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── EVENTS ──
+function renderEvents() {
+  const list = $('#eventsList');
+  list.innerHTML = '';
+  state.events.forEach((e, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${e.title || 'New event'}</div></div>`;
+    const row1 = document.createElement('div');
+    row1.className = 'field--row';
+    row1.appendChild(input('Date (YYYY-MM-DD)', e.date, v => state.events[i].date = v));
+    row1.appendChild(input('Time', e.time, v => state.events[i].time = v));
+    card.appendChild(row1);
+    card.appendChild(input('Title', e.title, v => { state.events[i].title = v; card.querySelector('.card__title').textContent = v || 'New event'; }));
+    const row2 = document.createElement('div');
+    row2.className = 'field--row';
+    row2.appendChild(input('Chapter', e.chapter, v => state.events[i].chapter = v));
+    row2.appendChild(input('Type', e.type, v => state.events[i].type = v));
+    card.appendChild(row2);
+    card.appendChild(input('RSVP link (optional)', e.href, v => state.events[i].href = v));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.events.splice(i,1); markDirty(); renderEvents();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── PARTNERS ──
+function renderPartners() {
+  const list = $('#partnersList');
+  list.innerHTML = '';
+  state.partners.logos.forEach((name, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.padding = '16px 24px';
+    card.style.display = 'flex';
+    card.style.gap = '12px';
+    card.style.alignItems = 'center';
+    const field = input('', name, v => state.partners.logos[i] = v);
+    field.style.flex = '1';
+    field.style.marginBottom = '0';
+    field.querySelector('label').style.display = 'none';
+    card.appendChild(field);
+    const del = document.createElement('button');
+    del.className = 'btn btn--ghost btn-small btn-danger';
+    del.textContent = 'Delete';
+    del.onclick = () => {
+      state.partners.logos.splice(i,1); markDirty(); renderPartners();
+    };
+    card.appendChild(del);
+    list.appendChild(card);
+  });
+}
+
+// ── PROGRAMS ──
+function renderPrograms() {
+  const list = $('#programsList');
+  list.innerHTML = '';
+  state.programs.items.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${p.code} — ${p.title}</div></div>`;
+    p.stats.forEach((s, j) => {
+      const row = document.createElement('div');
+      row.className = 'field--row';
+      row.appendChild(input(`Stat ${j+1} value`, s.value, v => state.programs.items[i].stats[j].value = v));
+      row.appendChild(input(`Stat ${j+1} label`, s.label, v => state.programs.items[i].stats[j].label = v));
+      card.appendChild(row);
+    });
+    list.appendChild(card);
+  });
+}
+
+// ── BRAND ──
+function renderBrand() {
+  $('#brand-email').value = state.brand.email || '';
+  $('#brand-tagline').value = state.brand.tagline || '';
+  $('#brand-ig').value = state.brand.instagram || '';
+  $('#brand-tw').value = state.brand.twitter || '';
+  $('#brand-fb').value = state.brand.facebook || '';
+  $('#brand-donate').value = state.brand.donateUrl || '';
+  const hook = (id, key) => $(id).addEventListener('input', () => { state.brand[key] = $(id).value; markDirty(); });
+  hook('#brand-email', 'email');
+  hook('#brand-tagline', 'tagline');
+  hook('#brand-ig', 'instagram');
+  hook('#brand-tw', 'twitter');
+  hook('#brand-fb', 'facebook');
+  hook('#brand-donate', 'donateUrl');
+}
+
+// ── Add row templates ──
+const ADD_TEMPLATES = {
+  impact:       () => state.impact.stats.push({ value: '0', label: 'New stat', sublabel: '' }),
+  hero:         () => state.hero.tickerStats.push({ value: '0', label: 'new stat' }),
+  team:         () => state.team.members.push({ name: 'New member', role: '', city: '', bio: '', photo: '' }),
+  chapters:     () => state.chapters.featured.push({ city: 'New city', state: '', president: '', members: 0 }),
+  testimonials: () => state.testimonials.push({ quote: '', name: '', role: '', city: '' }),
+  events:       () => state.events.push({ date: new Date().toISOString().split('T')[0], time: '10:00 AM', title: 'New event', chapter: '', type: 'Community', href: '' }),
+  partners:     () => state.partners.logos.push('New partner'),
+};
+const RENDERERS = {
+  impact: renderImpact, hero: renderHero, team: renderTeam,
+  chapters: renderChapters, testimonials: renderTestimonials,
+  events: renderEvents, partners: renderPartners, programs: renderPrograms, brand: renderBrand,
+};
+$$('[data-add]').forEach(btn => btn.addEventListener('click', () => {
+  const k = btn.dataset.add;
+  ADD_TEMPLATES[k]();
+  markDirty();
+  RENDERERS[k]();
+}));
+
+// ── Tab switching ──
+$$('.admin-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('.admin-tab').forEach(t => t.classList.toggle('is-active', t === tab));
+    $$('.panel').forEach(p => p.classList.toggle('is-active', p.id === 'panel-' + tab.dataset.panel));
+  });
+});
+
+// ── Save / Export ──
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('is-show');
+  setTimeout(() => t.classList.remove('is-show'), 2500);
+}
+
+$('#saveBtn').onclick = () => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  markClean();
+  toast('✓ Saved. Refresh your site to see changes.');
+};
+
+$('#exportBtn').onclick = () => {
+  const header = `// ═══════════════════════════════════════════════════════════════════════════\n//  BETTER NATURE — SITE CONTENT (exported from admin on ${new Date().toLocaleString()})\n//  Replace website/content.js with this file to make your changes permanent.\n// ═══════════════════════════════════════════════════════════════════════════\n\nwindow.CONTENT = `;
+  const body = JSON.stringify(state, null, 2);
+  const blob = new Blob([header + body + ';\n'], { type: 'text/javascript' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'content.js';
+  a.click();
+  toast('✓ Downloaded content.js — replace the file in your website/ folder.');
+};
+
+// Initial render
+renderImpact(); renderHero(); renderTeam(); renderChapters();
+renderTestimonials(); renderEvents(); renderPartners(); renderPrograms(); renderBrand();
+
+// Confirm leave if dirty
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); return ''; } });
+</script>
+</body>
+</html>
