@@ -13,7 +13,7 @@ window.CONTENT = {
   // ── BRAND ─────────────────────────────────────────────────────────────
   brand: {
     name: "Better Nature",
-    tagline: "Food has a better destination.",
+    tagline: "Feed people. Plant forests. Protect the water.",
     email: "info@betternatureofficial.org",
     phone: "",
     instagram: "https://instagram.com/betternatureofficial",
@@ -80,23 +80,26 @@ window.CONTENT = {
 
   // ── HERO ──────────────────────────────────────────────────────────────
   hero: {
-    eyebrow: "Urgent climate & hunger action",
-    headline: "Food has a better",
-    headlineItalic: "destination.",
-    subhead: "Every three seconds, another pound of edible food hits a landfill. One in eight Americans skips a meal. Better Nature moves the first to the second — with restaurants, volunteers, and communities that refuse to waste either.",
+    eyebrow: "Food rescue · Reforestation · Waterways",
+    headline: "Feed people. Plant forests.",
+    headlineItalic: "Protect the water.",
+    subhead: "Better Nature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission, 38 cities.",
     primaryCta: { text: "Read our mission", href: "#mission" },
     secondaryCta: { text: "Partner your business", href: "#signup" },
+    // Tile 1 (top-left, biggest): forest. Tile 2 (top-right): clean water.
+    // Tile 3 (bottom-left): produce crate. Tile 4 (bottom-right): planting/volunteers.
     media: [
-      { src: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=900&q=80&auto=format&fit=crop", alt: "Crate of fresh vegetables" },
-      { src: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=900&q=80&auto=format&fit=crop", alt: "Forest trees" },
+      { src: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=900&q=80&auto=format&fit=crop", alt: "Sunlit forest canopy" },
       { src: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=900&q=80&auto=format&fit=crop", alt: "Clear mountain lake" },
-      { src: "https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=900&q=80&auto=format&fit=crop", alt: "Fresh fruit crates at market" },
+      { src: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=900&q=80&auto=format&fit=crop", alt: "Crate of fresh vegetables" },
+      { src: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?w=900&q=80&auto=format&fit=crop", alt: "Volunteer planting a tree" },
     ],
     tickerStats: [
+      { value: "12,840", label: "trees planted" },
       { value: "1.2M", label: "meals rescued" },
+      { value: "86.5K gal", label: "waterway cleaned" },
       { value: "38", label: "cities" },
       { value: "2,400+", label: "volunteers" },
-      { value: "180", label: "partner restaurants" },
     ],
   },
 
