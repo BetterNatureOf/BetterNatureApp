@@ -26,6 +26,18 @@
 
   const $ = (sel) => document.querySelector(sel);
   const set = (sel, val) => { const el = $(sel); if (el) el.textContent = val; };
+
+  // ── SECTION VISIBILITY ──────────────────────────────────────────────
+  // Hide sections turned off in admin. Also hides nav links that point to them.
+  if (C.sections) {
+    Object.entries(C.sections).forEach(([key, on]) => {
+      if (on) return;
+      const sec = document.getElementById(key);
+      if (sec) sec.style.display = 'none';
+      document.querySelectorAll(`.nav__links a[href="#${key}"]`).forEach(a => a.style.display = 'none');
+    });
+  }
+
   const setHTML = (sel, val) => { const el = $(sel); if (el) el.innerHTML = val; };
   const setHref = (sel, val) => { const el = $(sel); if (el) el.href = val; };
 

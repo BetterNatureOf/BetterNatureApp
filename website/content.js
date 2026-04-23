@@ -10,6 +10,25 @@
 
 window.CONTENT = {
 
+  // ── SECTION VISIBILITY ────────────────────────────────────────────────
+  // Toggle any section on/off from the admin panel. false = hidden.
+  sections: {
+    mission: true,
+    impact: true,
+    programs: true,
+    impactmap: true,
+    how: true,
+    chapters: true,
+    partners: true,
+    testimonials: true,
+    team: true,
+    events: true,
+    press: true,
+    donate: true,
+    getapp: true,
+    signup: true,
+  },
+
   // ── BRAND ─────────────────────────────────────────────────────────────
   brand: {
     name: "Better Nature",

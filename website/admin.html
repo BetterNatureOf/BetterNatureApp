@@ -105,6 +105,28 @@
     }
     .panel__help strong { color: var(--pink-dark); }
 
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 4px; border-bottom: 1px solid var(--line);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-row__label { font-size: 15px; font-weight: 500; color: var(--forest); }
+    .toggle-row__sub { font-size: 12px; color: var(--ink-60); margin-top: 2px; }
+    .toggle {
+      position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle__slider {
+      position: absolute; inset: 0; background: #ccc; border-radius: 999px;
+      cursor: pointer; transition: .2s;
+    }
+    .toggle__slider:before {
+      content: ""; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px;
+      background: white; border-radius: 50%; transition: .2s;
+    }
+    .toggle input:checked + .toggle__slider { background: var(--forest); }
+    .toggle input:checked + .toggle__slider:before { transform: translateX(20px); }
+
     .toast {
       position: fixed; bottom: 24px; right: 24px;
       background: var(--forest); color: var(--cream);
@@ -136,7 +158,8 @@
   <p class="lede">Change any number, name, or quote below. Hit <strong>Save changes</strong> and your live site updates instantly. When you're ready to make it permanent, click <strong>Export content.js</strong> and replace the file on your server.</p>
 
   <div class="admin-tabs" id="tabs">
-    <button class="admin-tab is-active" data-panel="impact">Impact stats</button>
+    <button class="admin-tab is-active" data-panel="sections">Sections on/off</button>
+    <button class="admin-tab" data-panel="impact">Impact stats</button>
     <button class="admin-tab" data-panel="hero">Hero ticker</button>
     <button class="admin-tab" data-panel="team">Team</button>
     <button class="admin-tab" data-panel="chapters">Chapters</button>
@@ -147,8 +170,19 @@
     <button class="admin-tab" data-panel="brand">Contact info</button>
   </div>
 
+  <!-- SECTIONS VISIBILITY -->
+  <div class="panel is-active" id="panel-sections">
+    <div class="panel__help">
+      Flip any section off to hide it from the live site. Nav links for hidden sections disappear automatically.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Show / hide sections</div>
+      <div id="sectionsList"></div>
+    </div>
+  </div>
+
   <!-- IMPACT -->
-  <div class="panel is-active" id="panel-impact">
+  <div class="panel" id="panel-impact">
     <div class="panel__help">
       <strong>Impact stats</strong> are the big pink numbers in the "Real numbers. Real neighbors." section.
     </div>
@@ -548,6 +582,48 @@ function renderPrograms() {
   });
 }
 
+// ── SECTIONS ──
+const SECTION_META = [
+  { key: 'mission',      label: 'Mission',          sub: 'Three-pillar mission statement' },
+  { key: 'impact',       label: 'Impact stats',     sub: 'Big pink numbers ("Real numbers. Real neighbors.")' },
+  { key: 'programs',     label: 'Programs',         sub: 'Food rescue / Evergreen / Hydro cards' },
+  { key: 'impactmap',    label: 'Impact map',       sub: 'Interactive map of chapters + the gap' },
+  { key: 'how',          label: 'Get Involved',     sub: 'Volunteer / Donate / Partner tabs' },
+  { key: 'chapters',     label: 'Chapters',         sub: 'Chapter directory grid' },
+  { key: 'partners',     label: 'Partners',         sub: 'Partner logos marquee + pitch' },
+  { key: 'testimonials', label: 'Testimonials',     sub: 'Quote cards' },
+  { key: 'team',         label: 'Team',             sub: 'Founding team grid' },
+  { key: 'events',       label: 'Events',           sub: 'Upcoming events list' },
+  { key: 'press',        label: 'Press',            sub: 'Press quotes + publication logos' },
+  { key: 'donate',       label: 'Donate',           sub: 'Zeffy embed + giving tiers' },
+  { key: 'getapp',       label: 'Get the App',      sub: 'App download / QR code block' },
+  { key: 'signup',       label: 'Sign up',          sub: 'Volunteer / start-a-chapter form' },
+];
+function renderSections() {
+  state.sections = state.sections || {};
+  const list = $('#sectionsList');
+  list.innerHTML = '';
+  SECTION_META.forEach(s => {
+    if (state.sections[s.key] === undefined) state.sections[s.key] = true;
+    const row = document.createElement('label');
+    row.className = 'toggle-row';
+    row.innerHTML = `
+      <div>
+        <div class="toggle-row__label">${s.label}</div>
+        <div class="toggle-row__sub">${s.sub}</div>
+      </div>
+      <span class="toggle">
+        <input type="checkbox" ${state.sections[s.key] ? 'checked' : ''} />
+        <span class="toggle__slider"></span>
+      </span>`;
+    row.querySelector('input').addEventListener('change', e => {
+      state.sections[s.key] = e.target.checked;
+      markDirty();
+    });
+    list.appendChild(row);
+  });
+}
+
 // ── BRAND ──
 function renderBrand() {
   $('#brand-email').value = state.brand.email || '';
@@ -585,6 +661,7 @@ const ADD_TEMPLATES = {
   partners:     () => state.partners.logos.push({ name: 'New partner', website: '', instagram: '', logo: '' }),
 };
 const RENDERERS = {
+  sections: renderSections,
   impact: renderImpact, hero: renderHero, team: renderTeam,
   chapters: renderChapters, testimonials: renderTestimonials,
   events: renderEvents, partners: renderPartners, programs: renderPrograms, brand: renderBrand,
@@ -630,6 +707,7 @@ $('#exportBtn').onclick = () => {
 };
 
 // Initial render
+renderSections();
 renderImpact(); renderHero(); renderTeam(); renderChapters();
 renderTestimonials(); renderEvents(); renderPartners(); renderPrograms(); renderBrand();
 
