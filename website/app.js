@@ -460,6 +460,45 @@
   donateCta.textContent = C.donate.cta.text;
   donateCta.href = C.donate.cta.href;
 
+  // Inline Zeffy embed — give right here, never leave the page
+  if (C.brand.donateEmbedUrl) {
+    setHTML('#donateEmbed', `
+      <iframe
+        title="Donate to Better Nature"
+        src="${C.brand.donateEmbedUrl}"
+        allowpaymentrequest="true"
+        allowtransparency="true"
+        loading="lazy"
+        referrerpolicy="no-referrer-when-downgrade"
+      ></iframe>
+    `);
+  }
+
+  // Alternative payment methods (PayPal Giving Fund, Venmo, Cash App, check)
+  const gl = C.brand.giveLinks || {};
+  const altMethods = [
+    { key: 'paypal',  label: 'PayPal',   sub: 'Zero-fee via Giving Fund', href: gl.paypal,
+      icon: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7.5 20h-3l2.2-14h5.6c2.8 0 4.8 1.2 4.2 4.1-.7 3.5-3.6 4.5-6.6 4.5H8.1l-.6 5.4zm1.9-8h1.7c1.6 0 2.8-.5 3.1-2.2.3-1.6-.7-2-2.1-2h-2l-.7 4.2zM16 14l-.6 4h-2.9l2.2-14h5c2.9 0 4.9 1.3 4.3 4.2-.7 3.5-3.5 4.5-6.5 4.5H16zm.5-3h1.7c1.6 0 2.8-.5 3.1-2.2.3-1.6-.7-2-2.1-2h-2l-.7 4.2z"/></svg>' },
+    { key: 'venmo',   label: 'Venmo',    sub: '@betternature', href: gl.venmo,
+      icon: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19.5 4c.8 1.1 1.2 2.3 1.2 3.8 0 4.8-4.1 11-7.4 15.3H5.6L2.5 4.3l6.8-.6 1.6 13c1.5-2.5 3.4-6.3 3.4-9 0-1.5-.3-2.5-.7-3.3L19.5 4z"/></svg>' },
+    { key: 'cashapp', label: 'Cash App', sub: '$betternature', href: gl.cashapp,
+      icon: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18.5 2h-13A3.5 3.5 0 0 0 2 5.5v13A3.5 3.5 0 0 0 5.5 22h13a3.5 3.5 0 0 0 3.5-3.5v-13A3.5 3.5 0 0 0 18.5 2zm-2.2 8.3c-.8-.7-1.9-1.1-3-1.1-.7 0-1.5.2-1.5.8 0 .6.6.8 1.7 1.2 1.8.6 3.3 1.4 3.3 3.2 0 2-1.5 3.3-4 3.5l-.2 1.3c0 .2-.2.4-.4.4h-1.5c-.3 0-.5-.3-.4-.5l.2-1.2A6 6 0 0 1 7 16.4c-.2-.2-.2-.5 0-.7l1-1c.2-.2.5-.2.7 0 .8.8 2 1.2 3.2 1.2.9 0 1.5-.3 1.5-.9 0-.6-.6-.8-1.9-1.3-1.6-.5-3-1.3-3-3.1 0-2 1.6-3.3 3.8-3.4l.2-1.3c0-.2.2-.4.4-.4h1.5c.3 0 .5.2.4.5L14.6 7c.8.2 1.5.6 2 1 .2.2.2.5 0 .7l-1 1c-.2.2-.4.2-.6 0z"/></svg>' },
+    { key: 'check',   label: 'Mail a check', sub: 'Tax-deductible', href: gl.check,
+      icon: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M6 10h7M6 13h4M15 15h3"/></svg>' },
+  ].filter(m => m.href);
+  if (altMethods.length) {
+    setHTML('#donateAlt', `
+      <div class="donate__altHead">Other ways to give</div>
+      <div class="donate__altGrid">
+        ${altMethods.map(m => `
+          <a class="donate__altBtn" href="${m.href}" target="_blank" rel="noreferrer">
+            ${m.icon}<span><strong>${m.label}</strong><em>${m.sub}</em></span>
+          </a>
+        `).join('')}
+      </div>
+    `);
+  }
+
   // ── NEWSLETTER ──────────────────────────────────────────────────────
   set('#newsTitle', C.newsletter.title);
   set('#newsBody', C.newsletter.body);

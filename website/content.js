@@ -20,7 +20,16 @@ window.CONTENT = {
     twitter: "https://twitter.com/betternature24",
     facebook: "https://facebook.com/betternatureofficial",
     linkedin: "",
-    donateUrl: "https://www.zeffy.com/en-US/donation-form",
+    donateUrl: "https://www.zeffy.com/en-US/donation-form/betternature",
+    // Zeffy gives you a stable embed URL too — this is what the inline iframe loads.
+    donateEmbedUrl: "https://www.zeffy.com/embed/donation-form/betternature",
+    // Other ways to give (shown as buttons under the embed). Leave blank to hide.
+    giveLinks: {
+      paypal: "",       // PayPal Giving Fund URL (zero-fee for nonprofits)
+      venmo: "",        // e.g. https://venmo.com/u/betternature
+      cashapp: "",      // e.g. https://cash.app/$betternature
+      check: "",        // mailing address for checks, or URL with instructions
+    },
     appLinks: {
       appStore: "#",
       googlePlay: "#",
@@ -356,7 +365,7 @@ window.CONTENT = {
       { amount: "$500", impact: "Sponsors an entire chapter's Saturday pickup run" },
       { amount: "$2,500", impact: "Funds a new chapter launch from orientation to first shift" },
     ],
-    cta: { text: "Donate through Zeffy", href: "https://www.zeffy.com/en-US/donation-form" },
+    cta: { text: "Open full donation form", href: "https://www.zeffy.com/en-US/donation-form/betternature" },
   },
 
   // ── NEWSLETTER ────────────────────────────────────────────────────────
