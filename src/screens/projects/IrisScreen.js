@@ -82,6 +82,22 @@ export default function IrisScreen({ navigation }) {
         <StatCard number="120+" label="Volunteers" color={Colors.sage} style={styles.stat} />
       </View>
 
+      {/* Food Insecurity Map Link */}
+      <TouchableOpacity
+        style={styles.mapCard}
+        activeOpacity={0.8}
+        onPress={() => navigation.navigate('ImpactMap')}
+      >
+        <View style={styles.mapIconWrap}>
+          <Text style={styles.mapIcon}>{'\u{1F30D}'}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.mapTitle}>The Impact Map</Text>
+          <Text style={styles.mapSubtitle}>Chapters, partners, and the gap {'\u2014'} every city we haven't reached yet</Text>
+        </View>
+        <Text style={styles.mapArrow}>{'\u203A'}</Text>
+      </TouchableOpacity>
+
       <BrushDivider color={Colors.sage} />
 
       {/* Available Pickups */}
@@ -171,4 +187,29 @@ const styles = StyleSheet.create({
   pickupQty: { ...Type.caption, fontWeight: '600' },
   pickupInstructions: { ...Type.caption, fontStyle: 'italic', marginTop: 6 },
   claimBtn: { marginTop: 12 },
+  mapCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 24,
+    marginTop: 16,
+    marginBottom: 8,
+    padding: 16,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 14,
+  },
+  mapIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapIcon: { fontSize: 22 },
+  mapTitle: { fontSize: 15, fontWeight: '700', color: '#DC2626', letterSpacing: -0.2 },
+  mapSubtitle: { fontSize: 12, color: '#9B1C1C', opacity: 0.7, marginTop: 2 },
+  mapArrow: { fontSize: 22, color: '#DC2626' },
 });

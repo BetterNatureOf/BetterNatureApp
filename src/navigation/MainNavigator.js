@@ -1,29 +1,109 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet } from 'react-native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Colors } from '../config/theme';
+import { hp } from '../config/scale';
+import useAuthStore, { ROLES } from '../store/authStore';
 
 import DashboardScreen from '../screens/main/DashboardScreen';
 import ProjectsScreen from '../screens/main/ProjectsScreen';
 import ImpactScreen from '../screens/main/ImpactScreen';
+import LeaderboardScreen from '../screens/main/LeaderboardScreen';
 import DonateScreen from '../screens/main/DonateScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
 
+import IrisScreen from '../screens/projects/IrisScreen';
+import EvergreenScreen from '../screens/projects/EvergreenScreen';
+import HydroScreen from '../screens/projects/HydroScreen';
+import AnimalGallery from '../screens/projects/AnimalGallery';
+
+import EventDetailScreen from '../screens/events/EventDetailScreen';
+
+import NotificationsScreen from '../screens/other/NotificationsScreen';
+import AboutScreen from '../screens/other/AboutScreen';
+import SettingsScreen from '../screens/other/SettingsScreen';
+
+import ChapterChecklist from '../screens/chapter/ChapterChecklist';
+
+import RestDashboard from '../screens/restaurant/RestDashboard';
+import ScheduleDonation from '../screens/restaurant/ScheduleDonation';
+import DonationHistory from '../screens/restaurant/DonationHistory';
+
+import AdminPanel from '../screens/admin/AdminPanel';
+import ManageChapters from '../screens/admin/ManageChapters';
+import ManageMembers from '../screens/admin/ManageMembers';
+import ManageRestaurants from '../screens/admin/ManageRestaurants';
+import GlobalHistory from '../screens/admin/GlobalHistory';
+import BroadcastScreen from '../screens/admin/BroadcastScreen';
+import ExportReports from '../screens/admin/ExportReports';
+
+import PresidentDashboard from '../screens/president/PresidentDashboard';
+import PresEvents from '../screens/president/PresEvents';
+import PresReports from '../screens/president/PresReports';
+
+import ExecutiveDashboard from '../screens/executive/ExecutiveDashboard';
+import ExecFinance from '../screens/executive/ExecFinance';
+
+import MetricsEditor from '../screens/admin/MetricsEditor';
+import CheckInScreen from '../screens/admin/CheckInScreen';
+import ImpactMap from '../screens/impact/ImpactMap';
+
+// Wrap MetricsEditor so the route name implies the mode without the caller
+// having to pass params.
+function ExecMetricsScreen(props) {
+  return (
+    <MetricsEditor
+      {...props}
+      route={{ ...props.route, params: { ...(props.route?.params || {}), mode: 'org' } }}
+    />
+  );
+}
+function PresMetricsScreen(props) {
+  return (
+    <MetricsEditor
+      {...props}
+      route={{ ...props.route, params: { ...(props.route?.params || {}), mode: 'chapter' } }}
+    />
+  );
+}
+
 const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
+
+const TAB_ICONS = {
+  Home: { default: '\u25CB', active: '\u25CF' },     // circle outline / filled
+  Projects: { default: '\u25B3', active: '\u25B2' },  // triangle outline / filled
+  Impact: { default: '\u2606', active: '\u2605' },     // star outline / filled
+  Donate: { default: '\u2661', active: '\u2665' },     // heart outline / filled
+  Org: { default: '\u25A1', active: '\u25A0' },        // square outline / filled
+  Chapter: { default: '\u25A1', active: '\u25A0' },
+  Profile: { default: '\u2299', active: '\u2299' },    // circled dot
+};
 
 function TabIcon({ label, focused }) {
+  const icons = TAB_ICONS[label] || TAB_ICONS.Home;
   return (
     <View style={styles.tabIcon}>
-      <View
-        style={[
-          styles.dot,
-          { backgroundColor: focused ? Colors.pink : 'transparent' },
-        ]}
-      />
+      {focused && <View style={styles.activeIndicator} />}
       <Text
+        allowFontScaling={false}
+        style={[
+          styles.tabIconSymbol,
+          { color: focused ? Colors.green : Colors.grayMid },
+        ]}
+      >
+        {focused ? icons.active : icons.default}
+      </Text>
+      <Text
+        numberOfLines={1}
+        allowFontScaling={false}
         style={[
           styles.tabLabel,
-          { color: focused ? Colors.pink : Colors.grayMid },
+          {
+            color: focused ? Colors.green : Colors.grayMid,
+            fontWeight: focused ? '700' : '500',
+          },
         ]}
       >
         {label}
@@ -32,7 +112,20 @@ function TabIcon({ label, focused }) {
   );
 }
 
-export default function MainNavigator() {
+// Choose which dashboard the "Manage" tab opens to based on role.
+function ManageTab(props) {
+  const role = useAuthStore((s) => s.role);
+  if (role === ROLES.EXECUTIVE) return <ExecutiveDashboard {...props} />;
+  if (role === ROLES.PRESIDENT) return <PresidentDashboard {...props} />;
+  // Fallback — shouldn't render because the tab is hidden for plain members.
+  return <DashboardScreen {...props} />;
+}
+
+function MainTabs() {
+  const role = useAuthStore((s) => s.role);
+  const showManage = role === ROLES.PRESIDENT || role === ROLES.EXECUTIVE;
+  const manageLabel = role === ROLES.EXECUTIVE ? 'Org' : 'Chapter';
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -69,6 +162,17 @@ export default function MainNavigator() {
           tabBarIcon: ({ focused }) => <TabIcon label="Donate" focused={focused} />,
         }}
       />
+      {showManage && (
+        <Tab.Screen
+          name="Manage"
+          component={ManageTab}
+          options={{
+            tabBarIcon: ({ focused }) => (
+              <TabIcon label={manageLabel} focused={focused} />
+            ),
+          }}
+        />
+      )}
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
@@ -80,30 +184,103 @@ export default function MainNavigator() {
   );
 }
 
+// Dispatches to the correct project screen based on the `project` param.
+function ProjectDetail({ route, navigation }) {
+  const key = (route.params?.project || '').toString().toLowerCase();
+  if (key === 'evergreen') return <EvergreenScreen navigation={navigation} route={route} />;
+  if (key === 'hydro') return <HydroScreen navigation={navigation} route={route} />;
+  return <IrisScreen navigation={navigation} route={route} />;
+}
+
+export default function MainNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Stack.Screen name="ProjectDetail" component={ProjectDetail} />
+      <Stack.Screen name="Iris" component={IrisScreen} />
+      <Stack.Screen name="Evergreen" component={EvergreenScreen} />
+      <Stack.Screen name="Hydro" component={HydroScreen} />
+      <Stack.Screen name="AnimalGallery" component={AnimalGallery} />
+      <Stack.Screen name="EventDetail" component={EventDetailScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="About" component={AboutScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="ChapterChecklist" component={ChapterChecklist} />
+      <Stack.Screen name="RestDashboard" component={RestDashboard} />
+      <Stack.Screen name="ScheduleDonation" component={ScheduleDonation} />
+      <Stack.Screen name="DonationHistory" component={DonationHistory} />
+
+      {/* Admin / shared management routes — registered for everyone but only
+          reachable from the Manage tab when the role allows it. */}
+      <Stack.Screen name="AdminPanel" component={AdminPanel} />
+      <Stack.Screen name="ManageChapters" component={ManageChapters} />
+      <Stack.Screen name="ManageMembers" component={ManageMembers} />
+      <Stack.Screen name="ManageRestaurants" component={ManageRestaurants} />
+      <Stack.Screen name="GlobalHistory" component={GlobalHistory} />
+      <Stack.Screen name="Broadcast" component={BroadcastScreen} />
+      <Stack.Screen name="ExportReports" component={ExportReports} />
+
+      {/* President-flavored aliases so PresidentDashboard's existing
+          navigation.navigate('PresEvents') etc. keep working. */}
+      <Stack.Screen name="PresEvents" component={PresEvents} />
+      <Stack.Screen name="PresReports" component={PresReports} />
+      <Stack.Screen name="PresMembers" component={ManageMembers} />
+      <Stack.Screen name="PresBroadcast" component={BroadcastScreen} />
+
+      {/* Executive-flavored alias for the finance screen. */}
+      <Stack.Screen name="ExecFinance" component={ExecFinance} />
+
+      {/* Metrics editor — same screen, different scope per role. */}
+      <Stack.Screen name="ExecMetrics" component={ExecMetricsScreen} />
+      <Stack.Screen name="PresMetrics" component={PresMetricsScreen} />
+
+      {/* Check-in — pres/exec verify volunteer attendance */}
+      <Stack.Screen name="CheckIn" component={CheckInScreen} />
+
+      {/* Impact Map — replaces FoodInsecurityMap; shows chapters, the gap, partners, plantings, cleanups */}
+      <Stack.Screen name="ImpactMap" component={ImpactMap} />
+      {/* Back-compat alias so old navigation.navigate('FoodInsecurityMap') calls still work */}
+      <Stack.Screen name="FoodInsecurityMap" component={ImpactMap} />
+    </Stack.Navigator>
+  );
+}
+
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: Colors.white,
-    borderTopWidth: 0,
-    height: 85,
-    paddingTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
+    borderTopWidth: 1,
+    borderTopColor: Colors.grayLight + '80',
+    height: Platform.OS === 'ios' ? hp(88) : hp(72),
+    paddingTop: 6,
+    paddingBottom: Platform.OS === 'ios' ? hp(22) : 8,
+    shadowColor: '#1A1F2E',
+    shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowRadius: 12,
     elevation: 8,
   },
   tabIcon: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: 60,
+    position: 'relative',
   },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: 4,
+  activeIndicator: {
+    position: 'absolute',
+    top: -8,
+    width: 20,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Colors.green,
+  },
+  tabIconSymbol: {
+    fontSize: 18,
+    marginBottom: 2,
   },
   tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 10,
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
 });
