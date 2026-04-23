@@ -16,7 +16,7 @@ window.CONTENT = {
     tagline: "Rescue. Restore. Protect.",
     email: "info@betternatureofficial.org",
     phone: "",
-    instagram: "https://instagram.com/betternatureofficial",
+    instagram: "https://instagram.com/official.better.nature",
     twitter: "https://twitter.com/betternature24",
     facebook: "https://facebook.com/betternatureofficial",
     linkedin: "",
