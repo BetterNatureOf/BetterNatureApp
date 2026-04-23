@@ -168,6 +168,8 @@
     <button class="admin-tab" data-panel="partners">Partners</button>
     <button class="admin-tab" data-panel="programs">Program stats</button>
     <button class="admin-tab" data-panel="brand">Contact info</button>
+    <button class="admin-tab" data-panel="admins">Admins</button>
+    <button class="admin-tab" data-panel="audit">Edit history</button>
   </div>
 
   <!-- SECTIONS VISIBILITY -->
@@ -278,17 +280,163 @@
     </div>
   </div>
 
+  <!-- ADMINS (super_admin only) -->
+  <div class="panel" id="panel-admins">
+    <div class="panel__help">
+      <strong>Admin accounts.</strong> These people can sign into this panel and edit the site. Only the super admin
+      can invite or remove admins. Everyone's account is the same one they use on the Better Nature app.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Invite an admin</div>
+      <div class="field--row">
+        <div class="field"><label>Email</label><input id="invite-email" placeholder="name@betternatureofficial.org" /></div>
+        <div class="field" style="display:flex;align-items:flex-end;"><button class="btn btn--pink btn-small" id="invite-send" style="width:100%;">Send invite</button></div>
+      </div>
+      <div id="invite-status" style="font-size:13px;color:var(--ink-60);"></div>
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Current admins</div>
+      <div id="adminsList"></div>
+    </div>
+  </div>
+
+  <!-- EDIT HISTORY -->
+  <div class="panel" id="panel-audit">
+    <div class="panel__help">
+      Every Save is recorded here with the account that did it. Useful if something breaks and you want to know who touched what.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Recent edits</div>
+      <div id="auditList"><em style="color:var(--ink-60);">Loading...</em></div>
+      <button class="btn btn--ghost btn-small" id="auditRefresh" style="margin-top:12px;">Refresh</button>
+    </div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script src="content.js"></script>
-<script>
+<script type="module">
 // ═══════════════════════════════════════════════════════════════════════════
 //  ADMIN UI — edits window.CONTENT and persists to localStorage.
 //  The live site (app.js) reads from localStorage first, so changes show up
 //  immediately when you click Save. Use Export to permanently update content.js.
 // ═══════════════════════════════════════════════════════════════════════════
+
+import {
+  auth, signIn, signUp, logOut, onUser, ensureUserDoc, honorPendingInvite,
+  isAdminRole, listAdmins, inviteAdmin, setRole, logEdit, fetchAuditLog,
+  diffPaths, SUPER_ADMIN_EMAIL,
+} from './firebase-auth.js';
+
+// Gate the UI behind auth. The admin surface is hidden until we know the
+// user is signed in AND has an admin role.
+let CURRENT_USER = null;
+const adminRoot = document.querySelector('.admin');
+const adminNavActions = document.querySelector('.admin-nav__actions');
+adminRoot.style.display = 'none';
+
+// Inject login screen
+const loginScreen = document.createElement('div');
+loginScreen.id = 'loginScreen';
+loginScreen.innerHTML = `
+  <div class="login">
+    <img src="logo.png" alt="" class="login__logo" />
+    <h1>Admin sign in</h1>
+    <p class="login__sub">Your admin account works across the website, the app, and the web version of the app.</p>
+    <form id="loginForm" class="login__form">
+      <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="email" required /></div>
+      <div class="field"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password" required minlength="6" /></div>
+      <div id="login-err" class="login__err" style="display:none;"></div>
+      <button class="btn btn--pink btn--lg" type="submit" id="login-submit">Sign in</button>
+      <button class="btn btn--ghost btn-small" type="button" id="login-create" style="margin-top:8px;">First time? Create this account</button>
+    </form>
+  </div>
+`;
+document.body.appendChild(loginScreen);
+
+const loginStyle = document.createElement('style');
+loginStyle.textContent = `
+  #loginScreen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--cream); padding: 24px; }
+  .login { max-width: 420px; width: 100%; background: white; padding: 40px 32px; border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(27,58,45,0.08); }
+  .login__logo { width: 52px; height: 52px; border-radius: 50%; margin-bottom: 16px; }
+  .login h1 { font-family: var(--sans); font-weight: 600; font-size: 28px; color: var(--forest); letter-spacing: -.02em; margin-bottom: 8px; }
+  .login__sub { color: var(--ink-60); font-size: 14px; margin-bottom: 24px; }
+  .login__form button[type="submit"] { width: 100%; margin-top: 8px; }
+  .login__err { background: var(--pink-soft); color: var(--pink-dark); padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+`;
+document.head.appendChild(loginStyle);
+
+const loginErr = loginScreen.querySelector('#login-err');
+const showErr = (msg) => { loginErr.textContent = msg; loginErr.style.display = 'block'; };
+const clearErr = () => { loginErr.style.display = 'none'; };
+
+loginScreen.querySelector('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  clearErr();
+  const email = loginScreen.querySelector('#login-email').value;
+  const pass = loginScreen.querySelector('#login-pass').value;
+  try { await signIn(email, pass); } catch (err) { showErr(err.message || 'Sign in failed'); }
+});
+loginScreen.querySelector('#login-create').addEventListener('click', async () => {
+  clearErr();
+  const email = loginScreen.querySelector('#login-email').value;
+  const pass = loginScreen.querySelector('#login-pass').value;
+  if (!email || !pass || pass.length < 6) return showErr('Enter an email and a 6+ char password first.');
+  try {
+    await signUp({ email, password: pass, name: email.split('@')[0], role: 'member' });
+  } catch (err) { showErr(err.message || 'Create account failed'); }
+});
+
+// Watch auth state. Admin UI only becomes visible for admin/super_admin roles.
+onUser(async (user) => {
+  if (!user) {
+    CURRENT_USER = null;
+    loginScreen.style.display = '';
+    adminRoot.style.display = 'none';
+    return;
+  }
+  // First-time super-admin bootstrap + pending invite honor
+  if ((user.email || '').toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() && user.profile?.role !== 'super_admin') {
+    await setRole(user.uid, 'super_admin');
+    user.profile = { ...(user.profile || {}), role: 'super_admin' };
+  } else {
+    await honorPendingInvite(user);
+  }
+
+  if (!isAdminRole(user.profile?.role)) {
+    showErr(`Signed in as ${user.email} — this account is not an admin. Ask ${SUPER_ADMIN_EMAIL} to invite you.`);
+    // leave them on login screen; provide sign out
+    loginScreen.querySelector('#loginForm').insertAdjacentHTML('beforeend',
+      `<button class="btn btn--ghost btn-small" id="login-signout" type="button" style="margin-top:8px;">Sign out</button>`);
+    loginScreen.querySelector('#login-signout').onclick = () => logOut();
+    return;
+  }
+
+  CURRENT_USER = user;
+  loginScreen.style.display = 'none';
+  adminRoot.style.display = '';
+  // Add role badge + sign out to top nav
+  if (!document.getElementById('whoami')) {
+    const pill = document.createElement('span');
+    pill.id = 'whoami';
+    pill.style.cssText = 'font-size:13px;color:rgba(247,244,240,.75);margin-right:10px;';
+    pill.textContent = `${user.email} · ${user.profile.role}`;
+    adminNavActions.prepend(pill);
+    const out = document.createElement('button');
+    out.className = 'btn btn--ghost btn-small';
+    out.style.cssText = 'color:var(--cream);border-color:rgba(255,255,255,.3);';
+    out.textContent = 'Sign out';
+    out.onclick = () => logOut();
+    adminNavActions.appendChild(out);
+  }
+  // Show/hide the Admins tab for super_admin only
+  const adminsTab = document.querySelector('[data-panel="admins"]');
+  if (adminsTab) adminsTab.style.display = user.profile.role === 'super_admin' ? '' : 'none';
+  renderAdmins();
+  renderAudit();
+});
 
 const STORAGE_KEY = 'betternature.content.overrides';
 
@@ -650,6 +798,75 @@ function renderBrand() {
   hookApp('#brand-webapp', 'webApp');
 }
 
+// ── ADMINS PANEL ──
+async function renderAdmins() {
+  if (!CURRENT_USER || CURRENT_USER.profile?.role !== 'super_admin') return;
+  const list = document.getElementById('adminsList');
+  if (!list) return;
+  list.innerHTML = '<em style="color:var(--ink-60);">Loading...</em>';
+  try {
+    const admins = await listAdmins();
+    list.innerHTML = '';
+    admins.forEach(a => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid var(--line);';
+      const isSuper = a.role === 'super_admin';
+      const isSelf = a.uid === CURRENT_USER.uid;
+      row.innerHTML = `
+        <div>
+          <div style="font-weight:600;color:var(--forest);">${a.email}${isSelf ? ' <span style="color:var(--ink-60);font-weight:400;">(you)</span>' : ''}</div>
+          <div style="font-size:12px;color:var(--ink-60);">${a.name || ''} · ${a.role}</div>
+        </div>
+        <div>${isSuper || isSelf ? '' : '<button class="btn btn--ghost btn-small btn-danger" data-uid="'+a.uid+'">Remove admin</button>'}</div>`;
+      const btn = row.querySelector('button');
+      if (btn) btn.onclick = async () => {
+        if (!confirm(`Remove admin access for ${a.email}? Their app account stays intact.`)) return;
+        await setRole(a.uid, 'member');
+        renderAdmins();
+      };
+      list.appendChild(row);
+    });
+  } catch (e) { list.innerHTML = '<em style="color:var(--pink-dark);">'+e.message+'</em>'; }
+}
+document.getElementById('invite-send').onclick = async () => {
+  const email = document.getElementById('invite-email').value.trim();
+  const status = document.getElementById('invite-status');
+  if (!email) { status.textContent = 'Enter an email.'; return; }
+  status.textContent = 'Sending...';
+  try {
+    const r = await inviteAdmin(email);
+    status.textContent = r.promoted
+      ? `✓ ${email} already had an account — promoted to admin.`
+      : `✓ Invite saved. When ${email} signs up on the site or app they'll become an admin automatically.`;
+    document.getElementById('invite-email').value = '';
+    renderAdmins();
+  } catch (e) { status.textContent = e.message; }
+};
+
+// ── AUDIT LOG ──
+async function renderAudit() {
+  const list = document.getElementById('auditList');
+  if (!list) return;
+  try {
+    const rows = await fetchAuditLog(100);
+    if (!rows.length) { list.innerHTML = '<em style="color:var(--ink-60);">No edits logged yet.</em>'; return; }
+    list.innerHTML = rows.map(r => {
+      const when = r.at?.toDate ? r.at.toDate().toLocaleString() : '—';
+      const who = r.email || r.uid;
+      const fields = (r.fields || []).slice(0, 8).join(', ') + ((r.fields || []).length > 8 ? ` (+${r.fields.length-8} more)` : '');
+      return `<div style="padding:10px 4px;border-bottom:1px solid var(--line);">
+        <div style="font-weight:500;color:var(--forest);">${r.summary || 'Saved changes'}</div>
+        <div style="font-size:12px;color:var(--ink-60);margin-top:2px;">${who} · ${when}</div>
+        ${fields ? `<div style="font-size:12px;color:var(--ink-60);margin-top:4px;font-family:monospace;">${fields}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch (e) { list.innerHTML = '<em style="color:var(--pink-dark);">'+e.message+'</em>'; }
+}
+document.getElementById('auditRefresh').onclick = renderAudit;
+
+// Expose a baseline for diffing at save time
+let baselineAtLoad = structuredClone(state);
+
 // ── Add row templates ──
 const ADD_TEMPLATES = {
   impact:       () => state.impact.stats.push({ value: '0', label: 'New stat', sublabel: '' }),
@@ -689,9 +906,21 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('is-show'), 2500);
 }
 
-$('#saveBtn').onclick = () => {
+$('#saveBtn').onclick = async () => {
+  if (!CURRENT_USER || !isAdminRole(CURRENT_USER.profile?.role)) {
+    toast('You must be signed in as an admin to save.');
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   markClean();
+  const changed = diffPaths(baselineAtLoad, state);
+  baselineAtLoad = structuredClone(state);
+  await logEdit({
+    user: CURRENT_USER,
+    summary: changed.length ? `Edited ${changed.length} field${changed.length === 1 ? '' : 's'}` : 'Saved (no changes)',
+    fields: changed,
+  });
+  renderAudit();
   toast('✓ Saved. Refresh your site to see changes.');
 };
 

@@ -571,7 +571,9 @@
         const opts = (f.options || []).map(o => `<option value="${o}">${o}</option>`).join('');
         return `<label><span>${f.label}${f.required ? ' *' : ''}</span><select name="${f.name}" ${req}><option value="">Choose one…</option>${opts}</select></label>`;
       }
-      return `<label><span>${f.label}${f.required ? ' *' : ''}</span><input type="${f.type}" name="${f.name}" ${req} /></label>`;
+      const extra = f.minLength ? `minlength="${f.minLength}"` : '';
+      const autocomplete = f.type === 'password' ? 'autocomplete="new-password"' : '';
+      return `<label><span>${f.label}${f.required ? ' *' : ''}</span><input type="${f.type}" name="${f.name}" ${req} ${extra} ${autocomplete} /></label>`;
     };
     setHTML('#signupForms', tracks.map((t, i) => `
       <form class="signup__form ${i === 0 ? 'is-active' : ''}" data-track="${t.key}" data-mailto="${t.mailto || C.brand.email}">
@@ -620,13 +622,44 @@
             body: JSON.stringify(payload),
           });
           if (!res.ok) throw new Error('Submit failed: ' + res.status);
+
+          // If the visitor provided an email + password, create their Better Nature
+          // account right here so it works on the app + web app + website.
+          let accountMsg = '';
+          if (window.BN_SIGNUP && data.email && data.password) {
+            try {
+              await window.BN_SIGNUP({
+                email: data.email,
+                password: data.password,
+                name: data.fullName || data.businessName || '',
+                role: track === 'partner' ? 'partner' : 'volunteer',
+                phone: data.phone || '',
+                city: data.city || '',
+                zip: data.zip || '',
+              });
+              accountMsg = ' Your account is active — open the Better Nature app with the same email and password to finish setup.';
+            } catch (authErr) {
+              accountMsg = ` (Could not auto-create account: ${authErr.message}. Sign up in the app with the same email.)`;
+            }
+          } else {
+            accountMsg = ' To finish joining the network, download the Better Nature app and sign up with the same email.';
+          }
+
           form.reset();
           btn.textContent = '✓ Sent';
           if (status) {
+            const appLinks = C.brand?.appLinks || {};
+            const appCtas = [
+              appLinks.appStore && appLinks.appStore !== '#' ? `<a href="${appLinks.appStore}" target="_blank" rel="noreferrer">App Store</a>` : '',
+              appLinks.googlePlay && appLinks.googlePlay !== '#' ? `<a href="${appLinks.googlePlay}" target="_blank" rel="noreferrer">Google Play</a>` : '',
+              appLinks.webApp ? `<a href="${appLinks.webApp}" target="_blank" rel="noreferrer">Web app</a>` : '',
+            ].filter(Boolean).join(' · ');
             status.className = 'signup__status is-ok';
-            status.textContent = track === 'volunteer'
+            status.innerHTML = (track === 'volunteer'
               ? "You're in. We'll reach out within 24 hours with your chapter match."
-              : "Got it. A partner coordinator will reach out within 24 hours to schedule your 15-min call.";
+              : "Got it. A partner coordinator will reach out within 24 hours to schedule your 15-min call.")
+              + accountMsg
+              + (appCtas ? `<br><small style="display:block;margin-top:8px;">Get the app: ${appCtas}</small>` : '');
           }
         } catch (err) {
           btn.disabled = false;
