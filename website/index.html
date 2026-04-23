@@ -14,6 +14,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -103,28 +104,34 @@
   </div>
 </section>
 
-<!-- ══════════════════════════ FOOD INSECURITY -->
-<section class="insecurity" id="insecurity">
-  <div class="container insecurity__grid">
-    <div class="insecurity__left">
-      <div class="eyebrow eyebrow--pink" id="insecurityEyebrow"></div>
-      <h2 class="insecurity__title" id="insecurityTitle"></h2>
-      <p class="insecurity__body" id="insecurityBody"></p>
+<!-- ══════════════════════════ IMPACT MAP -->
+<section class="impactmap" id="impactmap">
+  <div class="container">
+    <div class="impactmap__head">
+      <div class="eyebrow eyebrow--pink" id="impactmapEyebrow"></div>
+      <h2 class="impactmap__title" id="impactmapTitle"></h2>
+      <p class="impactmap__body" id="impactmapBody"></p>
     </div>
-    <div class="insecurity__right">
-      <div class="insecurity__map">
-        <div class="insecurity__dot" style="top:38%;left:24%"></div>
-        <div class="insecurity__dot" style="top:52%;left:42%"></div>
-        <div class="insecurity__dot" style="top:60%;left:36%"></div>
-        <div class="insecurity__dot" style="top:44%;left:68%"></div>
-        <div class="insecurity__dot" style="top:70%;left:58%"></div>
-        <div class="insecurity__dot" style="top:32%;left:82%"></div>
-        <svg viewBox="0 0 900 540" class="insecurity__svg" aria-hidden="true">
-          <path d="M100 250 Q 200 150, 350 200 T 650 220 T 820 180" stroke="rgba(255,77,141,.3)" stroke-width="1" fill="none" />
-          <path d="M120 380 Q 300 300, 500 350 T 780 340" stroke="rgba(255,77,141,.3)" stroke-width="1" fill="none" />
-        </svg>
-      </div>
-      <div class="insecurity__stats" id="insecurityStats"></div>
+
+    <div class="impactmap__legend" id="impactmapLegend"></div>
+
+    <div class="impactmap__layout">
+      <div class="impactmap__map" id="impactmapCanvas"></div>
+
+      <aside class="impactmap__side">
+        <div class="impactmap__gap">
+          <div class="impactmap__gapLabel">The gap we're closing</div>
+          <div class="impactmap__gapNum" id="impactmapGapCount">—</div>
+          <div class="impactmap__gapSub" id="impactmapGapSub">cities with high need and no chapter yet</div>
+          <a class="btn btn--pink" href="#signup" id="impactmapGapCta">Start a chapter here</a>
+        </div>
+
+        <div class="impactmap__live" id="impactmapLive"></div>
+
+        <div class="impactmap__selected" id="impactmapSelected">
+          <div class="impactmap__selectedHint">Click any pin on the map to see the story.</div>
+        </div>
+      </aside>
     </div>
   </div>
 </section>
@@ -309,7 +316,9 @@
   </div>
 </footer>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="content.js"></script>
+<script src="impact-map-data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

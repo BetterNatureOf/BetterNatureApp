@@ -109,17 +109,6 @@
     </div>
   `).join(''));
 
-  // ── FOOD INSECURITY ─────────────────────────────────────────────────
-  set('#insecurityEyebrow', C.insecurity.eyebrow);
-  set('#insecurityTitle', C.insecurity.title);
-  set('#insecurityBody', C.insecurity.body);
-  setHTML('#insecurityStats', C.insecurity.stats.map(s => `
-    <div class="insecurity__stat">
-      <div class="insecurity__stat-v">${s.value}</div>
-      <div class="insecurity__stat-l">${s.label}</div>
-    </div>
-  `).join(''));
-
   // ── HOW IT WORKS ────────────────────────────────────────────────────
   set('#howEyebrow', C.howItWorks.eyebrow);
   set('#howTitle', C.howItWorks.title);
@@ -152,6 +141,158 @@
     tab.addEventListener('click', () => renderTrack(i));
   });
   renderTrack(0);
+
+  // ── IMPACT MAP ──────────────────────────────────────────────────────
+  if (window.IMPACT_MAP && window.L) {
+    const IM = window.IMPACT_MAP;
+    set('#impactmapEyebrow', IM.copy.eyebrow);
+    set('#impactmapTitle', IM.copy.title);
+    set('#impactmapBody', IM.copy.body);
+
+    // Legend pills
+    const active = new Set(IM.layers.filter(l => l.defaultOn).map(l => l.key));
+    setHTML('#impactmapLegend', IM.layers.map(l => `
+      <button type="button" class="imlegend ${active.has(l.key) ? 'is-on' : ''}" data-layer="${l.key}" style="--im-color:${l.color}">
+        <span class="imlegend__dot"></span>${l.label}
+      </button>
+    `).join(''));
+
+    // Leaflet map
+    const map = L.map('impactmapCanvas', {
+      center: [38.5, -96.0], zoom: 4, scrollWheelZoom: false, zoomControl: true,
+    });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap · © CARTO', subdomains: 'abcd', maxZoom: 18,
+    }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd', maxZoom: 18, pane: 'shadowPane',
+    }).addTo(map);
+
+    const layerByKey = Object.fromEntries(IM.layers.map(l => [l.key, L.layerGroup()]));
+    const colorByKey = Object.fromEntries(IM.layers.map(l => [l.key, l.color]));
+
+    const radiusFor = (p) => {
+      if (p.kind === 'chapter') return 10 + Math.min(14, (p.members || 0) / 8);
+      if (p.kind === 'gap')     return 9 + Math.min(14, (p.insecurity || 15) - 14);
+      if (p.kind === 'partner') return 6;
+      if (p.kind === 'planting')return 7 + Math.min(6, (p.trees || 0) / 250);
+      if (p.kind === 'cleanup') return 7 + Math.min(6, (p.gallons || 0) / 2000);
+      return 7;
+    };
+
+    const fmtNum = (n) => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K' : String(n);
+    const renderSelected = (p) => {
+      const el = $('#impactmapSelected');
+      if (!p) { el.innerHTML = '<div class="impactmap__selectedHint">Click any pin on the map to see the story.</div>'; return; }
+      if (p.kind === 'chapter') {
+        const ch = C.chapters.featured[p.chapterIndex];
+        el.innerHTML = `
+          <div class="imsel__kind" style="color:${colorByKey.chapter}">Chapter</div>
+          <h4>${p.city}, ${p.state}</h4>
+          <div class="imsel__stats">
+            <span><strong>${p.members}</strong> members</span>
+            <span><strong>${fmtNum(p.meals)}</strong> meals</span>
+            <span><strong>${fmtNum(p.trees)}</strong> trees</span>
+            <span><strong>${fmtNum(p.gallons)}</strong> gal cleaned</span>
+          </div>
+          <button class="btn btn--forest" data-open-chapter="${p.chapterIndex}">See the team →</button>
+          ${ch && ch.instagram ? `<a class="imsel__link" href="${ch.instagram}" target="_blank" rel="noreferrer">@chapter on Instagram ↗</a>` : ''}
+        `;
+        const btn = el.querySelector('[data-open-chapter]');
+        if (btn) btn.addEventListener('click', () => openChapter(Number(btn.dataset.openChapter)));
+      } else if (p.kind === 'gap') {
+        el.innerHTML = `
+          <div class="imsel__kind" style="color:${colorByKey.gap}">The gap</div>
+          <h4>${p.city}, ${p.state}</h4>
+          <div class="imsel__stats">
+            <span><strong>${p.insecurity}%</strong> food insecure</span>
+            <span><strong>${fmtNum(p.population)}</strong> people</span>
+            <span class="imsel__warn">No chapter yet</span>
+          </div>
+          <p class="imsel__body">We have no chapter here — yet. If you're a student in ${p.city}, you can be the one that changes that. We give you the playbook, the insurance, the partner intros.</p>
+          <a class="btn btn--pink" href="#signup" data-prefill-city="${p.city}, ${p.state}">Start a chapter in ${p.city} →</a>
+        `;
+      } else if (p.kind === 'partner') {
+        el.innerHTML = `
+          <div class="imsel__kind" style="color:${colorByKey.partner}">Partner kitchen</div>
+          <h4>${p.name}</h4>
+          <div class="imsel__sub">${p.city}, ${p.state}</div>
+          <div class="imsel__stats"><span><strong>${fmtNum(p.meals)}</strong> meals rescued to date</span></div>
+        `;
+      } else if (p.kind === 'planting') {
+        el.innerHTML = `
+          <div class="imsel__kind" style="color:${colorByKey.planting}">Tree planting</div>
+          <h4>${p.site}</h4>
+          <div class="imsel__sub">${p.city}, ${p.state} · ${p.date}</div>
+          <div class="imsel__stats"><span><strong>${fmtNum(p.trees)}</strong> native trees planted</span></div>
+        `;
+      } else if (p.kind === 'cleanup') {
+        el.innerHTML = `
+          <div class="imsel__kind" style="color:${colorByKey.cleanup}">Water cleanup</div>
+          <h4>${p.site}</h4>
+          <div class="imsel__sub">${p.city}, ${p.state} · ${p.date}</div>
+          <div class="imsel__stats"><span><strong>${fmtNum(p.gallons)}</strong> gallons protected</span></div>
+        `;
+      }
+      // Prefill city into signup if user clicks "Start a chapter"
+      el.querySelectorAll('[data-prefill-city]').forEach(a => {
+        a.addEventListener('click', () => {
+          setTimeout(() => {
+            const ri = document.querySelector('.signup__form[data-track="volunteer"] input[name="city"]');
+            if (ri) ri.value = a.dataset.prefillCity;
+            // Switch to volunteer tab since that's where city lives
+            const vt = document.querySelector('.signup__tab[data-track="volunteer"]');
+            if (vt) vt.click();
+          }, 400);
+        });
+      });
+    };
+
+    // Plot points
+    IM.points.forEach(p => {
+      const m = L.circleMarker([p.lat, p.lng], {
+        radius: radiusFor(p), color: colorByKey[p.kind], weight: 2,
+        fillColor: colorByKey[p.kind], fillOpacity: 0.55,
+      });
+      const label = p.kind === 'partner' ? p.name : `${p.city}, ${p.state}`;
+      m.bindTooltip(label, { direction: 'top', offset: [0, -6] });
+      m.on('click', () => renderSelected(p));
+      m.addTo(layerByKey[p.kind]);
+    });
+    IM.layers.forEach(l => { if (l.defaultOn) layerByKey[l.key].addTo(map); });
+
+    // Legend toggle
+    document.querySelectorAll('.imlegend').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const k = btn.dataset.layer;
+        if (active.has(k)) { active.delete(k); map.removeLayer(layerByKey[k]); btn.classList.remove('is-on'); }
+        else                 { active.add(k); layerByKey[k].addTo(map); btn.classList.add('is-on'); }
+        updateLive();
+      });
+    });
+
+    // Live stat rail + gap counter
+    const updateLive = () => {
+      const visible = IM.points.filter(p => active.has(p.kind));
+      const sum = (k) => visible.reduce((a, p) => a + (p[k] || 0), 0);
+      const gapCount = visible.filter(p => p.kind === 'gap').length;
+      const chapters = visible.filter(p => p.kind === 'chapter').length;
+      $('#impactmapGapCount').textContent = gapCount;
+      setHTML('#impactmapLive', `
+        <div class="imlive__row"><span>Chapters</span><strong>${chapters}</strong></div>
+        <div class="imlive__row"><span>Meals rescued</span><strong>${fmtNum(sum('meals'))}</strong></div>
+        <div class="imlive__row"><span>Trees planted</span><strong>${fmtNum(sum('trees'))}</strong></div>
+        <div class="imlive__row"><span>Gallons cleaned</span><strong>${fmtNum(sum('gallons'))}</strong></div>
+      `);
+    };
+    updateLive();
+
+    // Recompute size once the section scrolls into view (Leaflet needs this)
+    const io2 = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { map.invalidateSize(); io2.disconnect(); } });
+    }, { threshold: 0.1 });
+    io2.observe(document.getElementById('impactmap'));
+  }
 
   // ── CHAPTERS ────────────────────────────────────────────────────────
   set('#chaptersEyebrow', C.chapters.eyebrow);
@@ -398,19 +539,52 @@
       });
     });
 
+    // Forms POST directly to FormSubmit — no mailto, no page reload.
+    // Override endpoint via content.signup.submitEndpoint if needed.
+    const endpoint = C.signup.submitEndpoint
+      || `https://formsubmit.co/ajax/${C.brand.email}`;
     document.querySelectorAll('.signup__form').forEach(form => {
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const data = new FormData(form);
-        const track = form.dataset.track;
-        const lines = [];
-        data.forEach((v, k) => { if (v) lines.push(`${k}: ${v}`); });
-        const subject = encodeURIComponent(`[${track === 'volunteer' ? 'Volunteer' : 'Business partner'}] ${data.get('businessName') || data.get('fullName') || 'New signup'}`);
-        const body = encodeURIComponent(lines.join('\n'));
-        const to = form.dataset.mailto || C.brand.email;
-        window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
         const status = form.querySelector('.signup__status');
-        if (status) status.textContent = 'Opening your email… we\'ll reply within 24 hours.';
+        const btn = form.querySelector('button[type="submit"]');
+        const track = form.dataset.track;
+        const data = Object.fromEntries(new FormData(form).entries());
+        const subject = `[${track === 'volunteer' ? 'Volunteer' : 'Business partner'}] ${data.businessName || data.fullName || 'New signup'}`;
+        const payload = {
+          _subject: subject,
+          _template: 'table',
+          _captcha: 'false',
+          track,
+          ...data,
+        };
+        btn.disabled = true;
+        const originalLabel = btn.textContent;
+        btn.textContent = 'Sending…';
+        if (status) { status.textContent = ''; status.className = 'signup__status'; }
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error('Submit failed: ' + res.status);
+          form.reset();
+          btn.textContent = '✓ Sent';
+          if (status) {
+            status.className = 'signup__status is-ok';
+            status.textContent = track === 'volunteer'
+              ? "You're in. We'll reach out within 24 hours with your chapter match."
+              : "Got it. A partner coordinator will reach out within 24 hours to schedule your 15-min call.";
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+          if (status) {
+            status.className = 'signup__status is-err';
+            status.innerHTML = `Something went wrong sending that. Please email <a href="mailto:${C.brand.email}">${C.brand.email}</a> directly.`;
+          }
+        }
       });
     });
   }

@@ -41,6 +41,11 @@ window.CONTENT = {
     eyebrow: "Join the network",
     title: "Create your account.",
     body: "Sign up as a restaurant, grocer, or business partner — or as a volunteer. Same network, different doors in.",
+    // Forms POST straight to this endpoint — no mail client opens, no page reload.
+    // Default: FormSubmit (formsubmit.co) forwards to info@betternatureofficial.org.
+    // First submission sends an activation link to info@ — click it once and you're done.
+    // To switch providers, replace with your Formspree/Web3Forms URL or a Firebase function.
+    submitEndpoint: "https://formsubmit.co/ajax/info@betternatureofficial.org",
     tracks: [
       {
         key: "business",
