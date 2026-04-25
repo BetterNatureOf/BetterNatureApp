@@ -1,0 +1,14 @@
+# Cloudflare Pages / Netlify redirects
+
+# Force apex → www (or the other way — pick one and uncomment)
+# https://betternatureofficial.org/* https://www.betternatureofficial.org/:splat 301!
+
+# Friendly short URLs
+/donate         /#donate         302
+/signup         /#signup         302
+/map            /#impactmap      302
+/admin          /admin.html      302
+/app            /admin.html      302
+
+# 404 fallback to home (since this is a single-page-ish site)
+/*              /index.html      200
