@@ -7,37 +7,17 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signIn } from '../../services/auth';
-import { isSupabaseConfigured } from '../../config/supabase';
+import { signInWithGoogle } from '../../services/authFirebase';
+import { isFirebaseConfigured } from '../../config/firebase';
 import useAuthStore, { ROLES } from '../../store/authStore';
-
-function inferRoleFromEmail(email) {
-  const lower = email.trim().toLowerCase();
-  if (lower.startsWith('exec@') || lower.startsWith('csuite@')) return ROLES.EXECUTIVE;
-  if (lower.startsWith('president@') || lower.startsWith('pres@')) return ROLES.PRESIDENT;
-  if (lower.startsWith('restaurant@') || lower.startsWith('rest@')) return ROLES.RESTAURANT;
-  return ROLES.MEMBER;
-}
-
-function nameFromRole(role) {
-  switch (role) {
-    case ROLES.EXECUTIVE:
-      return 'Alex Chen';
-    case ROLES.PRESIDENT:
-      return 'Jordan Rivers';
-    case ROLES.RESTAURANT:
-      return 'Local Bistro';
-    default:
-      return 'Demo Member';
-  }
-}
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -50,21 +30,11 @@ export default function LoginScreen({ navigation }) {
       Alert.alert('Required', 'Please enter your email and password.');
       return;
     }
-
     setLoading(true);
     try {
-      const demoRole = isSupabaseConfigured ? undefined : inferRoleFromEmail(email);
-      const result = await signIn({ email, password, role: demoRole });
+      const result = await signIn({ email, password });
       const user = result?.user
-        ? {
-            ...result.user,
-            role: result.user.role || demoRole || ROLES.MEMBER,
-            name:
-              result.user.name && result.user.name !== 'Demo User' && result.user.name !== ''
-                ? result.user.name
-                : nameFromRole(result.user.role || demoRole),
-            chapter_id: result.user.chapter_id || 'ch-memphis',
-          }
+        ? { ...result.user, role: result.user.role || ROLES.MEMBER }
         : null;
       if (user) setUser(user);
     } catch (e) {
@@ -73,6 +43,22 @@ export default function LoginScreen({ navigation }) {
       setLoading(false);
     }
   }
+
+  async function handleGoogle() {
+    setLoading(true);
+    try {
+      const { user } = await signInWithGoogle();
+      if (user) setUser({ ...user, role: user.role || ROLES.MEMBER });
+    } catch (e) {
+      Alert.alert('Google sign in failed', e.message || 'Try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Google popup auth only works on web. Native needs expo-auth-session
+  // (a separate, larger setup) — surface the button only where it works.
+  const showGoogle = Platform.OS === 'web' && isFirebaseConfigured;
 
   return (
     <KeyboardAvoidingView
@@ -113,41 +99,28 @@ export default function LoginScreen({ navigation }) {
             style={styles.btn}
           />
 
+          {showGoogle && (
+            <>
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+              <TouchableOpacity
+                style={styles.googleBtn}
+                onPress={handleGoogle}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.googleG}>G</Text>
+                <Text style={styles.googleText}>Continue with Google</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           <Text style={styles.signupLink} onPress={() => navigation.navigate('SignupStep1')}>
             Don't have an account? <Text style={styles.signupBold}>Sign up</Text>
           </Text>
-
-          <View style={styles.demoBox}>
-            <LinearGradient
-              colors={Colors.gradient.green}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.demoHeader}
-            >
-              <Text style={styles.demoTitle}>Demo logins</Text>
-            </LinearGradient>
-            <View style={styles.demoBody}>
-              <View style={styles.demoRow}>
-                <View style={[styles.demoDot, { backgroundColor: Colors.sage }]} />
-                <Text style={styles.demoLine}>
-                  <Text style={styles.demoLabel}>Restaurant: </Text>restaurant@demo.com
-                </Text>
-              </View>
-              <View style={styles.demoRow}>
-                <View style={[styles.demoDot, { backgroundColor: Colors.green }]} />
-                <Text style={styles.demoLine}>
-                  <Text style={styles.demoLabel}>Chapter President: </Text>president@demo.com
-                </Text>
-              </View>
-              <View style={styles.demoRow}>
-                <View style={[styles.demoDot, { backgroundColor: Colors.pink }]} />
-                <Text style={styles.demoLine}>
-                  <Text style={styles.demoLabel}>Executive: </Text>exec@demo.com
-                </Text>
-              </View>
-              <Text style={styles.demoCaption}>Any password works in demo mode.</Text>
-            </View>
-          </View>
         </ResponsiveContainer>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -161,42 +134,35 @@ const styles = StyleSheet.create({
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 32 },
   btn: { marginTop: 8 },
-  signupLink: { textAlign: 'center', marginTop: 20, ...Type.caption },
+  signupLink: { textAlign: 'center', marginTop: 24, ...Type.caption },
   signupBold: { color: Colors.pink, fontWeight: '600' },
-  demoBox: {
-    marginTop: 32,
-    borderRadius: Radius.lg,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-  },
-  demoHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  demoTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.white,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  demoBody: {
-    padding: 16,
-    backgroundColor: Colors.white,
-  },
-  demoRow: {
+  divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
+    marginVertical: 16,
+    gap: 10,
   },
-  demoDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.glassBorder },
+  dividerText: { fontSize: 12, color: Colors.gray },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    backgroundColor: Colors.white,
   },
-  demoLine: { fontSize: 13, color: Colors.dark },
-  demoLabel: { fontWeight: '700', color: Colors.green },
-  demoCaption: { fontSize: 11, color: Colors.gray, marginTop: 8, fontStyle: 'italic' },
+  googleG: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#4285F4',
+  },
+  googleText: {
+    fontSize: 15,
+    color: Colors.dark,
+    fontWeight: '600',
+  },
 });
