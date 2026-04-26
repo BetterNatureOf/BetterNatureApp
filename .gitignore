@@ -11,3 +11,4 @@ dist/
 web-build/
 .DS_Store
 google-service-account.json
+.claude/
