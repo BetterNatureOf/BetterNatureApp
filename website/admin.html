@@ -1,0 +1,991 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Better Nature — Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background: var(--cream); padding-top: 0; }
+    .admin-nav {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--forest); color: var(--cream);
+      padding: 14px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .admin-nav__brand { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+    .admin-nav__brand img { width: 32px; height: 32px; border-radius: 50%; }
+    .admin-nav__actions { display: flex; gap: 10px; align-items: center; }
+    .admin-nav__status { font-size: 13px; color: rgba(247,244,240,.6); margin-right: 10px; }
+    .admin-nav__status.saved { color: #86efac; }
+    .admin-nav__status.dirty { color: var(--pink); }
+
+    .admin { max-width: 1200px; margin: 40px auto; padding: 0 32px; }
+    .admin h1 {
+      font-family: var(--sans); font-weight: 600; font-size: 40px;
+      color: var(--forest); letter-spacing: -.025em; margin-bottom: 12px;
+    }
+    .admin > p.lede {
+      color: var(--ink-60); font-size: 16px; max-width: 700px;
+      margin-bottom: 40px;
+    }
+
+    .admin-tabs {
+      display: flex; gap: 4px; margin-bottom: 24px; overflow-x: auto;
+      border-bottom: 1px solid var(--line);
+    }
+    .admin-tab {
+      padding: 12px 20px; font-size: 14px; font-weight: 600;
+      color: var(--ink-60); border-bottom: 2px solid transparent;
+      margin-bottom: -1px; white-space: nowrap;
+    }
+    .admin-tab.is-active {
+      color: var(--forest); border-bottom-color: var(--pink);
+    }
+
+    .panel { display: none; }
+    .panel.is-active { display: block; }
+
+    .card {
+      background: white; border-radius: 14px; border: 1px solid var(--line);
+      padding: 28px; margin-bottom: 16px;
+    }
+    .card__head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .card__title {
+      font-family: var(--sans); font-weight: 600; font-size: 18px;
+      color: var(--forest); letter-spacing: -.01em;
+    }
+
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--ink-60); margin-bottom: 6px;
+    }
+    .field input, .field textarea {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--line);
+      border-radius: 8px; font-family: var(--sans); font-size: 15px;
+      background: var(--parchment); color: var(--charcoal);
+      transition: border-color .2s;
+    }
+    .field input:focus, .field textarea:focus {
+      outline: none; border-color: var(--pink);
+    }
+    .field textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+    .field--row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field--row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    .btn-small { padding: 8px 14px; font-size: 13px; border-radius: 999px; font-weight: 600; }
+    .btn-danger {
+      background: transparent; color: var(--pink-dark);
+      border: 1.5px solid var(--pink-soft);
+    }
+    .btn-danger:hover { background: var(--pink-soft); }
+
+    .row-controls {
+      display: flex; gap: 8px; justify-content: flex-end;
+      margin-top: 8px;
+    }
+    .add-row {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 18px; border-radius: 999px;
+      background: var(--forest); color: var(--cream); font-size: 14px; font-weight: 600;
+      margin-top: 8px; cursor: pointer;
+    }
+    .add-row:hover { background: var(--forest-ink); }
+
+    .panel__help {
+      background: var(--pink-soft); border-radius: 12px; padding: 16px 20px;
+      margin-bottom: 24px; font-size: 14px; color: var(--forest-ink);
+      border-left: 3px solid var(--pink);
+    }
+    .panel__help strong { color: var(--pink-dark); }
+
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 4px; border-bottom: 1px solid var(--line);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-row__label { font-size: 15px; font-weight: 500; color: var(--forest); }
+    .toggle-row__sub { font-size: 12px; color: var(--ink-60); margin-top: 2px; }
+    .toggle {
+      position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle__slider {
+      position: absolute; inset: 0; background: #ccc; border-radius: 999px;
+      cursor: pointer; transition: .2s;
+    }
+    .toggle__slider:before {
+      content: ""; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px;
+      background: white; border-radius: 50%; transition: .2s;
+    }
+    .toggle input:checked + .toggle__slider { background: var(--forest); }
+    .toggle input:checked + .toggle__slider:before { transform: translateX(20px); }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--forest); color: var(--cream);
+      padding: 14px 22px; border-radius: 12px; font-size: 14px; font-weight: 500;
+      box-shadow: 0 10px 30px -10px rgba(0,0,0,.35);
+      transform: translateY(150%); opacity: 0; transition: all .3s var(--ease);
+      z-index: 100;
+    }
+    .toast.is-show { transform: translateY(0); opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="admin-nav">
+  <div class="admin-nav__brand">
+    <img src="logo.png" alt="" />
+    <span>Better Nature Admin</span>
+  </div>
+  <div class="admin-nav__actions">
+    <span class="admin-nav__status saved" id="status">Synced</span>
+    <a class="btn btn--ghost btn-small" href="index.html" style="color:var(--cream);">View site</a>
+    <button class="btn btn--pink btn-small" id="saveBtn">Save changes</button>
+    <button class="btn btn--outline btn-small" id="exportBtn" style="color:var(--cream);border-color:rgba(255,255,255,.3);">Export content.js</button>
+  </div>
+</div>
+
+<div class="admin">
+  <h1>Edit your site</h1>
+  <p class="lede">Change any number, name, or quote below. Hit <strong>Save changes</strong> and your live site updates instantly. When you're ready to make it permanent, click <strong>Export content.js</strong> and replace the file on your server.</p>
+
+  <div class="admin-tabs" id="tabs">
+    <button class="admin-tab is-active" data-panel="sections">Sections on/off</button>
+    <button class="admin-tab" data-panel="impact">Impact stats</button>
+    <button class="admin-tab" data-panel="hero">Hero ticker</button>
+    <button class="admin-tab" data-panel="team">Team</button>
+    <button class="admin-tab" data-panel="chapters">Chapters</button>
+    <button class="admin-tab" data-panel="testimonials">Testimonials</button>
+    <button class="admin-tab" data-panel="events">Events</button>
+    <button class="admin-tab" data-panel="partners">Partners</button>
+    <button class="admin-tab" data-panel="programs">Program stats</button>
+    <button class="admin-tab" data-panel="brand">Contact info</button>
+    <button class="admin-tab" data-panel="admins">Admins</button>
+    <button class="admin-tab" data-panel="audit">Edit history</button>
+  </div>
+
+  <!-- SECTIONS VISIBILITY -->
+  <div class="panel is-active" id="panel-sections">
+    <div class="panel__help">
+      Flip any section off to hide it from the live site. Nav links for hidden sections disappear automatically.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Show / hide sections</div>
+      <div id="sectionsList"></div>
+    </div>
+  </div>
+
+  <!-- IMPACT -->
+  <div class="panel" id="panel-impact">
+    <div class="panel__help">
+      <strong>Impact stats</strong> are the big pink numbers in the "Real numbers. Real neighbors." section.
+    </div>
+    <div id="impactList"></div>
+    <button class="add-row" data-add="impact">＋ Add a stat</button>
+  </div>
+
+  <!-- HERO TICKER -->
+  <div class="panel" id="panel-hero">
+    <div class="panel__help">
+      <strong>Hero ticker</strong> = the scrolling stats bar at the bottom of the homepage hero. Keep labels short.
+    </div>
+    <div id="heroList"></div>
+    <button class="add-row" data-add="hero">＋ Add a ticker stat</button>
+  </div>
+
+  <!-- TEAM -->
+  <div class="panel" id="panel-team">
+    <div class="panel__help">
+      <strong>Team members</strong>. To add a photo: upload the image to your site folder (e.g. <code>website/satvik.jpg</code>) and put <code>/satvik.jpg</code> in the Photo field.
+    </div>
+    <div id="teamList"></div>
+    <button class="add-row" data-add="team">＋ Add a team member</button>
+  </div>
+
+  <!-- CHAPTERS -->
+  <div class="panel" id="panel-chapters">
+    <div class="panel__help">
+      <strong>Featured chapters</strong> shown in the Chapters section grid.
+    </div>
+    <div id="chaptersList"></div>
+    <button class="add-row" data-add="chapters">＋ Add a chapter</button>
+  </div>
+
+  <!-- TESTIMONIALS -->
+  <div class="panel" id="panel-testimonials">
+    <div class="panel__help">
+      Quotes from volunteers, restaurant partners, or community members.
+    </div>
+    <div id="testimonialsList"></div>
+    <button class="add-row" data-add="testimonials">＋ Add a testimonial</button>
+  </div>
+
+  <!-- EVENTS -->
+  <div class="panel" id="panel-events">
+    <div class="panel__help">
+      Use format <code>YYYY-MM-DD</code> for date. Type should be <strong>IRIS</strong>, <strong>Evergreen</strong>, <strong>Hydro</strong>, or <strong>Community</strong>.
+    </div>
+    <div id="eventsList"></div>
+    <button class="add-row" data-add="events">＋ Add an event</button>
+  </div>
+
+  <!-- PARTNERS -->
+  <div class="panel" id="panel-partners">
+    <div class="panel__help">
+      Restaurant/business partner names shown in the scrolling marquee.
+    </div>
+    <div id="partnersList"></div>
+    <button class="add-row" data-add="partners">＋ Add a partner</button>
+  </div>
+
+  <!-- PROGRAM STATS -->
+  <div class="panel" id="panel-programs">
+    <div class="panel__help">
+      Stats displayed inside each program card (IRIS, Evergreen, Hydro).
+    </div>
+    <div id="programsList"></div>
+  </div>
+
+  <!-- BRAND / CONTACT -->
+  <div class="panel" id="panel-brand">
+    <div class="panel__help">
+      Global brand info. Appears in the footer and social links.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Contact & social</div>
+      <div class="field"><label>Email</label><input id="brand-email" /></div>
+      <div class="field"><label>Tagline (footer serif italic)</label><input id="brand-tagline" /></div>
+      <div class="field--row">
+        <div class="field"><label>Instagram URL</label><input id="brand-ig" /></div>
+        <div class="field"><label>X / Twitter URL</label><input id="brand-tw" /></div>
+      </div>
+      <div class="field--row">
+        <div class="field"><label>Facebook URL</label><input id="brand-fb" /></div>
+        <div class="field"><label>Donate URL (Zeffy)</label><input id="brand-donate" /></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card__title" style="margin-bottom:20px;">App download links</div>
+      <div class="field"><label>Apple App Store URL</label><input id="brand-appstore" placeholder="https://apps.apple.com/..." /></div>
+      <div class="field"><label>Google Play URL</label><input id="brand-googleplay" placeholder="https://play.google.com/..." /></div>
+      <div class="field"><label>Web app URL (drives the QR code)</label><input id="brand-webapp" placeholder="https://app.betternatureofficial.org" /></div>
+    </div>
+  </div>
+
+  <!-- ADMINS (super_admin only) -->
+  <div class="panel" id="panel-admins">
+    <div class="panel__help">
+      <strong>Admin accounts.</strong> Inviting someone generates a 6-digit one-time code that gets emailed to the super admin
+      (satvik.koya@betternatureofficial.org). Share that code with the invitee — they enter it when creating their account at
+      /admin.html. Without the right code they get a regular member account. Existing app users can be promoted directly.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Invite an admin</div>
+      <div class="field--row">
+        <div class="field"><label>Email</label><input id="invite-email" placeholder="name@betternatureofficial.org" /></div>
+        <div class="field" style="display:flex;align-items:flex-end;"><button class="btn btn--pink btn-small" id="invite-send" style="width:100%;">Send invite</button></div>
+      </div>
+      <div id="invite-status" style="font-size:13px;color:var(--ink-60);"></div>
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Pending invites</div>
+      <div id="invitesList"></div>
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Current admins</div>
+      <div id="adminsList"></div>
+    </div>
+  </div>
+
+  <!-- EDIT HISTORY -->
+  <div class="panel" id="panel-audit">
+    <div class="panel__help">
+      Every Save is recorded here with the account that did it. Useful if something breaks and you want to know who touched what.
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Recent edits</div>
+      <div id="auditList"><em style="color:var(--ink-60);">Loading...</em></div>
+      <button class="btn btn--ghost btn-small" id="auditRefresh" style="margin-top:12px;">Refresh</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="content.js"></script>
+<script type="module">
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN UI — edits window.CONTENT and persists to localStorage.
+//  The live site (app.js) reads from localStorage first, so changes show up
+//  immediately when you click Save. Use Export to permanently update content.js.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+  auth, signIn, signUp, logOut, onUser, ensureUserDoc, honorPendingInvite,
+  isAdminRole, listAdmins, inviteAdmin, listInvites, revokeInvite, setRole,
+  logEdit, fetchAuditLog, diffPaths, SUPER_ADMIN_EMAIL,
+} from './firebase-auth.js';
+
+// Gate the UI behind auth. The admin surface is hidden until we know the
+// user is signed in AND has an admin role.
+let CURRENT_USER = null;
+const adminRoot = document.querySelector('.admin');
+const adminNavActions = document.querySelector('.admin-nav__actions');
+adminRoot.style.display = 'none';
+
+// Inject login screen
+const loginScreen = document.createElement('div');
+loginScreen.id = 'loginScreen';
+loginScreen.innerHTML = `
+  <div class="login">
+    <img src="logo.png" alt="" class="login__logo" />
+    <h1>Admin sign in</h1>
+    <p class="login__sub">Your admin account works across the website, the app, and the web version of the app.</p>
+    <form id="loginForm" class="login__form">
+      <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="email" required /></div>
+      <div class="field"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password" required minlength="6" /></div>
+      <div class="field" id="login-code-wrap" style="display:none;">
+        <label>Admin invite code (6 digits)</label>
+        <input id="login-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" />
+        <small style="color:var(--ink-60);font-size:12px;display:block;margin-top:4px;">Required only if creating an admin account. Ask the super admin to invite you.</small>
+      </div>
+      <div id="login-err" class="login__err" style="display:none;"></div>
+      <button class="btn btn--pink btn--lg" type="submit" id="login-submit">Sign in</button>
+      <button class="btn btn--ghost btn-small" type="button" id="login-create" style="margin-top:8px;">First time? Create this account</button>
+      <button class="btn btn--ghost btn-small" type="button" id="login-toggle-code" style="margin-top:4px;font-size:12px;">I have an admin invite code</button>
+    </form>
+  </div>
+`;
+document.body.appendChild(loginScreen);
+
+const loginStyle = document.createElement('style');
+loginStyle.textContent = `
+  #loginScreen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--cream); padding: 24px; }
+  .login { max-width: 420px; width: 100%; background: white; padding: 40px 32px; border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(27,58,45,0.08); }
+  .login__logo { width: 52px; height: 52px; border-radius: 50%; margin-bottom: 16px; }
+  .login h1 { font-family: var(--sans); font-weight: 600; font-size: 28px; color: var(--forest); letter-spacing: -.02em; margin-bottom: 8px; }
+  .login__sub { color: var(--ink-60); font-size: 14px; margin-bottom: 24px; }
+  .login__form button[type="submit"] { width: 100%; margin-top: 8px; }
+  .login__err { background: var(--pink-soft); color: var(--pink-dark); padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+`;
+document.head.appendChild(loginStyle);
+
+const loginErr = loginScreen.querySelector('#login-err');
+const showErr = (msg) => { loginErr.textContent = msg; loginErr.style.display = 'block'; };
+const clearErr = () => { loginErr.style.display = 'none'; };
+
+loginScreen.querySelector('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  clearErr();
+  const email = loginScreen.querySelector('#login-email').value;
+  const pass = loginScreen.querySelector('#login-pass').value;
+  try { await signIn(email, pass); } catch (err) { showErr(err.message || 'Sign in failed'); }
+});
+loginScreen.querySelector('#login-toggle-code').addEventListener('click', () => {
+  const wrap = loginScreen.querySelector('#login-code-wrap');
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+});
+loginScreen.querySelector('#login-create').addEventListener('click', async () => {
+  clearErr();
+  const email = loginScreen.querySelector('#login-email').value;
+  const pass = loginScreen.querySelector('#login-pass').value;
+  const code = loginScreen.querySelector('#login-code').value;
+  if (!email || !pass || pass.length < 6) return showErr('Enter an email and a 6+ char password first.');
+  try {
+    await signUp({ email, password: pass, name: email.split('@')[0], role: 'member', adminCode: code });
+  } catch (err) { showErr(err.message || 'Create account failed'); }
+});
+
+// Watch auth state. Admin UI only becomes visible for admin/super_admin roles.
+onUser(async (user) => {
+  if (!user) {
+    CURRENT_USER = null;
+    loginScreen.style.display = '';
+    adminRoot.style.display = 'none';
+    return;
+  }
+  // First-time super-admin bootstrap + pending invite honor
+  if ((user.email || '').toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() && user.profile?.role !== 'super_admin') {
+    await setRole(user.uid, 'super_admin');
+    user.profile = { ...(user.profile || {}), role: 'super_admin' };
+  } else {
+    await honorPendingInvite(user);
+  }
+
+  if (!isAdminRole(user.profile?.role)) {
+    showErr(`Signed in as ${user.email} — this account is not an admin. Ask ${SUPER_ADMIN_EMAIL} to invite you.`);
+    // leave them on login screen; provide sign out
+    loginScreen.querySelector('#loginForm').insertAdjacentHTML('beforeend',
+      `<button class="btn btn--ghost btn-small" id="login-signout" type="button" style="margin-top:8px;">Sign out</button>`);
+    loginScreen.querySelector('#login-signout').onclick = () => logOut();
+    return;
+  }
+
+  CURRENT_USER = user;
+  loginScreen.style.display = 'none';
+  adminRoot.style.display = '';
+  // Add role badge + sign out to top nav
+  if (!document.getElementById('whoami')) {
+    const pill = document.createElement('span');
+    pill.id = 'whoami';
+    pill.style.cssText = 'font-size:13px;color:rgba(247,244,240,.75);margin-right:10px;';
+    pill.textContent = `${user.email} · ${user.profile.role}`;
+    adminNavActions.prepend(pill);
+    const out = document.createElement('button');
+    out.className = 'btn btn--ghost btn-small';
+    out.style.cssText = 'color:var(--cream);border-color:rgba(255,255,255,.3);';
+    out.textContent = 'Sign out';
+    out.onclick = () => logOut();
+    adminNavActions.appendChild(out);
+  }
+  // Show/hide the Admins tab for super_admin only
+  const adminsTab = document.querySelector('[data-panel="admins"]');
+  if (adminsTab) adminsTab.style.display = user.profile.role === 'super_admin' ? '' : 'none';
+  renderAdmins();
+  renderInvites();
+  renderAudit();
+});
+
+const STORAGE_KEY = 'betternature.content.overrides';
+
+// Load current state (base content + any saved overrides)
+let state = structuredClone(window.CONTENT);
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+  if (saved) state = deepMerge(state, saved);
+} catch (e) {}
+
+function deepMerge(a, b) {
+  if (Array.isArray(b)) return b;
+  if (b && typeof b === 'object') {
+    const out = { ...a };
+    for (const k in b) out[k] = deepMerge(a?.[k], b[k]);
+    return out;
+  }
+  return b;
+}
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+let dirty = false;
+function markDirty() {
+  dirty = true;
+  const s = $('#status');
+  s.textContent = '● Unsaved changes';
+  s.className = 'admin-nav__status dirty';
+}
+function markClean() {
+  dirty = false;
+  const s = $('#status');
+  s.textContent = '✓ Saved';
+  s.className = 'admin-nav__status saved';
+}
+
+function input(label, val, onChange, opts = {}) {
+  const el = document.createElement('div');
+  el.className = 'field';
+  el.innerHTML = `<label>${label}</label>${opts.textarea ? `<textarea></textarea>` : `<input type="${opts.type||'text'}" />`}`;
+  const i = el.querySelector('input,textarea');
+  i.value = val ?? '';
+  i.addEventListener('input', () => { onChange(i.value); markDirty(); });
+  return el;
+}
+
+// ── IMPACT ──
+function renderImpact() {
+  const list = $('#impactList');
+  list.innerHTML = '';
+  state.impact.stats.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">Stat ${i+1}</div></div>`;
+    const row = document.createElement('div');
+    row.className = 'field--row';
+    row.appendChild(input('Value', s.value, v => state.impact.stats[i].value = v));
+    row.appendChild(input('Label', s.label, v => state.impact.stats[i].label = v));
+    card.appendChild(row);
+    card.appendChild(input('Sub-label (small text below)', s.sublabel, v => state.impact.stats[i].sublabel = v));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete this stat?')) return;
+      state.impact.stats.splice(i,1); markDirty(); renderImpact();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── HERO TICKER ──
+function renderHero() {
+  const list = $('#heroList');
+  list.innerHTML = '';
+  state.hero.tickerStats.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">Ticker ${i+1}</div></div>`;
+    const row = document.createElement('div');
+    row.className = 'field--row';
+    row.appendChild(input('Value', s.value, v => state.hero.tickerStats[i].value = v));
+    row.appendChild(input('Label', s.label, v => state.hero.tickerStats[i].label = v));
+    card.appendChild(row);
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.hero.tickerStats.splice(i,1); markDirty(); renderHero();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── TEAM ──
+function renderTeam() {
+  const list = $('#teamList');
+  list.innerHTML = '';
+  state.team.members.forEach((m, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${m.name || 'New member'}</div></div>`;
+    const row1 = document.createElement('div');
+    row1.className = 'field--row';
+    row1.appendChild(input('Name', m.name, v => { state.team.members[i].name = v; card.querySelector('.card__title').textContent = v || 'New member'; }));
+    row1.appendChild(input('Role', m.role, v => state.team.members[i].role = v));
+    card.appendChild(row1);
+    const row2 = document.createElement('div');
+    row2.className = 'field--row';
+    row2.appendChild(input('City', m.city, v => state.team.members[i].city = v));
+    row2.appendChild(input('Photo URL (e.g. /satvik.jpg)', m.photo, v => state.team.members[i].photo = v));
+    card.appendChild(row2);
+    card.appendChild(input('Bio', m.bio, v => state.team.members[i].bio = v, { textarea: true }));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete this member?')) return;
+      state.team.members.splice(i,1); markDirty(); renderTeam();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── CHAPTERS ──
+function renderChapters() {
+  const list = $('#chaptersList');
+  list.innerHTML = '';
+  state.chapters.featured.forEach((c, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${c.city || 'New chapter'}</div></div>`;
+    const row1 = document.createElement('div');
+    row1.className = 'field--row';
+    row1.appendChild(input('City', c.city, v => { state.chapters.featured[i].city = v; card.querySelector('.card__title').textContent = v || 'New chapter'; }));
+    row1.appendChild(input('State', c.state, v => state.chapters.featured[i].state = v));
+    card.appendChild(row1);
+    const row2 = document.createElement('div');
+    row2.className = 'field--row';
+    row2.appendChild(input('President name', c.president, v => state.chapters.featured[i].president = v));
+    row2.appendChild(input('Member count', c.members, v => state.chapters.featured[i].members = Number(v)||0, { type: 'number' }));
+    card.appendChild(row2);
+    card.appendChild(input('Chapter Instagram URL', c.instagram || '', v => state.chapters.featured[i].instagram = v));
+    card.appendChild(input('Short blurb', c.blurb || '', v => state.chapters.featured[i].blurb = v));
+    // Roster editor
+    const rosterWrap = document.createElement('div');
+    rosterWrap.style.marginTop = '14px';
+    rosterWrap.innerHTML = '<div style="font-weight:600;color:var(--forest);margin-bottom:8px;">Roster</div>';
+    state.chapters.featured[i].roster = state.chapters.featured[i].roster || [];
+    const renderRoster = () => {
+      rosterWrap.querySelectorAll('.roster-row').forEach(n => n.remove());
+      state.chapters.featured[i].roster.forEach((m, j) => {
+        const rr = document.createElement('div');
+        rr.className = 'roster-row field--row';
+        rr.appendChild(input('Name', m.name, v => state.chapters.featured[i].roster[j].name = v));
+        rr.appendChild(input('Role', m.role, v => state.chapters.featured[i].roster[j].role = v));
+        rr.appendChild(input('Instagram URL', m.instagram, v => state.chapters.featured[i].roster[j].instagram = v));
+        const del = document.createElement('button');
+        del.className = 'btn btn--ghost btn-small btn-danger';
+        del.textContent = '✕';
+        del.onclick = () => { state.chapters.featured[i].roster.splice(j,1); markDirty(); renderRoster(); };
+        rr.appendChild(del);
+        rosterWrap.appendChild(rr);
+      });
+    };
+    renderRoster();
+    const addMember = document.createElement('button');
+    addMember.className = 'add-row';
+    addMember.textContent = '＋ Add member';
+    addMember.onclick = () => { state.chapters.featured[i].roster.push({ name: 'New member', role: '', instagram: '' }); markDirty(); renderRoster(); };
+    rosterWrap.appendChild(addMember);
+    card.appendChild(rosterWrap);
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.chapters.featured.splice(i,1); markDirty(); renderChapters();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── TESTIMONIALS ──
+function renderTestimonials() {
+  const list = $('#testimonialsList');
+  list.innerHTML = '';
+  state.testimonials.forEach((t, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">Quote ${i+1}</div></div>`;
+    card.appendChild(input('Quote', t.quote, v => state.testimonials[i].quote = v, { textarea: true }));
+    const row = document.createElement('div');
+    row.className = 'field--row3';
+    row.appendChild(input('Name', t.name, v => state.testimonials[i].name = v));
+    row.appendChild(input('Role', t.role, v => state.testimonials[i].role = v));
+    row.appendChild(input('City', t.city, v => state.testimonials[i].city = v));
+    card.appendChild(row);
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.testimonials.splice(i,1); markDirty(); renderTestimonials();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── EVENTS ──
+function renderEvents() {
+  const list = $('#eventsList');
+  list.innerHTML = '';
+  state.events.forEach((e, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${e.title || 'New event'}</div></div>`;
+    const row1 = document.createElement('div');
+    row1.className = 'field--row';
+    row1.appendChild(input('Date (YYYY-MM-DD)', e.date, v => state.events[i].date = v));
+    row1.appendChild(input('Time', e.time, v => state.events[i].time = v));
+    card.appendChild(row1);
+    card.appendChild(input('Title', e.title, v => { state.events[i].title = v; card.querySelector('.card__title').textContent = v || 'New event'; }));
+    const row2 = document.createElement('div');
+    row2.className = 'field--row';
+    row2.appendChild(input('Chapter', e.chapter, v => state.events[i].chapter = v));
+    row2.appendChild(input('Type', e.type, v => state.events[i].type = v));
+    card.appendChild(row2);
+    card.appendChild(input('RSVP link (optional)', e.href, v => state.events[i].href = v));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => {
+      if (!confirm('Delete?')) return;
+      state.events.splice(i,1); markDirty(); renderEvents();
+    };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── PARTNERS ──
+function renderPartners() {
+  const list = $('#partnersList');
+  list.innerHTML = '';
+  state.partners.logos.forEach((p, i) => {
+    // Migrate legacy string entries → object
+    if (typeof p === 'string') { state.partners.logos[i] = { name: p, website: '', instagram: '', logo: '' }; p = state.partners.logos[i]; }
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${p.name || 'New partner'}</div></div>`;
+    card.appendChild(input('Partner name', p.name, v => { state.partners.logos[i].name = v; card.querySelector('.card__title').textContent = v || 'New partner'; }));
+    const row = document.createElement('div');
+    row.className = 'field--row';
+    row.appendChild(input('Website URL', p.website || '', v => state.partners.logos[i].website = v));
+    row.appendChild(input('Instagram URL', p.instagram || '', v => state.partners.logos[i].instagram = v));
+    card.appendChild(row);
+    card.appendChild(input('Logo image URL (optional)', p.logo || '', v => state.partners.logos[i].logo = v));
+    const controls = document.createElement('div');
+    controls.className = 'row-controls';
+    controls.innerHTML = `<button class="btn btn--ghost btn-small btn-danger">Delete</button>`;
+    controls.querySelector('button').onclick = () => { state.partners.logos.splice(i,1); markDirty(); renderPartners(); };
+    card.appendChild(controls);
+    list.appendChild(card);
+  });
+}
+
+// ── PROGRAMS ──
+function renderPrograms() {
+  const list = $('#programsList');
+  list.innerHTML = '';
+  state.programs.items.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="card__head"><div class="card__title">${p.code} — ${p.title}</div></div>`;
+    p.stats.forEach((s, j) => {
+      const row = document.createElement('div');
+      row.className = 'field--row';
+      row.appendChild(input(`Stat ${j+1} value`, s.value, v => state.programs.items[i].stats[j].value = v));
+      row.appendChild(input(`Stat ${j+1} label`, s.label, v => state.programs.items[i].stats[j].label = v));
+      card.appendChild(row);
+    });
+    list.appendChild(card);
+  });
+}
+
+// ── SECTIONS ──
+const SECTION_META = [
+  { key: 'mission',      label: 'Mission',          sub: 'Three-pillar mission statement' },
+  { key: 'impact',       label: 'Impact stats',     sub: 'Big pink numbers ("Real numbers. Real neighbors.")' },
+  { key: 'programs',     label: 'Programs',         sub: 'Food rescue / Evergreen / Hydro cards' },
+  { key: 'impactmap',    label: 'Impact map',       sub: 'Interactive map of chapters + the gap' },
+  { key: 'how',          label: 'Get Involved',     sub: 'Volunteer / Donate / Partner tabs' },
+  { key: 'chapters',     label: 'Chapters',         sub: 'Chapter directory grid' },
+  { key: 'partners',     label: 'Partners',         sub: 'Partner logos marquee + pitch' },
+  { key: 'testimonials', label: 'Testimonials',     sub: 'Quote cards' },
+  { key: 'team',         label: 'Team',             sub: 'Founding team grid' },
+  { key: 'events',       label: 'Events',           sub: 'Upcoming events list' },
+  { key: 'press',        label: 'Press',            sub: 'Press quotes + publication logos' },
+  { key: 'donate',       label: 'Donate',           sub: 'Zeffy embed + giving tiers' },
+  { key: 'getapp',       label: 'Get the App',      sub: 'App download / QR code block' },
+  { key: 'signup',       label: 'Sign up',          sub: 'Volunteer / start-a-chapter form' },
+];
+function renderSections() {
+  state.sections = state.sections || {};
+  const list = $('#sectionsList');
+  list.innerHTML = '';
+  SECTION_META.forEach(s => {
+    if (state.sections[s.key] === undefined) state.sections[s.key] = true;
+    const row = document.createElement('label');
+    row.className = 'toggle-row';
+    row.innerHTML = `
+      <div>
+        <div class="toggle-row__label">${s.label}</div>
+        <div class="toggle-row__sub">${s.sub}</div>
+      </div>
+      <span class="toggle">
+        <input type="checkbox" ${state.sections[s.key] ? 'checked' : ''} />
+        <span class="toggle__slider"></span>
+      </span>`;
+    row.querySelector('input').addEventListener('change', e => {
+      state.sections[s.key] = e.target.checked;
+      markDirty();
+    });
+    list.appendChild(row);
+  });
+}
+
+// ── BRAND ──
+function renderBrand() {
+  $('#brand-email').value = state.brand.email || '';
+  $('#brand-tagline').value = state.brand.tagline || '';
+  $('#brand-ig').value = state.brand.instagram || '';
+  $('#brand-tw').value = state.brand.twitter || '';
+  $('#brand-fb').value = state.brand.facebook || '';
+  $('#brand-donate').value = state.brand.donateUrl || '';
+  const hook = (id, key) => $(id).addEventListener('input', () => { state.brand[key] = $(id).value; markDirty(); });
+  hook('#brand-email', 'email');
+  hook('#brand-tagline', 'tagline');
+  hook('#brand-ig', 'instagram');
+  hook('#brand-tw', 'twitter');
+  hook('#brand-fb', 'facebook');
+  hook('#brand-donate', 'donateUrl');
+
+  state.brand.appLinks = state.brand.appLinks || { appStore: '', googlePlay: '', webApp: '' };
+  $('#brand-appstore').value = state.brand.appLinks.appStore || '';
+  $('#brand-googleplay').value = state.brand.appLinks.googlePlay || '';
+  $('#brand-webapp').value = state.brand.appLinks.webApp || '';
+  const hookApp = (id, key) => $(id).addEventListener('input', () => { state.brand.appLinks[key] = $(id).value; markDirty(); });
+  hookApp('#brand-appstore', 'appStore');
+  hookApp('#brand-googleplay', 'googlePlay');
+  hookApp('#brand-webapp', 'webApp');
+}
+
+// ── ADMINS PANEL ──
+async function renderAdmins() {
+  if (!CURRENT_USER || CURRENT_USER.profile?.role !== 'super_admin') return;
+  const list = document.getElementById('adminsList');
+  if (!list) return;
+  list.innerHTML = '<em style="color:var(--ink-60);">Loading...</em>';
+  try {
+    const admins = await listAdmins();
+    list.innerHTML = '';
+    admins.forEach(a => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid var(--line);';
+      const isSuper = a.role === 'super_admin';
+      const isSelf = a.uid === CURRENT_USER.uid;
+      row.innerHTML = `
+        <div>
+          <div style="font-weight:600;color:var(--forest);">${a.email}${isSelf ? ' <span style="color:var(--ink-60);font-weight:400;">(you)</span>' : ''}</div>
+          <div style="font-size:12px;color:var(--ink-60);">${a.name || ''} · ${a.role}</div>
+        </div>
+        <div>${isSuper || isSelf ? '' : '<button class="btn btn--ghost btn-small btn-danger" data-uid="'+a.uid+'">Remove admin</button>'}</div>`;
+      const btn = row.querySelector('button');
+      if (btn) btn.onclick = async () => {
+        if (!confirm(`Remove admin access for ${a.email}? Their app account stays intact.`)) return;
+        await setRole(a.uid, 'member');
+        renderAdmins();
+      };
+      list.appendChild(row);
+    });
+  } catch (e) { list.innerHTML = '<em style="color:var(--pink-dark);">'+e.message+'</em>'; }
+}
+document.getElementById('invite-send').onclick = async () => {
+  const email = document.getElementById('invite-email').value.trim();
+  const status = document.getElementById('invite-status');
+  if (!email) { status.textContent = 'Enter an email.'; return; }
+  status.textContent = 'Generating code & emailing...';
+  try {
+    const r = await inviteAdmin(email, CURRENT_USER?.email || '');
+    if (r.promoted) {
+      status.innerHTML = `✓ <strong>${email}</strong> already had an account — promoted to admin.`;
+    } else {
+      status.innerHTML = `✓ Invite created. Code <code style="background:var(--pink-soft);padding:2px 8px;border-radius:6px;font-size:15px;font-weight:700;color:var(--pink-dark);">${r.code}</code> emailed to ${SUPER_ADMIN_EMAIL}.<br>Share it with <strong>${email}</strong> — they enter it when creating their account at /admin.html.`;
+    }
+    document.getElementById('invite-email').value = '';
+    renderAdmins();
+    renderInvites();
+  } catch (e) { status.textContent = e.message; }
+};
+
+async function renderInvites() {
+  if (!CURRENT_USER || CURRENT_USER.profile?.role !== 'super_admin') return;
+  const list = document.getElementById('invitesList');
+  if (!list) return;
+  try {
+    const invites = await listInvites();
+    const open = invites.filter(i => !i.revoked);
+    if (!open.length) { list.innerHTML = '<em style="color:var(--ink-60);">No pending invites.</em>'; return; }
+    list.innerHTML = open.map(i => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid var(--line);">
+        <div>
+          <div style="font-weight:600;color:var(--forest);">${i.email}</div>
+          <div style="font-size:12px;color:var(--ink-60);">Code: <code style="background:var(--parchment);padding:2px 6px;border-radius:4px;font-weight:700;">${i.code || '—'}</code></div>
+        </div>
+        <button class="btn btn--ghost btn-small btn-danger" data-revoke="${i.email}">Revoke</button>
+      </div>`).join('');
+    list.querySelectorAll('[data-revoke]').forEach(btn => btn.onclick = async () => {
+      if (!confirm(`Revoke the invite for ${btn.dataset.revoke}? The code will stop working.`)) return;
+      await revokeInvite(btn.dataset.revoke);
+      renderInvites();
+    });
+  } catch (e) { list.innerHTML = '<em style="color:var(--pink-dark);">'+e.message+'</em>'; }
+}
+
+// ── AUDIT LOG ──
+async function renderAudit() {
+  const list = document.getElementById('auditList');
+  if (!list) return;
+  try {
+    const rows = await fetchAuditLog(100);
+    if (!rows.length) { list.innerHTML = '<em style="color:var(--ink-60);">No edits logged yet.</em>'; return; }
+    list.innerHTML = rows.map(r => {
+      const when = r.at?.toDate ? r.at.toDate().toLocaleString() : '—';
+      const who = r.email || r.uid;
+      const fields = (r.fields || []).slice(0, 8).join(', ') + ((r.fields || []).length > 8 ? ` (+${r.fields.length-8} more)` : '');
+      return `<div style="padding:10px 4px;border-bottom:1px solid var(--line);">
+        <div style="font-weight:500;color:var(--forest);">${r.summary || 'Saved changes'}</div>
+        <div style="font-size:12px;color:var(--ink-60);margin-top:2px;">${who} · ${when}</div>
+        ${fields ? `<div style="font-size:12px;color:var(--ink-60);margin-top:4px;font-family:monospace;">${fields}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch (e) { list.innerHTML = '<em style="color:var(--pink-dark);">'+e.message+'</em>'; }
+}
+document.getElementById('auditRefresh').onclick = renderAudit;
+
+// Expose a baseline for diffing at save time
+let baselineAtLoad = structuredClone(state);
+
+// ── Add row templates ──
+const ADD_TEMPLATES = {
+  impact:       () => state.impact.stats.push({ value: '0', label: 'New stat', sublabel: '' }),
+  hero:         () => state.hero.tickerStats.push({ value: '0', label: 'new stat' }),
+  team:         () => state.team.members.push({ name: 'New member', role: '', city: '', bio: '', photo: '' }),
+  chapters:     () => state.chapters.featured.push({ city: 'New city', state: '', president: '', members: 0, instagram: '', blurb: '', roster: [] }),
+  testimonials: () => state.testimonials.push({ quote: '', name: '', role: '', city: '' }),
+  events:       () => state.events.push({ date: new Date().toISOString().split('T')[0], time: '10:00 AM', title: 'New event', chapter: '', type: 'Community', href: '' }),
+  partners:     () => state.partners.logos.push({ name: 'New partner', website: '', instagram: '', logo: '' }),
+};
+const RENDERERS = {
+  sections: renderSections,
+  impact: renderImpact, hero: renderHero, team: renderTeam,
+  chapters: renderChapters, testimonials: renderTestimonials,
+  events: renderEvents, partners: renderPartners, programs: renderPrograms, brand: renderBrand,
+};
+$$('[data-add]').forEach(btn => btn.addEventListener('click', () => {
+  const k = btn.dataset.add;
+  ADD_TEMPLATES[k]();
+  markDirty();
+  RENDERERS[k]();
+}));
+
+// ── Tab switching ──
+$$('.admin-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('.admin-tab').forEach(t => t.classList.toggle('is-active', t === tab));
+    $$('.panel').forEach(p => p.classList.toggle('is-active', p.id === 'panel-' + tab.dataset.panel));
+  });
+});
+
+// ── Save / Export ──
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('is-show');
+  setTimeout(() => t.classList.remove('is-show'), 2500);
+}
+
+$('#saveBtn').onclick = async () => {
+  if (!CURRENT_USER || !isAdminRole(CURRENT_USER.profile?.role)) {
+    toast('You must be signed in as an admin to save.');
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  markClean();
+  const changed = diffPaths(baselineAtLoad, state);
+  baselineAtLoad = structuredClone(state);
+  await logEdit({
+    user: CURRENT_USER,
+    summary: changed.length ? `Edited ${changed.length} field${changed.length === 1 ? '' : 's'}` : 'Saved (no changes)',
+    fields: changed,
+  });
+  renderAudit();
+  toast('✓ Saved. Refresh your site to see changes.');
+};
+
+$('#exportBtn').onclick = () => {
+  const header = `// ═══════════════════════════════════════════════════════════════════════════\n//  BETTER NATURE — SITE CONTENT (exported from admin on ${new Date().toLocaleString()})\n//  Replace website/content.js with this file to make your changes permanent.\n// ═══════════════════════════════════════════════════════════════════════════\n\nwindow.CONTENT = `;
+  const body = JSON.stringify(state, null, 2);
+  const blob = new Blob([header + body + ';\n'], { type: 'text/javascript' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'content.js';
+  a.click();
+  toast('✓ Downloaded content.js — replace the file in your website/ folder.');
+};
+
+// Initial render
+renderSections();
+renderImpact(); renderHero(); renderTeam(); renderChapters();
+renderTestimonials(); renderEvents(); renderPartners(); renderPrograms(); renderBrand();
+
+// Confirm leave if dirty
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); return ''; } });
+</script>
+</body>
+</html>

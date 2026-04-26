@@ -1,0 +1,8 @@
+# Cloudflare Pages redirects
+# Cloudflare auto-resolves /admin → /admin.html, /index → /index.html etc.
+# So we don't need redirect rules for those — they'd cause loops.
+
+# Friendly hash-anchor short links (no conflict with real files)
+/donate         /#donate         302
+/signup         /#signup         302
+/map            /#impactmap      302

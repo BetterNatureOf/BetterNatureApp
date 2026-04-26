@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Better Nature — Rescue. Restore. Protect.</title>
+  <meta name="description" content="Youth-led nonprofit: three programs, one mission. We rescue surplus food, plant native forests, and clean the waterways communities depend on. 38 cities." />
+  <meta property="og:title" content="Better Nature — Rescue. Restore. Protect." />
+  <meta property="og:description" content="Youth-led nonprofit running food rescue, reforestation, and waterway cleanup across 38 cities." />
+  <meta property="og:image" content="/logo.png" />
+  <link rel="icon" href="/logo.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ══════════════════════════ NAV -->
+<header class="nav" id="nav">
+  <a class="nav__brand" href="#top">
+    <img src="logo.png" alt="Better Nature" class="nav__logo" />
+    <span class="nav__name">Better Nature</span>
+  </a>
+  <nav class="nav__links" id="navLinks">
+    <a href="#mission">Mission</a>
+    <a href="#impact">Impact</a>
+    <a href="#programs">Programs</a>
+    <a href="#impactmap">Map</a>
+    <a href="#how">Get Involved</a>
+    <a href="#chapters">Chapters</a>
+    <a href="#partners">Partner</a>
+    <a href="#press">Press</a>
+    <a href="#getapp">App</a>
+    <a href="#signup">Sign up</a>
+  </nav>
+  <div class="nav__ctas">
+    <a class="btn btn--ghost" href="#how">Volunteer</a>
+    <a class="btn btn--pink" href="#donate">Donate</a>
+  </div>
+  <button class="nav__burger" id="burger" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+</header>
+
+<main id="top">
+
+<!-- ══════════════════════════ HERO -->
+<section class="hero">
+  <div class="hero__grain"></div>
+  <div class="hero__shape hero__shape--1"></div>
+  <div class="hero__shape hero__shape--2"></div>
+
+  <div class="hero__inner">
+    <div class="hero__copy">
+      <div class="hero__eyebrow" id="heroEyebrow"></div>
+      <h1 class="hero__h1">
+        <span id="heroHeadline"></span>
+        <em id="heroHeadlineItalic"></em>
+      </h1>
+      <p class="hero__sub" id="heroSub"></p>
+      <div class="hero__ctas">
+        <a class="btn btn--forest btn--lg" id="heroCta1"></a>
+        <a class="btn btn--outline btn--lg" id="heroCta2"></a>
+      </div>
+    </div>
+    <div class="hero__media" id="heroMedia"></div>
+  </div>
+
+  <div class="ticker">
+    <div class="ticker__track" id="tickerTrack"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ MISSION -->
+<section class="mission" id="mission">
+  <div class="container">
+    <div class="eyebrow" id="missionEyebrow"></div>
+    <h2 class="mission__title" id="missionTitle"></h2>
+    <p class="mission__body" id="missionBody"></p>
+    <div class="pillars" id="pillars"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ IMPACT -->
+<section class="impact" id="impact">
+  <div class="container">
+    <div class="eyebrow eyebrow--light" id="impactEyebrow"></div>
+    <h2 class="impact__title" id="impactTitle"></h2>
+    <div class="impact__grid" id="impactGrid"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ PROGRAMS -->
+<section class="programs" id="programs">
+  <div class="container">
+    <div class="programs__head">
+      <div class="eyebrow" id="programsEyebrow"></div>
+      <h2 class="programs__title" id="programsTitle"></h2>
+    </div>
+    <div class="programs__list" id="programsList"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ IMPACT MAP -->
+<section class="impactmap" id="impactmap">
+  <div class="container">
+    <div class="impactmap__head">
+      <div class="eyebrow eyebrow--pink" id="impactmapEyebrow"></div>
+      <h2 class="impactmap__title" id="impactmapTitle"></h2>
+      <p class="impactmap__body" id="impactmapBody"></p>
+    </div>
+
+    <div class="impactmap__legend" id="impactmapLegend"></div>
+
+    <div class="impactmap__layout">
+      <div class="impactmap__map" id="impactmapCanvas"></div>
+
+      <aside class="impactmap__side">
+        <div class="impactmap__gap">
+          <div class="impactmap__gapLabel">The gap we're closing</div>
+          <div class="impactmap__gapNum" id="impactmapGapCount">—</div>
+          <div class="impactmap__gapSub" id="impactmapGapSub">cities with high need and no chapter yet</div>
+          <a class="btn btn--pink" href="#signup" id="impactmapGapCta">Start a chapter here</a>
+        </div>
+
+        <div class="impactmap__live" id="impactmapLive"></div>
+
+        <div class="impactmap__selected" id="impactmapSelected">
+          <div class="impactmap__selectedHint">Click any pin on the map to see the story.</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ HOW IT WORKS -->
+<section class="how" id="how">
+  <div class="container">
+    <div class="eyebrow" id="howEyebrow"></div>
+    <h2 class="how__title" id="howTitle"></h2>
+    <div class="how__tabs" id="howTabs"></div>
+    <div class="how__content" id="howContent"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ CHAPTERS -->
+<section class="chapters" id="chapters">
+  <div class="container">
+    <div class="eyebrow" id="chaptersEyebrow"></div>
+    <h2 class="chapters__title" id="chaptersTitle"></h2>
+    <p class="chapters__body" id="chaptersBody"></p>
+    <div class="chapters__grid" id="chaptersGrid"></div>
+    <div class="chapters__cta">
+      <a class="btn btn--forest btn--lg" id="startChapterBtn">Start a chapter in your city</a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ PARTNERS -->
+<section class="partners" id="partners">
+  <div class="container">
+    <div class="eyebrow eyebrow--pink" id="partnersEyebrow"></div>
+    <h2 class="partners__title" id="partnersTitle"></h2>
+    <p class="partners__body" id="partnersBody"></p>
+
+    <div class="logo-marquee">
+      <div class="logo-marquee__track" id="partnerLogos"></div>
+    </div>
+
+    <div class="partners__pitch">
+      <h3 id="pitchTitle"></h3>
+      <p id="pitchBody"></p>
+      <a class="btn btn--pink btn--lg" id="pitchCta"></a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ TESTIMONIALS -->
+<section class="testimonials" id="testimonials">
+  <div class="container">
+    <div class="eyebrow">In their words</div>
+    <div class="testimonials__grid" id="testimonialsGrid"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ TEAM -->
+<section class="team" id="team">
+  <div class="container">
+    <div class="eyebrow" id="teamEyebrow"></div>
+    <h2 class="team__title" id="teamTitle"></h2>
+    <p class="team__body" id="teamBody"></p>
+    <div class="team__grid" id="teamGrid"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ EVENTS -->
+<section class="events" id="events">
+  <div class="container">
+    <div class="eyebrow">Upcoming</div>
+    <h2 class="events__title">This month's events.</h2>
+    <div class="events__list" id="eventsList"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ PRESS -->
+<section class="press" id="press">
+  <div class="container">
+    <div class="eyebrow" id="pressEyebrow"></div>
+    <h2 class="press__title" id="pressTitle"></h2>
+    <div class="press__grid" id="pressGrid"></div>
+    <div class="press__logos" id="pressLogos"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ DONATE -->
+<section class="donate" id="donate">
+  <div class="container">
+    <div class="eyebrow eyebrow--pink" id="donateEyebrow"></div>
+    <h2 class="donate__title" id="donateTitle"></h2>
+    <p class="donate__body" id="donateBody"></p>
+    <div class="donate__tiers" id="donateTiers"></div>
+
+    <!-- Inline Zeffy donation form — donate right here, no redirect -->
+    <div class="donate__embed" id="donateEmbed"></div>
+
+    <div class="donate__alt" id="donateAlt"></div>
+
+    <div class="donate__cta">
+      <a class="btn btn--ghost btn--lg" id="donateCta" target="_blank" rel="noreferrer"></a>
+      <small>Powered by Zeffy — 100% of your donation goes to Better Nature. Zero platform fees.</small>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ GET THE APP -->
+<section class="getapp" id="getapp">
+  <div class="container getapp__grid">
+    <div class="getapp__left">
+      <div class="eyebrow eyebrow--pink" id="getappEyebrow"></div>
+      <h2 class="getapp__title" id="getappTitle"></h2>
+      <p class="getapp__body" id="getappBody"></p>
+      <div class="getapp__ctas" id="getappCtas"></div>
+    </div>
+    <div class="getapp__right">
+      <div class="getapp__qr">
+        <img id="getappQr" alt="Download the Better Nature app" />
+        <small id="getappQrNote"></small>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ SIGNUP -->
+<section class="signup" id="signup">
+  <div class="container">
+    <div class="eyebrow" id="signupEyebrow"></div>
+    <h2 class="signup__title" id="signupTitle"></h2>
+    <p class="signup__body" id="signupBody"></p>
+    <div class="signup__tabs" id="signupTabs"></div>
+    <div class="signup__forms" id="signupForms"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ NEWSLETTER -->
+<section class="newsletter">
+  <div class="container newsletter__inner">
+    <div>
+      <h2 id="newsTitle"></h2>
+      <p id="newsBody"></p>
+    </div>
+    <form class="newsletter__form" id="newsForm">
+      <input type="email" id="newsEmail" required />
+      <button type="submit" class="btn btn--pink" id="newsCta"></button>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<!-- ══════════════════════════ CHAPTER MODAL -->
+<div class="modal" id="chapterModal" aria-hidden="true">
+  <div class="modal__backdrop" data-close></div>
+  <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="chapterModalTitle">
+    <button class="modal__close" data-close aria-label="Close">×</button>
+    <div id="chapterModalBody"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ FOOTER -->
+<footer class="footer">
+  <div class="container footer__grid">
+    <div class="footer__brand">
+      <img src="logo.png" alt="Better Nature" class="footer__logo" />
+      <p id="footerTagline"></p>
+      <div class="footer__social" id="footerSocial"></div>
+    </div>
+    <div class="footer__col">
+      <h4>Programs</h4>
+      <a href="#programs">IRIS — Food rescue</a>
+      <a href="#programs">Evergreen — Conservation</a>
+      <a href="#programs">Hydro — Waterways</a>
+    </div>
+    <div class="footer__col">
+      <h4>Get involved</h4>
+      <a href="#how">Volunteer</a>
+      <a href="#partners">Partner your restaurant</a>
+      <a href="#chapters">Start a chapter</a>
+      <a href="#donate">Donate</a>
+    </div>
+    <div class="footer__col">
+      <h4>Contact</h4>
+      <a id="footerEmail" href=""></a>
+      <a href="#press">Press</a>
+      <a href="#">Privacy</a>
+    </div>
+  </div>
+  <div class="footer__bar">
+    <small>© <span id="year"></span> Better Nature · 501(c)(3) nonprofit · EIN 99-4028399 · Built by youth organizers</small>
+  </div>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="content.js"></script>
+<script src="impact-map-data.js"></script>
+<script src="app.js"></script>
+<script type="module">
+  // Bridge: expose Firebase signup to the non-module app.js so website signup
+  // creates a real account that works in the app + web app + website.
+  import { signUp } from './firebase-auth.js';
+  window.BN_SIGNUP = signUp;
+</script>
+</body>
+</html>

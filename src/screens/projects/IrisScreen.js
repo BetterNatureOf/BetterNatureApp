@@ -86,14 +86,14 @@ export default function IrisScreen({ navigation }) {
       <TouchableOpacity
         style={styles.mapCard}
         activeOpacity={0.8}
-        onPress={() => navigation.navigate('FoodInsecurityMap')}
+        onPress={() => navigation.navigate('ImpactMap')}
       >
         <View style={styles.mapIconWrap}>
           <Text style={styles.mapIcon}>{'\u{1F30D}'}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.mapTitle}>Food Insecurity Hotspots</Text>
-          <Text style={styles.mapSubtitle}>See where donations are needed most {'\u2014'} US & global data</Text>
+          <Text style={styles.mapTitle}>The Impact Map</Text>
+          <Text style={styles.mapSubtitle}>Chapters, partners, and the gap {'\u2014'} every city we haven't reached yet</Text>
         </View>
         <Text style={styles.mapArrow}>{'\u203A'}</Text>
       </TouchableOpacity>

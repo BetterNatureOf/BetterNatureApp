@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    function role() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isExec() {
+      return isSignedIn() && role() in ['exec', 'chapter_president', 'admin'];
+    }
+    function isAdmin() {
+      return isSignedIn() && role() == 'admin';
+    }
+
+    // ── users ──
+    // Anyone signed in can read member profiles (for leaderboard, signups).
+    // Only the user themselves can update their row; exec/admin can update roles.
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isSelf(uid);
+      allow update: if isSelf(uid) || isExec();
+      allow delete: if isAdmin();
+    }
+
+    // ── chapters ──
+    match /chapters/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── events ──
+    match /events/{id} {
+      allow read: if true;
+      allow create, update: if isExec();
+      allow delete: if isAdmin();
+    }
+
+    // ── event_signups ──
+    match /event_signups/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow delete: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+    }
+
+    // ── pickups ──
+    match /pickups/{id} {
+      allow read: if isSignedIn();
+      allow create, update: if isExec();
+      allow delete: if isAdmin();
+    }
+
+    // ── restaurants ──
+    match /restaurants/{id} {
+      allow read: if true;
+      allow write: if isExec();
+    }
+
+    // ── donations ──
+    // Users can see their own; exec sees all.
+    match /donations/{id} {
+      allow read: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── notifications ──
+    match /notifications/{id} {
+      allow read, update: if isSignedIn() && resource.data.user_id == request.auth.uid;
+      allow create: if isExec();
+      allow delete: if isSelf(resource.data.user_id) || isAdmin();
+    }
+
+    // ── member_activity ──
+    match /member_activity/{id} {
+      allow read: if isSignedIn();
+      allow write: if isExec();
+    }
+
+    // ── announcements ──
+    match /announcements/{id} {
+      allow read: if isSignedIn();
+      allow write: if isExec();
+    }
+
+    // ── org_metrics ──
+    match /org_metrics/{id} {
+      allow read: if true;
+      allow write: if isExec();
+    }
+
+    // ── animals_helped, badges, user_badges, member_of_month, checklist_progress ──
+    match /animals_helped/{id}    { allow read: if true; allow write: if isExec(); }
+    match /badges/{id}            { allow read: if true; allow write: if isAdmin(); }
+    match /user_badges/{id}       { allow read: if isSignedIn(); allow write: if isExec(); }
+    match /member_of_month/{id}   { allow read: if true; allow write: if isExec(); }
+    match /checklist_progress/{id}{ allow read: if isSignedIn(); allow write: if isExec(); }
+
+    // Deny-by-default for anything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

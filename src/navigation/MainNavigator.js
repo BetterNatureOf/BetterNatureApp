@@ -47,7 +47,7 @@ import ExecFinance from '../screens/executive/ExecFinance';
 
 import MetricsEditor from '../screens/admin/MetricsEditor';
 import CheckInScreen from '../screens/admin/CheckInScreen';
-import FoodInsecurityMap from '../screens/projects/FoodInsecurityMap';
+import ImpactMap from '../screens/impact/ImpactMap';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
 // having to pass params.
@@ -238,8 +238,10 @@ export default function MainNavigator() {
       {/* Check-in — pres/exec verify volunteer attendance */}
       <Stack.Screen name="CheckIn" component={CheckInScreen} />
 
-      {/* Food Insecurity Map — IRIS project feature */}
-      <Stack.Screen name="FoodInsecurityMap" component={FoodInsecurityMap} />
+      {/* Impact Map — replaces FoodInsecurityMap; shows chapters, the gap, partners, plantings, cleanups */}
+      <Stack.Screen name="ImpactMap" component={ImpactMap} />
+      {/* Back-compat alias so old navigation.navigate('FoodInsecurityMap') calls still work */}
+      <Stack.Screen name="FoodInsecurityMap" component={ImpactMap} />
     </Stack.Navigator>
   );
 }

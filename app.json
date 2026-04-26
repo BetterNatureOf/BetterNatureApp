@@ -55,6 +55,15 @@
     "extra": {
       "eas": {
         "projectId": "REPLACE_AFTER_EAS_INIT"
+      },
+      "firebase": {
+        "apiKey": "AIzaSyBoaYGVe8rObfGC-BKJo3yohbyZOWUD8gw",
+        "authDomain": "better-nature-app.firebaseapp.com",
+        "projectId": "better-nature-app",
+        "storageBucket": "better-nature-app.firebasestorage.app",
+        "messagingSenderId": "102288708316",
+        "appId": "1:102288708316:web:d15cda309e77d14b921a19",
+        "measurementId": "G-F0YTP6RGJ1"
       }
     },
     "owner": "betternatureofficial",
