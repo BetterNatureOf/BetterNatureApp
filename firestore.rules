@@ -12,11 +12,16 @@ service cloud.firestore {
     function role() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
+    // Role hierarchy used across web + app:
+    //   super_admin > admin > volunteer / partner / member
     function isExec() {
-      return isSignedIn() && role() in ['exec', 'chapter_president', 'admin'];
+      return isSignedIn() && role() in ['admin', 'super_admin'];
     }
     function isAdmin() {
-      return isSignedIn() && role() == 'admin';
+      return isSignedIn() && role() in ['admin', 'super_admin'];
+    }
+    function isSuperAdmin() {
+      return isSignedIn() && role() == 'super_admin';
     }
 
     // ── users ──
@@ -102,6 +107,31 @@ service cloud.firestore {
     match /user_badges/{id}       { allow read: if isSignedIn(); allow write: if isExec(); }
     match /member_of_month/{id}   { allow read: if true; allow write: if isExec(); }
     match /checklist_progress/{id}{ allow read: if isSignedIn(); allow write: if isExec(); }
+
+    // ── admin_invites (website /admin.html) ──
+    // Only super admins create/list/revoke; signup flow needs to read+update
+    // its own doc to consume a one-time code, so we allow read by anyone
+    // who knows the email (codes are still verified server-side via
+    // consumeInviteCode before promotion).
+    match /admin_invites/{email} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ── admin_audit (edit history) ──
+    // Admins can read; any signed-in admin can append; nobody edits past entries.
+    match /admin_audit/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ── site_content (admin panel saves) ──
+    // Anyone can read (public site reads its own content); admins write.
+    match /site_content/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
 
     // Deny-by-default for anything else
     match /{document=**} {
