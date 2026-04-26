@@ -8,6 +8,9 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged,
   updateProfile as fbUpdateProfile,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithCredential,
 } from 'firebase/auth';
 import {
   doc,
@@ -82,10 +85,55 @@ export async function signOut() {
   await fbSignOut(auth);
 }
 
+// Web-side roles (super_admin, admin, volunteer, partner, member) need to map
+// onto the app's internal role names (executive, chapter_president, member,
+// restaurant) so navigation gates work the same across both surfaces.
+function normalizeRole(rawRole) {
+  if (rawRole === 'super_admin' || rawRole === 'admin') return 'executive';
+  if (rawRole === 'partner') return 'restaurant';
+  if (rawRole === 'volunteer') return 'member';
+  return rawRole || 'member';
+}
+
 export async function getProfile(userId) {
   if (!isFirebaseConfigured) return makeMockUser({});
   const snap = await getDoc(doc(db, 'users', userId));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return { id: snap.id, ...data, role: normalizeRole(data.role) };
+}
+
+// Sign in with Google (web only — for native we'll use expo-auth-session).
+// Optional `restrictDomain` (e.g. "betternatureofficial.org") rejects accounts
+// outside the workspace.
+export async function signInWithGoogle({ restrictDomain } = {}) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const provider = new GoogleAuthProvider();
+  if (restrictDomain) provider.setCustomParameters({ hd: restrictDomain });
+  const cred = await signInWithPopup(auth, provider);
+  if (restrictDomain && !cred.user.email?.toLowerCase().endsWith(`@${restrictDomain.toLowerCase()}`)) {
+    await fbSignOut(auth);
+    throw new Error(`Use a @${restrictDomain} Google account.`);
+  }
+  // Bootstrap a users/{uid} doc on first Google sign-in.
+  const ref = doc(db, 'users', cred.user.uid);
+  const existing = await getDoc(ref);
+  if (!existing.exists()) {
+    const isSuper = (cred.user.email || '').toLowerCase() === 'satvik.koya@betternatureofficial.org';
+    await setDoc(ref, {
+      id: cred.user.uid,
+      email: cred.user.email,
+      name: cred.user.displayName || '',
+      role: isSuper ? 'super_admin' : 'member',
+      chapter_id: null,
+      events_attended: 0,
+      hours_logged: 0,
+      meals_rescued: 0,
+      created_at: serverTimestamp(),
+    });
+  }
+  const profile = await getProfile(cred.user.uid);
+  return { user: profile, session: { user: cred.user } };
 }
 
 export async function updateProfile(userId, updates) {

@@ -20,6 +20,7 @@ import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebase
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   onAuthStateChanged, signOut, updateProfile,
+  GoogleAuthProvider, signInWithPopup,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, updateDoc, addDoc, collection,
@@ -69,6 +70,20 @@ export async function signUp({ email, password, name, role = 'volunteer', phone 
 }
 
 export async function logOut() { await signOut(auth); }
+
+// Sign in with Google. If `restrictDomain` is set (e.g. "betternatureofficial.org")
+// only that workspace's accounts are accepted — useful for the admin login.
+export async function signInWithGoogle({ restrictDomain } = {}) {
+  const provider = new GoogleAuthProvider();
+  if (restrictDomain) provider.setCustomParameters({ hd: restrictDomain });
+  const cred = await signInWithPopup(auth, provider);
+  if (restrictDomain && !(cred.user.email || '').toLowerCase().endsWith(`@${restrictDomain.toLowerCase()}`)) {
+    await signOut(auth);
+    throw new Error(`Please use your @${restrictDomain} Google account.`);
+  }
+  await ensureUserDoc(cred.user);
+  return cred.user;
+}
 
 export function onUser(callback) {
   return onAuthStateChanged(auth, async (u) => {
