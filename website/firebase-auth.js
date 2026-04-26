@@ -50,10 +50,21 @@ export async function signIn(email, password) {
   return cred.user;
 }
 
-export async function signUp({ email, password, name, role = 'volunteer', phone = '', city = '', zip = '' }) {
+export async function signUp({ email, password, name, role = 'volunteer', phone = '', city = '', zip = '', adminCode = '' }) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   if (name) await updateProfile(cred.user, { displayName: name });
-  await ensureUserDoc(cred.user, { name, role, phone, city, zip });
+  // If an admin code was provided, validate it. Valid code → role becomes 'admin'.
+  let finalRole = role;
+  if (adminCode) {
+    const r = await consumeInviteCode(email, adminCode);
+    if (r.ok) finalRole = 'admin';
+    else throw new Error(
+      r.reason === 'no_invite' ? 'No admin invite exists for this email.'
+      : r.reason === 'revoked'  ? 'This admin invite has been revoked.'
+      : 'That admin code is incorrect.'
+    );
+  }
+  await ensureUserDoc(cred.user, { name, role: finalRole, phone, city, zip });
   return cred.user;
 }
 
@@ -107,30 +118,88 @@ export async function setRole(uid, role) {
   await updateDoc(doc(db, 'users', uid), { role });
 }
 
-// Create an invite record. The invited user finishes account creation by
-// signing up on the site/app with that email — ensureUserDoc promotes them
-// to admin if an open invite exists.
-export async function inviteAdmin(email) {
+// Where one-time admin codes get emailed when an invite is created.
+// Change this if you want codes to go to a different inbox.
+const ADMIN_CODE_INBOX = 'satvik.koya@betternatureofficial.org';
+
+function generateAdminCode() {
+  // 6-digit code, zero-padded
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function emailAdminCode({ email, code, invitedBy }) {
+  // FormSubmit will email this to ADMIN_CODE_INBOX. The recipient must have
+  // activated FormSubmit for that address once (click the activation link
+  // in the first email FormSubmit sends).
+  try {
+    await fetch(`https://formsubmit.co/ajax/${ADMIN_CODE_INBOX}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        _subject: `[Better Nature] Admin code for ${email}`,
+        _captcha: 'false',
+        _template: 'box',
+        invited_email: email,
+        admin_code: code,
+        invited_by: invitedBy || '',
+        instructions: `Share this code with ${email}. They enter it on /admin.html to activate admin access.`,
+      }),
+    });
+  } catch (e) { console.warn('email admin code failed', e); /* code is still in Firestore */ }
+}
+
+// Create an invite record + a one-time code. The code is emailed to the
+// super-admin inbox; the invitee must enter it during signup to become
+// an admin. Existing users get promoted directly with no code needed
+// (since the super admin clicked their record explicitly).
+export async function inviteAdmin(email, invitedBy = '') {
   const e = email.trim().toLowerCase();
-  // Check if user already exists
   const existing = await getDocs(query(collection(db, 'users'), where('email', '==', e)));
   if (!existing.empty) {
     const userDoc = existing.docs[0];
     await updateDoc(userDoc.ref, { role: 'admin' });
     return { promoted: true, uid: userDoc.id };
   }
+  const code = generateAdminCode();
   await setDoc(doc(db, 'admin_invites', e), {
-    email: e, createdAt: serverTimestamp(),
+    email: e,
+    code,                 // one-time key
+    createdAt: serverTimestamp(),
+    invitedBy,
   });
-  return { invited: true };
+  await emailAdminCode({ email: e, code, invitedBy });
+  return { invited: true, code };
 }
 
-// Called on signup/signin: if an invite exists for this email, upgrade to admin.
+export async function listInvites() {
+  const snap = await getDocs(collection(db, 'admin_invites'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function revokeInvite(email) {
+  const e = email.trim().toLowerCase();
+  await setDoc(doc(db, 'admin_invites', e), { revoked: true }, { merge: true });
+}
+
+// Verify a one-time code against a pending invite. Used when someone
+// signs up at /admin.html and provides a code to claim admin access.
+export async function consumeInviteCode(email, code) {
+  const e = (email || '').trim().toLowerCase();
+  const ref = doc(db, 'admin_invites', e);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return { ok: false, reason: 'no_invite' };
+  const inv = snap.data();
+  if (inv.revoked) return { ok: false, reason: 'revoked' };
+  if (inv.code !== String(code).trim()) return { ok: false, reason: 'bad_code' };
+  return { ok: true };
+}
+
+// Called on every signin. If a valid (un-revoked) invite exists for this
+// email AND has already been consumed during signup, promote to admin.
+// Promotion now requires the code path to have run — see ensureUserDoc.
 export async function honorPendingInvite(user) {
-  const e = (user.email || '').toLowerCase();
-  const inv = await getDoc(doc(db, 'admin_invites', e));
-  if (!inv.exists()) return;
-  await updateDoc(doc(db, 'users', user.uid), { role: 'admin' });
+  // Kept for back-compat. New flow promotes inside ensureUserDoc when the
+  // code is provided. This function intentionally does nothing now.
 }
 
 // ── Audit log ────────────────────────────────────────────────────────────

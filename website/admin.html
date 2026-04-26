@@ -283,8 +283,9 @@
   <!-- ADMINS (super_admin only) -->
   <div class="panel" id="panel-admins">
     <div class="panel__help">
-      <strong>Admin accounts.</strong> These people can sign into this panel and edit the site. Only the super admin
-      can invite or remove admins. Everyone's account is the same one they use on the Better Nature app.
+      <strong>Admin accounts.</strong> Inviting someone generates a 6-digit one-time code that gets emailed to the super admin
+      (satvik.koya@betternatureofficial.org). Share that code with the invitee — they enter it when creating their account at
+      /admin.html. Without the right code they get a regular member account. Existing app users can be promoted directly.
     </div>
     <div class="card">
       <div class="card__title" style="margin-bottom:20px;">Invite an admin</div>
@@ -293,6 +294,10 @@
         <div class="field" style="display:flex;align-items:flex-end;"><button class="btn btn--pink btn-small" id="invite-send" style="width:100%;">Send invite</button></div>
       </div>
       <div id="invite-status" style="font-size:13px;color:var(--ink-60);"></div>
+    </div>
+    <div class="card">
+      <div class="card__title" style="margin-bottom:20px;">Pending invites</div>
+      <div id="invitesList"></div>
     </div>
     <div class="card">
       <div class="card__title" style="margin-bottom:20px;">Current admins</div>
@@ -326,8 +331,8 @@
 
 import {
   auth, signIn, signUp, logOut, onUser, ensureUserDoc, honorPendingInvite,
-  isAdminRole, listAdmins, inviteAdmin, setRole, logEdit, fetchAuditLog,
-  diffPaths, SUPER_ADMIN_EMAIL,
+  isAdminRole, listAdmins, inviteAdmin, listInvites, revokeInvite, setRole,
+  logEdit, fetchAuditLog, diffPaths, SUPER_ADMIN_EMAIL,
 } from './firebase-auth.js';
 
 // Gate the UI behind auth. The admin surface is hidden until we know the
@@ -348,9 +353,15 @@ loginScreen.innerHTML = `
     <form id="loginForm" class="login__form">
       <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="email" required /></div>
       <div class="field"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password" required minlength="6" /></div>
+      <div class="field" id="login-code-wrap" style="display:none;">
+        <label>Admin invite code (6 digits)</label>
+        <input id="login-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" />
+        <small style="color:var(--ink-60);font-size:12px;display:block;margin-top:4px;">Required only if creating an admin account. Ask the super admin to invite you.</small>
+      </div>
       <div id="login-err" class="login__err" style="display:none;"></div>
       <button class="btn btn--pink btn--lg" type="submit" id="login-submit">Sign in</button>
       <button class="btn btn--ghost btn-small" type="button" id="login-create" style="margin-top:8px;">First time? Create this account</button>
+      <button class="btn btn--ghost btn-small" type="button" id="login-toggle-code" style="margin-top:4px;font-size:12px;">I have an admin invite code</button>
     </form>
   </div>
 `;
@@ -379,13 +390,18 @@ loginScreen.querySelector('#loginForm').addEventListener('submit', async e => {
   const pass = loginScreen.querySelector('#login-pass').value;
   try { await signIn(email, pass); } catch (err) { showErr(err.message || 'Sign in failed'); }
 });
+loginScreen.querySelector('#login-toggle-code').addEventListener('click', () => {
+  const wrap = loginScreen.querySelector('#login-code-wrap');
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+});
 loginScreen.querySelector('#login-create').addEventListener('click', async () => {
   clearErr();
   const email = loginScreen.querySelector('#login-email').value;
   const pass = loginScreen.querySelector('#login-pass').value;
+  const code = loginScreen.querySelector('#login-code').value;
   if (!email || !pass || pass.length < 6) return showErr('Enter an email and a 6+ char password first.');
   try {
-    await signUp({ email, password: pass, name: email.split('@')[0], role: 'member' });
+    await signUp({ email, password: pass, name: email.split('@')[0], role: 'member', adminCode: code });
   } catch (err) { showErr(err.message || 'Create account failed'); }
 });
 
@@ -435,6 +451,7 @@ onUser(async (user) => {
   const adminsTab = document.querySelector('[data-panel="admins"]');
   if (adminsTab) adminsTab.style.display = user.profile.role === 'super_admin' ? '' : 'none';
   renderAdmins();
+  renderInvites();
   renderAudit();
 });
 
@@ -832,16 +849,43 @@ document.getElementById('invite-send').onclick = async () => {
   const email = document.getElementById('invite-email').value.trim();
   const status = document.getElementById('invite-status');
   if (!email) { status.textContent = 'Enter an email.'; return; }
-  status.textContent = 'Sending...';
+  status.textContent = 'Generating code & emailing...';
   try {
-    const r = await inviteAdmin(email);
-    status.textContent = r.promoted
-      ? `✓ ${email} already had an account — promoted to admin.`
-      : `✓ Invite saved. When ${email} signs up on the site or app they'll become an admin automatically.`;
+    const r = await inviteAdmin(email, CURRENT_USER?.email || '');
+    if (r.promoted) {
+      status.innerHTML = `✓ <strong>${email}</strong> already had an account — promoted to admin.`;
+    } else {
+      status.innerHTML = `✓ Invite created. Code <code style="background:var(--pink-soft);padding:2px 8px;border-radius:6px;font-size:15px;font-weight:700;color:var(--pink-dark);">${r.code}</code> emailed to ${SUPER_ADMIN_EMAIL}.<br>Share it with <strong>${email}</strong> — they enter it when creating their account at /admin.html.`;
+    }
     document.getElementById('invite-email').value = '';
     renderAdmins();
+    renderInvites();
   } catch (e) { status.textContent = e.message; }
 };
+
+async function renderInvites() {
+  if (!CURRENT_USER || CURRENT_USER.profile?.role !== 'super_admin') return;
+  const list = document.getElementById('invitesList');
+  if (!list) return;
+  try {
+    const invites = await listInvites();
+    const open = invites.filter(i => !i.revoked);
+    if (!open.length) { list.innerHTML = '<em style="color:var(--ink-60);">No pending invites.</em>'; return; }
+    list.innerHTML = open.map(i => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid var(--line);">
+        <div>
+          <div style="font-weight:600;color:var(--forest);">${i.email}</div>
+          <div style="font-size:12px;color:var(--ink-60);">Code: <code style="background:var(--parchment);padding:2px 6px;border-radius:4px;font-weight:700;">${i.code || '—'}</code></div>
+        </div>
+        <button class="btn btn--ghost btn-small btn-danger" data-revoke="${i.email}">Revoke</button>
+      </div>`).join('');
+    list.querySelectorAll('[data-revoke]').forEach(btn => btn.onclick = async () => {
+      if (!confirm(`Revoke the invite for ${btn.dataset.revoke}? The code will stop working.`)) return;
+      await revokeInvite(btn.dataset.revoke);
+      renderInvites();
+    });
+  } catch (e) { list.innerHTML = '<em style="color:var(--pink-dark);">'+e.message+'</em>'; }
+}
 
 // ── AUDIT LOG ──
 async function renderAudit() {
