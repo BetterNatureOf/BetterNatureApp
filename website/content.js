@@ -118,7 +118,7 @@ window.CONTENT = {
     eyebrow: "Food rescue · Reforestation · Waterways",
     headline: "Feed people. Plant forests.",
     headlineItalic: "Protect the water.",
-    subhead: "Better Nature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission, 38 cities.",
+    subhead: "Better Nature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission.",
     primaryCta: { text: "Read our mission", href: "#mission" },
     secondaryCta: { text: "Partner your business", href: "#signup" },
     // Tile 1 (top-left, biggest): forest. Tile 2 (top-right): clean water.
@@ -189,7 +189,7 @@ window.CONTENT = {
         stats: [
           { value: "6,963", label: "meal kits delivered" },
           { value: "2,780 lbs", label: "food rescued" },
-          { value: "< 2hrs", label: "pickup to table" },
+          { value: "10,564 lbs", label: "CO₂ avoided" },
         ],
         cta: { text: "Become a partner business", href: "#signup" },
       },
@@ -199,9 +199,8 @@ window.CONTENT = {
         title: "Conservation & reforestation.",
         body: "Native tree planting, urban canopy restoration, pollinator corridors, and invasive species removal — led by chapter volunteers in coordination with municipal parks and land trusts.",
         stats: [
-          { value: "12,840", label: "trees planted" },
-          { value: "14", label: "restoration sites" },
-          { value: "23 acres", label: "restored habitat" },
+          { value: "Launching", label: "first planting day" },
+          { value: "Memphis", label: "founding chapter" },
         ],
         cta: { text: "Join a planting day", href: "#events" },
       },
@@ -211,9 +210,8 @@ window.CONTENT = {
         title: "Waterway protection.",
         body: "River, creek, and coastline cleanups. Microplastic surveys. Storm drain stenciling. We protect the waterways the people we feed depend on.",
         stats: [
-          { value: "86.5K", label: "gallons cleaned" },
-          { value: "42", label: "cleanup events" },
-          { value: "3.2 tons", label: "debris removed" },
+          { value: "486,500 gal", label: "water footprint reduced" },
+          { value: "Launching", label: "first cleanup" },
         ],
         cta: { text: "Find a cleanup near you", href: "#chapters" },
       },
@@ -253,7 +251,7 @@ window.CONTENT = {
         label: "For volunteers",
         tagline: "Your leftovers can feed a family tonight. We handle everything.",
         steps: [
-          { num: "01", title: "Find your chapter", body: "We have chapters in 38 cities. Don't see yours? Start one." },
+          { num: "01", title: "Find your chapter", body: "Memphis is our founding chapter. Don't see yours? Start one." },
           { num: "02", title: "Attend an orientation", body: "45 minutes. Meet your chapter president. Learn the routes." },
           { num: "03", title: "Claim a shift", body: "Pickups, plantings, cleanups — claim any shift that fits your week." },
           { num: "04", title: "Log your impact", body: "Every pound rescued, hour served, and tree planted goes on your profile and the chapter leaderboard." },
@@ -269,105 +267,56 @@ window.CONTENT = {
     title: "Youth-led. Community-rooted.",
     body: "Better Nature is run end-to-end by young organizers. Our national leadership team coordinates chapter presidents across the country.",
     members: [
-      // Replace these with your real team. Each member: name, role, city, bio (short), photo (optional)
+      // Add real team members here. Each member: name, role, city, bio (short), photo (optional)
       { name: "Satvik Koya", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started Better Nature after seeing surplus trays thrown out behind his local restaurants.", photo: "" },
-      { name: "Add your co-founder", role: "Co-Founder & COO", city: "", bio: "Replace this with a real bio.", photo: "" },
-      { name: "Add a chapter president", role: "Chapter President, [City]", city: "", bio: "Replace this with a real bio.", photo: "" },
-      { name: "Add an advisor", role: "Board Advisor", city: "", bio: "Replace this with a real bio.", photo: "" },
     ],
   },
 
   // ── TESTIMONIALS ──────────────────────────────────────────────────────
-  testimonials: [
-    {
-      quote: "We used to throw out three full pans of food every night. Now it's in someone's hands within two hours. That's the most impact-per-minute we've ever gotten from anything.",
-      name: "Add real name",
-      role: "Owner, Add real restaurant name",
-      city: "Memphis, TN",
-    },
-    {
-      quote: "I joined to rescue food. I stayed because I got to lead a chapter of 80 people before I turned 17.",
-      name: "Add real volunteer name",
-      role: "Chapter President",
-      city: "Add city",
-    },
-    {
-      quote: "Better Nature's volunteers show up on time, in uniform, every single week. They made our surplus program possible.",
-      name: "Add real name",
-      role: "Add real title",
-      city: "Add city",
-    },
-  ],
+  // Add real quotes from real partners and volunteers as they come in.
+  testimonials: [],
 
   // ── PRESS / NEWS ──────────────────────────────────────────────────────
   press: {
     eyebrow: "In the news",
     title: "Who's covering us.",
     articles: [
-      { date: "2026-03-12", outlet: "Local Memphis Paper", title: "Teen-led nonprofit rescues 1M meals in under two years", href: "" },
-      { date: "2026-02-04", outlet: "Sustainability Today", title: "Better Nature expands to 38 cities with youth-led model", href: "" },
-      { date: "2025-11-21", outlet: "Climate Youth Network", title: "The food rescue movement has a new playbook", href: "" },
+      // Add real press coverage as it comes in.
     ],
-    pressLogos: [
-      // Just text names — swap with logo files when you have them
-      "Memphis Paper", "Sustainability Today", "Climate Youth", "Local News", "Food Tank",
-    ],
+    pressLogos: [],
   },
 
   // ── EVENTS ────────────────────────────────────────────────────────────
-  events: [
-    // Replace with real upcoming events. Dates in YYYY-MM-DD format.
-    { date: "2026-05-03", time: "9:00 AM", title: "Overton Park Tree Planting", chapter: "Memphis", type: "Evergreen", href: "" },
-    { date: "2026-05-10", time: "7:30 AM", title: "Saturday Morning Pickup Run", chapter: "Memphis", type: "IRIS", href: "" },
-    { date: "2026-05-17", time: "10:00 AM", title: "Wolf River Cleanup", chapter: "Memphis", type: "Hydro", href: "" },
-    { date: "2026-05-24", time: "6:00 PM", title: "New Chapter Leader Orientation", chapter: "National", type: "Community", href: "" },
-  ],
+  // Add real upcoming events here. Dates in YYYY-MM-DD format.
+  events: [],
 
   // ── CHAPTERS ──────────────────────────────────────────────────────────
   chapters: {
     eyebrow: "Find your chapter",
-    title: "Active in 38 cities. Growing.",
+    title: "Founded in Memphis. Growing.",
     body: "Don't see your city? Start a chapter. We give you the playbook, the insurance, the partner introductions, and the onboarding — you give us the weekends.",
     featured: [
       {
-        city: "Memphis", state: "TN", president: "Satvik Koya", members: 80,
-        instagram: "https://instagram.com/betternaturememphis",
-        blurb: "Our founding chapter. Weekly pickups across Midtown, East Memphis & Downtown. Monthly Wolf River cleanups.",
+        city: "Memphis", state: "TN", president: "Satvik Koya",
+        instagram: "https://instagram.com/official.better.nature",
+        blurb: "Our founding chapter. Weekly pickups, neighborhood deliveries, and the foundation we're scaling everything else from.",
         roster: [
-          { name: "Satvik Koya", role: "Chapter President", instagram: "https://instagram.com/satvik" },
-          { name: "Add member 2", role: "Pickups Lead", instagram: "" },
-          { name: "Add member 3", role: "Evergreen Lead", instagram: "" },
-          { name: "Add member 4", role: "Hydro Lead", instagram: "" },
-          { name: "Add member 5", role: "Outreach", instagram: "" },
+          { name: "Satvik Koya", role: "Founder & Chapter President", instagram: "" },
         ],
       },
-      { city: "Nashville", state: "TN", president: "Add name", members: 42, instagram: "", blurb: "", roster: [] },
-      { city: "Atlanta", state: "GA", president: "Add name", members: 56, instagram: "", blurb: "", roster: [] },
-      { city: "Austin", state: "TX", president: "Add name", members: 38, instagram: "", blurb: "", roster: [] },
-      { city: "Chicago", state: "IL", president: "Add name", members: 64, instagram: "", blurb: "", roster: [] },
-      { city: "Brooklyn", state: "NY", president: "Add name", members: 72, instagram: "", blurb: "", roster: [] },
     ],
-    totalCities: 38,
+    totalCities: 1,
     startChapterUrl: "mailto:info@betternatureofficial.org?subject=Start%20a%20chapter",
   },
 
   // ── PARTNER RESTAURANTS / SPONSORS ────────────────────────────────────
   partners: {
     eyebrow: "Restaurant, grocer & business partners",
-    title: "180+ businesses that refuse to waste.",
+    title: "Businesses that refuse to waste.",
     body: "Restaurants, cafés, grocers, bakeries, caterers, corporate kitchens, hotels, schools — any business with edible surplus. All pickups are free, scheduled, and tax-deductible under the Bill Emerson Good Samaritan Food Donation Act.",
     // Each partner: name (required). Optional: website, instagram, logo (image URL).
-    // If website OR instagram is set, the tile becomes clickable.
-    logos: [
-      { name: "Add partner 1", website: "", instagram: "", logo: "" },
-      { name: "Add partner 2", website: "", instagram: "", logo: "" },
-      { name: "Add partner 3", website: "", instagram: "", logo: "" },
-      { name: "Add partner 4", website: "", instagram: "", logo: "" },
-      { name: "Add partner 5", website: "", instagram: "", logo: "" },
-      { name: "Add partner 6", website: "", instagram: "", logo: "" },
-      { name: "Add partner 7", website: "", instagram: "", logo: "" },
-      { name: "Add partner 8", website: "", instagram: "", logo: "" },
-    ],
+    // Add real partners here as they come on board.
+    logos: [],
     pitch: {
       title: "Turn your surplus into tax-deductible impact.",
       body: "Free. Easy. Same-day pickup. Your leftovers feed a family tonight, and you get a monthly report with weight rescued, meal equivalents, CO₂ avoided, and your tax receipt.",
@@ -381,10 +330,10 @@ window.CONTENT = {
     title: "Every dollar moves a meal, plants a tree, or protects a waterway.",
     body: "Better Nature runs on donations. Zero overhead skimming — we use Zeffy, the only truly zero-fee donation platform for nonprofits. 100% of your gift goes to chapters.",
     tiers: [
-      { amount: "$25", impact: "Fuels one volunteer pickup route for a week" },
-      { amount: "$100", impact: "Plants a native tree with 5-year maintenance guarantee" },
-      { amount: "$500", impact: "Sponsors an entire chapter's Saturday pickup run" },
-      { amount: "$2,500", impact: "Funds a new chapter launch from orientation to first shift" },
+      { amount: "$25", impact: "Helps fuel volunteer pickup routes" },
+      { amount: "$100", impact: "Goes toward planting native trees in the communities we serve" },
+      { amount: "$500", impact: "Supports a chapter's weekend pickup operations" },
+      { amount: "$2,500", impact: "Helps launch a new chapter from orientation to first shift" },
     ],
     cta: { text: "Open full donation form", href: "https://www.zeffy.com/en-US/donation-form/betternature" },
   },
