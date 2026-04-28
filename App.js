@@ -9,6 +9,7 @@ import AuthNavigator from './src/navigation/AuthNavigator';
 import MainNavigator from './src/navigation/MainNavigator';
 import RestaurantNavigator from './src/navigation/RestaurantNavigator';
 import LoadingScreen from './src/screens/auth/LoadingScreen';
+import CompleteProfile from './src/screens/auth/CompleteProfile';
 import useAuthStore, { ROLES } from './src/store/authStore';
 import { fp } from './src/config/scale';
 
@@ -68,7 +69,10 @@ function rootForRole(role) {
 
 export default function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
-  const { isAuthenticated, isLoading, setLoading, role } = useAuthStore();
+  const { isAuthenticated, isLoading, setLoading, role, user } = useAuthStore();
+  // Google / Apple sign-in lands here without ever filling out the email
+  // signup form, so we route them through CompleteProfile first.
+  const needsProfile = isAuthenticated && user && user.profile_complete === false;
 
   useEffect(() => {
     async function loadFonts() {
@@ -94,7 +98,11 @@ export default function App() {
     <>
       <StatusBar style="dark" />
       <NavigationContainer>
-        {isAuthenticated ? rootForRole(role) : <AuthNavigator />}
+        {!isAuthenticated
+          ? <AuthNavigator />
+          : needsProfile
+          ? <CompleteProfile />
+          : rootForRole(role)}
       </NavigationContainer>
     </>
   );

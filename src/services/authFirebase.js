@@ -57,6 +57,8 @@ export async function signUp({ email, password, name, phone, city, zip, role }) 
     events_attended: 0,
     hours_logged: 0,
     meals_rescued: 0,
+    // Email signup collects everything we need, so they're complete on creation.
+    profile_complete: true,
     created_at: serverTimestamp(),
   };
   await setDoc(doc(db, 'users', cred.user.uid), userDoc);
@@ -124,11 +126,20 @@ export async function signInWithGoogle({ restrictDomain } = {}) {
       id: cred.user.uid,
       email: cred.user.email,
       name: cred.user.displayName || '',
+      first_name: '',
+      last_name: '',
+      phone: '',
+      city: '',
+      state: '',
+      zip: '',
       role: isSuper ? 'super_admin' : 'member',
       chapter_id: null,
       events_attended: 0,
       hours_logged: 0,
       meals_rescued: 0,
+      // Google / Apple sign-in skips the email signup form, so we mark
+      // the profile incomplete — the app routes them to CompleteProfile.
+      profile_complete: !!isSuper,
       created_at: serverTimestamp(),
     });
   }
