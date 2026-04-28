@@ -101,6 +101,16 @@ service cloud.firestore {
       allow write: if isExec();
     }
 
+    // ── org_stats (live counters that drive website ticker + app impact) ──
+    // Public read so the marketing site can show real-time numbers without
+    // an auth round-trip. Writes only happen from inside the app via
+    // bumpOrgStats() — restricted to signed-in users so anonymous traffic
+    // can't inflate the counters.
+    match /org_stats/{id} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
     // ── animals_helped, badges, user_badges, member_of_month, checklist_progress ──
     match /animals_helped/{id}    { allow read: if true; allow write: if isExec(); }
     match /badges/{id}            { allow read: if true; allow write: if isAdmin(); }

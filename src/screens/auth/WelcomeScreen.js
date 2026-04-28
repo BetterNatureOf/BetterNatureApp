@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius } from '../../config/theme';
@@ -6,8 +6,20 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Logo from '../../components/ui/Logo';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
+import { getOrgStats } from '../../services/orgStats';
+import { fetchAllMembers, fetchChapters } from '../../services/database';
+
+const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
 export default function WelcomeScreen({ navigation }) {
+  const [stats, setStats] = useState({ meals: 0 });
+  const [volunteers, setVolunteers] = useState(0);
+  const [chapters, setChapters] = useState(0);
+  useEffect(() => {
+    getOrgStats().then(setStats).catch(() => {});
+    fetchAllMembers().then((m) => setVolunteers(m.length)).catch(() => {});
+    fetchChapters().then((c) => setChapters(c.length)).catch(() => {});
+  }, []);
   return (
     <ScrollView
       style={styles.container}
@@ -35,17 +47,17 @@ export default function WelcomeScreen({ navigation }) {
           {/* Mini stats */}
           <View style={styles.statsRow}>
             <View style={styles.miniStat}>
-              <Text style={styles.miniStatNum}>2,400+</Text>
+              <Text style={styles.miniStatNum}>{fmt(stats.meals)}</Text>
               <Text style={styles.miniStatLabel}>Meals Rescued</Text>
             </View>
             <View style={styles.miniDivider} />
             <View style={styles.miniStat}>
-              <Text style={styles.miniStatNum}>500+</Text>
+              <Text style={styles.miniStatNum}>{fmt(volunteers)}</Text>
               <Text style={styles.miniStatLabel}>Volunteers</Text>
             </View>
             <View style={styles.miniDivider} />
             <View style={styles.miniStat}>
-              <Text style={styles.miniStatNum}>10+</Text>
+              <Text style={styles.miniStatNum}>{fmt(chapters)}</Text>
               <Text style={styles.miniStatLabel}>Chapters</Text>
             </View>
           </View>

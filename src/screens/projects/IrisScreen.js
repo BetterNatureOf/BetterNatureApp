@@ -18,12 +18,25 @@ import BrushDivider from '../../components/ui/BrushDivider';
 import usePickups from '../../hooks/usePickups';
 import useEvents from '../../hooks/useEvents';
 import useAuthStore from '../../store/authStore';
+import { getOrgStats } from '../../services/orgStats';
+import { fetchRestaurants, fetchAllMembers } from '../../services/database';
+
+const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
 export default function IrisScreen({ navigation }) {
   const { pickups, loading: pickupsLoading, loadPickups, claim } = usePickups();
   const { events } = useEvents();
   const user = useAuthStore((s) => s.user);
   const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({ meals: 0 });
+  const [partners, setPartners] = useState(0);
+  const [volunteers, setVolunteers] = useState(0);
+
+  useEffect(() => {
+    getOrgStats().then(setStats).catch(() => {});
+    fetchRestaurants('approved').then((r) => setPartners(r.length)).catch(() => {});
+    fetchAllMembers().then((m) => setVolunteers(m.length)).catch(() => {});
+  }, []);
 
   const irisEvents = events.filter((e) => e.project === 'IRIS');
 
@@ -77,9 +90,9 @@ export default function IrisScreen({ navigation }) {
 
       {/* Stats */}
       <View style={styles.statsRow}>
-        <StatCard number="2,400+" label="Meals Rescued" color={Colors.sage} style={styles.stat} />
-        <StatCard number="45" label="Partners" color={Colors.sage} style={styles.stat} />
-        <StatCard number="120+" label="Volunteers" color={Colors.sage} style={styles.stat} />
+        <StatCard number={fmt(stats.meals)} label="Meals Rescued" color={Colors.sage} style={styles.stat} />
+        <StatCard number={fmt(partners)} label="Partners" color={Colors.sage} style={styles.stat} />
+        <StatCard number={fmt(volunteers)} label="Volunteers" color={Colors.sage} style={styles.stat} />
       </View>
 
       {/* Food Insecurity Map Link */}

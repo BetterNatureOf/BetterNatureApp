@@ -17,6 +17,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
+import { bumpOrgStats } from './orgStats';
 import {
   mockChapters,
   mockEvents,
@@ -42,10 +43,13 @@ const snapToList = (snap) =>
 const snapToOne = (snap) =>
   snap.exists() ? { id: snap.id, ...snap.data() } : null;
 
-// If a Firestore collection is empty, fall back to mock data so demos
-// keep working until real records exist.
-function withMockFallback(list, mock) {
-  return list.length ? list : mock;
+// We used to fall back to mock data when a Firestore collection was empty.
+// Now that we're shipping to real restaurants & volunteers, an empty
+// collection means "no data yet" — we return empty so the UI shows zeroes
+// or empty states instead of fake numbers. Mocks only apply when Firebase
+// is unconfigured entirely (local dev w/o creds).
+function withMockFallback(list /* , mock */) {
+  return list;
 }
 
 // ── Chapters ──
@@ -60,7 +64,7 @@ export async function fetchChapters() {
 export async function fetchChapterById(id) {
   if (useMock()) return mockChapters.find((c) => c.id === id) || mockChapters[0];
   const snap = await getDoc(doc(db, 'chapters', id));
-  return snapToOne(snap) || mockChapters.find((c) => c.id === id) || mockChapters[0];
+  return snapToOne(snap);
 }
 
 export async function createChapter(chapter) {
@@ -90,15 +94,13 @@ export async function fetchEvents(chapterId) {
   const constraints = [where('date', '>=', today), orderBy('date')];
   if (chapterId) constraints.unshift(where('chapter_id', '==', chapterId));
   const snap = await getDocs(query(collection(db, 'events'), ...constraints));
-  const list = snapToList(snap);
-  if (list.length) return list;
-  return chapterId ? mockEvents.filter((e) => e.chapter_id === chapterId) : mockEvents;
+  return snapToList(snap);
 }
 
 export async function fetchEventById(id) {
   if (useMock()) return mockEvents.find((e) => e.id === id) || mockEvents[0];
   const snap = await getDoc(doc(db, 'events', id));
-  return snapToOne(snap) || mockEvents.find((e) => e.id === id) || mockEvents[0];
+  return snapToOne(snap);
 }
 
 export async function createEvent(event) {
@@ -282,6 +284,11 @@ export async function checkInVolunteer({
     }
   } catch (e) { console.warn('user stats bump failed', e); }
 
+  // 3b. Bump the org-wide live counters
+  try {
+    await bumpOrgStats({ events: 1, hours, meals });
+  } catch (e) { console.warn('org stats bump (checkin)', e); }
+
   // 4. Notification
   await addDoc(collection(db, 'notifications'), {
     user_id: userId,
@@ -375,9 +382,7 @@ export async function fetchPickups(chapterId) {
   const constraints = [where('status', '==', 'available')];
   if (chapterId) constraints.push(where('chapter_id', '==', chapterId));
   const snap = await getDocs(query(collection(db, 'pickups'), ...constraints));
-  const list = snapToList(snap);
-  if (list.length) return list;
-  return chapterId ? mockPickups.filter((p) => p.chapter_id === chapterId) : mockPickups;
+  return snapToList(snap);
 }
 
 export async function claimPickup(pickupId, userId) {
@@ -466,6 +471,12 @@ export async function completePickup(pickupId, actualWeightLbs) {
         });
       }
     } catch (e) { console.warn('user stat bump', e); }
+
+    // Bump the org-wide live counters that drive the website ticker
+    // and in-app impact screen. Real lbs in → real numbers out.
+    try {
+      await bumpOrgStats({ lbs: weight, hours: 1 });
+    } catch (e) { console.warn('org stats bump (pickup)', e); }
 
     await addDoc(collection(db, 'notifications'), {
       user_id: pk.claimed_by,
@@ -588,7 +599,7 @@ export async function fetchMemberOfMonth(chapterId) {
       )
     );
     const list = snapToList(snap);
-    if (!list.length) return mockMemberOfMonth;
+    if (!list.length) return null;
     const row = list[0];
     if (row.user_id) {
       const u = await getDoc(doc(db, 'users', row.user_id));
@@ -599,7 +610,7 @@ export async function fetchMemberOfMonth(chapterId) {
     }
     return row;
   } catch {
-    return mockMemberOfMonth;
+    return null;
   }
 }
 
@@ -661,9 +672,7 @@ export async function fetchAnimalsHelped(chapterId) {
   const constraints = [];
   if (chapterId) constraints.push(where('chapter_id', '==', chapterId));
   const snap = await getDocs(query(collection(db, 'animals_helped'), ...constraints));
-  const list = snapToList(snap);
-  if (list.length) return list;
-  return chapterId ? mockAnimalsHelped.filter((a) => a.chapter_id === chapterId) : mockAnimalsHelped;
+  return snapToList(snap);
 }
 
 // ── Announcements ──
@@ -698,9 +707,9 @@ export async function fetchAnnouncements(target) {
         return tb - ta;
       })
       .slice(0, 20);
-    return withMockFallback(merged, mockAnnouncements);
+    return merged;
   } catch {
-    return mockAnnouncements;
+    return [];
   }
 }
 
@@ -754,11 +763,6 @@ export async function fetchOrgMetrics({ scope = 'org', chapterId = null } = {}) 
       query(collection(db, 'org_metrics'), ...constraints, orderBy('label'))
     );
     rows = snapToList(snap);
-    if (!rows.length) {
-      rows = mockOrgMetrics.filter((m) =>
-        scope === 'chapter' ? m.chapter_id === chapterId : m.scope === 'org'
-      );
-    }
   }
 
   const out = [];
@@ -849,7 +853,6 @@ export async function fetchLeaderboard({
   } else {
     const snap = await getDocs(collection(db, 'member_activity'));
     activities = snapToList(snap);
-    if (!activities.length) activities = mockMemberActivity;
   }
 
   const cutoff = leaderboardCutoff(timeRange);
@@ -920,7 +923,7 @@ export async function fetchAllMembers() {
   if (useMock()) return mockMembers;
   const snap = await getDocs(query(collection(db, 'users'), orderBy('name')));
   let list = snapToList(snap);
-  if (!list.length) return mockMembers;
+  if (!list.length) return [];
 
   // Hydrate chapter name like the old `users(*, chapters(name))` join did.
   const chapIds = [...new Set(list.map((u) => u.chapter_id).filter(Boolean))];

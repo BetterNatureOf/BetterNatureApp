@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
@@ -7,9 +7,17 @@ import StatCard from '../../components/ui/StatCard';
 import BrushDivider from '../../components/ui/BrushDivider';
 import useAuthStore from '../../store/authStore';
 import { LeaderboardBody } from './LeaderboardScreen';
+import { getOrgStats } from '../../services/orgStats';
+
+const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
 export default function ImpactScreen() {
   const user = useAuthStore((s) => s.user);
+  const [org, setOrg] = useState({ meals: 0, lbs: 0, water: 0, co2: 0, events: 0 });
+
+  useEffect(() => {
+    getOrgStats().then(setOrg).catch(() => {});
+  }, []);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -64,16 +72,16 @@ export default function ImpactScreen() {
         <View style={styles.orgHeroRow}>
           <View style={styles.orgStat}>
             <BrushText variant="heroStat" style={styles.orgNumber}>
-              2,400+
+              {fmt(org.meals)}
             </BrushText>
             <Text style={styles.orgLabel}>Meals Rescued</Text>
           </View>
           <View style={styles.orgDivider} />
           <View style={styles.orgStat}>
             <BrushText variant="heroStat" style={styles.orgNumber}>
-              150+
+              {fmt(org.lbs)}
             </BrushText>
-            <Text style={styles.orgLabel}>Animals Helped</Text>
+            <Text style={styles.orgLabel}>Pounds Rescued</Text>
           </View>
         </View>
       </LinearGradient>
@@ -81,16 +89,16 @@ export default function ImpactScreen() {
       <View style={styles.orgCard}>
         <View style={styles.orgStat}>
           <BrushText variant="heroStat" style={{ color: Colors.sky }}>
-            $12K
+            {fmt(org.water)}
           </BrushText>
-          <Text style={styles.orgLabelDark}>Raised for Clean Water</Text>
+          <Text style={styles.orgLabelDark}>Gallons of Water Saved</Text>
         </View>
         <View style={styles.orgDividerDark} />
         <View style={styles.orgStat}>
           <BrushText variant="heroStat" style={{ color: Colors.pink }}>
-            500+
+            {fmt(org.co2)}
           </BrushText>
-          <Text style={styles.orgLabelDark}>Active Volunteers</Text>
+          <Text style={styles.orgLabelDark}>Pounds CO₂ Avoided</Text>
         </View>
       </View>
 

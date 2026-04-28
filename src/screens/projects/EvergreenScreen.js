@@ -38,9 +38,9 @@ export default function EvergreenScreen({ navigation }) {
 
       {/* Stats */}
       <View style={styles.statsRow}>
-        <StatCard number="150+" label="Animals Helped" color={Colors.green} style={styles.stat} />
-        <StatCard number="500" label="Trees Planted" color={Colors.green} style={styles.stat} />
-        <StatCard number="12" label="Habitats" color={Colors.green} style={styles.stat} />
+        <StatCard number="0" label="Animals Helped" color={Colors.green} style={styles.stat} />
+        <StatCard number="0" label="Trees Planted" color={Colors.green} style={styles.stat} />
+        <StatCard number="0" label="Habitats" color={Colors.green} style={styles.stat} />
       </View>
 
       <BrushDivider color={Colors.green} />

@@ -148,12 +148,15 @@ window.CONTENT = {
       { src: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=900&q=80&auto=format&fit=crop", alt: "Crate of fresh vegetables" },
       { src: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?w=900&q=80&auto=format&fit=crop", alt: "Volunteer planting a tree" },
     ],
+    // Placeholder values shown only for the millisecond before live-stats.js
+    // overwrites them with the real numbers from org_stats/global. Keep these
+    // at 0 so we never flash fabricated numbers if Firestore is slow.
     tickerStats: [
-      { value: "6,963", label: "meal kits delivered" },
-      { value: "2,780 lbs", label: "food distributed" },
-      { value: "6,963", label: "individuals served" },
-      { value: "10,564 lbs", label: "CO₂ avoided" },
-      { value: "486,500 gal", label: "water footprint reduced" },
+      { value: "0", label: "meal kits delivered" },
+      { value: "0 lbs", label: "food rescued" },
+      { value: "0", label: "individuals served" },
+      { value: "0 lbs", label: "CO₂ avoided" },
+      { value: "0 gal", label: "water footprint reduced" },
     ],
   },
 
@@ -185,13 +188,15 @@ window.CONTENT = {
   impact: {
     eyebrow: "The receipts",
     title: "Real numbers. Real neighbors. Real forests.",
+    // Placeholder zeros — overwritten at runtime by live-stats.js with the
+    // real org_stats/global counts. Never edit these to fake numbers.
     stats: [
-      { value: "6,963", label: "Meal kits delivered", sublabel: "From rescued surplus to neighbors who need them" },
-      { value: "2,780", label: "Pounds of food distributed", sublabel: "Direct from partner kitchens to recipients" },
-      { value: "6,963", label: "Individuals served", sublabel: "Across our active chapters" },
-      { value: "10,564", label: "Pounds of CO₂ avoided", sublabel: "Emissions prevented by diverting food from landfills" },
-      { value: "486,500", label: "Gallons of water saved", sublabel: "Embedded water footprint of the food we rescued" },
-      { value: "4", label: "Events run", sublabel: "Pickups, cleanups, and chapter actions to date" },
+      { value: "0", label: "Meal kits delivered", sublabel: "From rescued surplus to neighbors who need them" },
+      { value: "0", label: "Pounds of food rescued", sublabel: "Direct from partner kitchens to recipients" },
+      { value: "0", label: "Individuals served", sublabel: "Across our active chapters" },
+      { value: "0", label: "Pounds of CO₂ avoided", sublabel: "Emissions prevented by diverting food from landfills" },
+      { value: "0", label: "Gallons of water saved", sublabel: "Embedded water footprint of the food we rescued" },
+      { value: "0", label: "Events run", sublabel: "Pickups, cleanups, and chapter actions to date" },
     ],
   },
 
@@ -206,9 +211,9 @@ window.CONTENT = {
         title: "Food rescue.",
         body: "Restaurant surplus, same-day pickup, direct delivery to shelters, community fridges, and families on our recipient list. Free for partners. Tax-deductible. Weighed, logged, reported.",
         stats: [
-          { value: "6,963", label: "meal kits delivered" },
-          { value: "2,780 lbs", label: "food rescued" },
-          { value: "10,564 lbs", label: "CO₂ avoided" },
+          { value: "0", label: "meal kits delivered" },
+          { value: "0 lbs", label: "food rescued" },
+          { value: "0 lbs", label: "CO₂ avoided" },
         ],
         cta: { text: "Become a partner business", href: "#signup" },
       },
@@ -229,7 +234,7 @@ window.CONTENT = {
         title: "Waterway protection.",
         body: "River, creek, and coastline cleanups. Microplastic surveys. Storm drain stenciling. We protect the waterways the people we feed depend on.",
         stats: [
-          { value: "486,500 gal", label: "water footprint reduced" },
+          { value: "0 gal", label: "water footprint reduced" },
           { value: "Launching", label: "first cleanup" },
         ],
         cta: { text: "Find a cleanup near you", href: "#chapters" },

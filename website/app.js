@@ -316,7 +316,7 @@
       <div class="chapter__state">${ch.state}</div>
       <div class="chapter__meta">
         <span>President: ${ch.president}</span>
-        <span class="chapter__members">${ch.members} members</span>
+        ${typeof ch.members === 'number' ? `<span class="chapter__members">${ch.members} member${ch.members === 1 ? '' : 's'}</span>` : ''}
       </div>
       <span class="chapter__more">View chapter →</span>
     </button>
@@ -345,7 +345,7 @@
       <h3 id="chapterModalTitle" class="chapter-modal__title">${ch.city}, ${ch.state}</h3>
       ${ch.blurb ? `<p class="chapter-modal__blurb">${ch.blurb}</p>` : ''}
       <div class="chapter-modal__stats">
-        <span><strong>${ch.members}</strong> members</span>
+        ${typeof ch.members === 'number' ? `<span><strong>${ch.members}</strong> member${ch.members === 1 ? '' : 's'}</span>` : ''}
         <span>President: <strong>${ch.president}</strong></span>
         ${ch.instagram ? `<a class="chapter-modal__ig" href="${ch.instagram}" target="_blank" rel="noreferrer">@chapter on Instagram ↗</a>` : ''}
       </div>

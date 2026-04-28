@@ -37,9 +37,9 @@ export default function HydroScreen({ navigation }) {
 
       {/* Stats */}
       <View style={styles.statsRow}>
-        <StatCard number="$12K" label="Raised" color={Colors.skyDark} style={styles.stat} />
-        <StatCard number="$25K" label="Goal" color={Colors.skyDark} style={styles.stat} />
-        <StatCard number="48%" label="Progress" color={Colors.skyDark} style={styles.stat} />
+        <StatCard number="$0" label="Raised" color={Colors.skyDark} style={styles.stat} />
+        <StatCard number="—" label="Goal" color={Colors.skyDark} style={styles.stat} />
+        <StatCard number="0%" label="Progress" color={Colors.skyDark} style={styles.stat} />
       </View>
 
       {/* Progress Bar */}
