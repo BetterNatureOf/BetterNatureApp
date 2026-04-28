@@ -603,7 +603,11 @@
         const btn = form.querySelector('button[type="submit"]');
         const track = form.dataset.track;
         const data = Object.fromEntries(new FormData(form).entries());
-        const subject = `[${track === 'volunteer' ? 'Volunteer' : 'Business partner'}] ${data.businessName || data.fullName || 'New signup'}`;
+        const trackLabel =
+          track === 'chapter' ? 'New chapter application' :
+          track === 'volunteer' ? 'Volunteer' :
+          'Business partner';
+        const subject = `[${trackLabel}] ${data.businessName || data.fullName || 'New signup'}${data.city ? ` — ${data.city}` : ''}`;
         const payload = {
           _subject: subject,
           _template: 'table',
@@ -641,6 +645,8 @@
             } catch (authErr) {
               accountMsg = ` (Could not auto-create account: ${authErr.message}. Sign up in the app with the same email.)`;
             }
+          } else if (track === 'chapter') {
+            accountMsg = '';
           } else {
             accountMsg = ' To finish joining the network, download the Better Nature app and sign up with the same email.';
           }
@@ -657,6 +663,8 @@
             status.className = 'signup__status is-ok';
             status.innerHTML = (track === 'volunteer'
               ? "You're in. We'll reach out within 24 hours with your chapter match."
+              : track === 'chapter'
+              ? "Application received. We'll send the chapter playbook and onboarding call invite within 48 hours."
               : "Got it. A partner coordinator will reach out within 24 hours to schedule your 15-min call.")
               + accountMsg
               + (appCtas ? `<br><small style="display:block;margin-top:8px;">Get the app: ${appCtas}</small>` : '');

@@ -110,6 +110,25 @@ window.CONTENT = {
         submit: "Create volunteer account",
         mailto: "info@betternatureofficial.org",
       },
+      {
+        key: "chapter",
+        label: "Start a chapter",
+        tagline: "Bring Better Nature to your city. Tell us about you and where you want to build — we'll send the chapter playbook, insurance details, and onboarding call invite within 48 hours.",
+        fields: [
+          { name: "fullName", label: "Your name", type: "text", required: true },
+          { name: "email", label: "Email", type: "email", required: true },
+          { name: "phone", label: "Phone", type: "tel", required: true },
+          { name: "city", label: "City you want to start in", type: "text", required: true },
+          { name: "state", label: "State / region", type: "text", required: true },
+          { name: "age", label: "Age", type: "text", required: false },
+          { name: "affiliation", label: "School, university, or organization (if any)", type: "text", required: false },
+          { name: "experience", label: "Any leadership / volunteer experience?", type: "textarea", required: false },
+          { name: "why", label: "Why do you want to start a chapter here?", type: "textarea", required: true },
+          { name: "timeline", label: "When are you hoping to launch?", type: "select", options: ["This month", "1–3 months", "3–6 months", "Just exploring"], required: false },
+        ],
+        submit: "Apply to start a chapter",
+        mailto: "info@betternatureofficial.org",
+      },
     ],
   },
 
@@ -306,7 +325,7 @@ window.CONTENT = {
       },
     ],
     totalCities: 1,
-    startChapterUrl: "mailto:info@betternatureofficial.org?subject=Start%20a%20chapter",
+    startChapterUrl: "#signup",
   },
 
   // ── PARTNER RESTAURANTS / SPONSORS ────────────────────────────────────
