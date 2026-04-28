@@ -9,6 +9,7 @@ import {
   onAuthStateChanged,
   updateProfile as fbUpdateProfile,
   GoogleAuthProvider,
+  OAuthProvider,
   signInWithPopup,
   signInWithCredential,
 } from 'firebase/auth';
@@ -105,9 +106,41 @@ export async function getProfile(userId) {
   return { id: snap.id, ...data, role: normalizeRole(data.role) };
 }
 
-// Sign in with Google (web only — for native we'll use expo-auth-session).
-// Optional `restrictDomain` (e.g. "betternatureofficial.org") rejects accounts
-// outside the workspace.
+// Bootstraps a users/{uid} doc the first time a social sign-in lands.
+// Shared between Google and Apple flows so the schema stays consistent.
+async function bootstrapSocialUser(fbUser) {
+  const ref = doc(db, 'users', fbUser.uid);
+  const existing = await getDoc(ref);
+  if (existing.exists()) return existing.data();
+  const isSuper = (fbUser.email || '').toLowerCase() === 'satvik.koya@betternatureofficial.org';
+  const data = {
+    id: fbUser.uid,
+    email: fbUser.email || '',
+    name: fbUser.displayName || '',
+    first_name: '',
+    last_name: '',
+    phone: '',
+    city: '',
+    state: '',
+    zip: '',
+    role: isSuper ? 'super_admin' : 'member',
+    chapter_id: null,
+    events_attended: 0,
+    hours_logged: 0,
+    meals_rescued: 0,
+    // Social sign-up skips our email form, so mark the profile incomplete
+    // and the app routes them to CompleteProfile to collect first/last
+    // name, phone, and location.
+    profile_complete: !!isSuper,
+    created_at: serverTimestamp(),
+  };
+  await setDoc(ref, data);
+  return data;
+}
+
+// Sign in (or sign up) with Google. Web-only popup flow today; native
+// will use expo-auth-session in a follow-up. `restrictDomain` rejects
+// accounts outside a Google Workspace (used on the admin login).
 export async function signInWithGoogle({ restrictDomain } = {}) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   const provider = new GoogleAuthProvider();
@@ -117,32 +150,31 @@ export async function signInWithGoogle({ restrictDomain } = {}) {
     await fbSignOut(auth);
     throw new Error(`Use a @${restrictDomain} Google account.`);
   }
-  // Bootstrap a users/{uid} doc on first Google sign-in.
-  const ref = doc(db, 'users', cred.user.uid);
-  const existing = await getDoc(ref);
-  if (!existing.exists()) {
-    const isSuper = (cred.user.email || '').toLowerCase() === 'satvik.koya@betternatureofficial.org';
-    await setDoc(ref, {
-      id: cred.user.uid,
-      email: cred.user.email,
-      name: cred.user.displayName || '',
-      first_name: '',
-      last_name: '',
-      phone: '',
-      city: '',
-      state: '',
-      zip: '',
-      role: isSuper ? 'super_admin' : 'member',
-      chapter_id: null,
-      events_attended: 0,
-      hours_logged: 0,
-      meals_rescued: 0,
-      // Google / Apple sign-in skips the email signup form, so we mark
-      // the profile incomplete — the app routes them to CompleteProfile.
-      profile_complete: !!isSuper,
-      created_at: serverTimestamp(),
-    });
+  await bootstrapSocialUser(cred.user);
+  const profile = await getProfile(cred.user.uid);
+  return { user: profile, session: { user: cred.user } };
+}
+
+// Sign in (or sign up) with Apple. Requires Apple Developer Program
+// enrollment, a Services ID configured for Sign in with Apple, and the
+// Apple provider enabled in Firebase → Authentication → Sign-in method.
+// Returns the same shape as signInWithGoogle so callers don't branch.
+export async function signInWithApple() {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const provider = new OAuthProvider('apple.com');
+  provider.addScope('email');
+  provider.addScope('name');
+  const cred = await signInWithPopup(auth, provider);
+  // Apple only sends the displayName on first sign-in. Capture it here
+  // so the CompleteProfile screen can pre-split it into first/last.
+  if (cred.user && !cred.user.displayName) {
+    const oauth = OAuthProvider.credentialFromResult(cred);
+    const fullName = oauth?.fullName || '';
+    if (fullName) {
+      try { await fbUpdateProfile(cred.user, { displayName: fullName }); } catch {}
+    }
   }
+  await bootstrapSocialUser(cred.user);
   const profile = await getProfile(cred.user.uid);
   return { user: profile, session: { user: cred.user } };
 }

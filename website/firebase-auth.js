@@ -20,7 +20,7 @@ import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebase
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   onAuthStateChanged, signOut, updateProfile,
-  GoogleAuthProvider, signInWithPopup,
+  GoogleAuthProvider, OAuthProvider, signInWithPopup,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, updateDoc, addDoc, collection,
@@ -80,6 +80,27 @@ export async function signInWithGoogle({ restrictDomain } = {}) {
   if (restrictDomain && !(cred.user.email || '').toLowerCase().endsWith(`@${restrictDomain.toLowerCase()}`)) {
     await signOut(auth);
     throw new Error(`Please use your @${restrictDomain} Google account.`);
+  }
+  await ensureUserDoc(cred.user);
+  return cred.user;
+}
+
+// Sign in with Apple. Requires the Apple provider enabled in Firebase
+// Console (Authentication → Sign-in method → Apple) plus an Apple Services
+// ID — Apple Developer Program enrollment is required.
+export async function signInWithApple() {
+  const provider = new OAuthProvider('apple.com');
+  provider.addScope('email');
+  provider.addScope('name');
+  const cred = await signInWithPopup(auth, provider);
+  // Apple only returns the full name on the very first sign-in. Capture it
+  // here so the user doc gets a real displayName.
+  if (cred.user && !cred.user.displayName) {
+    const oauth = OAuthProvider.credentialFromResult(cred);
+    const fullName = oauth?.fullName || '';
+    if (fullName) {
+      try { await updateProfile(cred.user, { displayName: fullName }); } catch {}
+    }
   }
   await ensureUserDoc(cred.user);
   return cred.user;

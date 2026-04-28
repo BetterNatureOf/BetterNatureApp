@@ -15,7 +15,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signIn } from '../../services/auth';
-import { signInWithGoogle } from '../../services/authFirebase';
+import { signInWithGoogle, signInWithApple } from '../../services/authFirebase';
 import { isFirebaseConfigured } from '../../config/firebase';
 import useAuthStore, { ROLES } from '../../store/authStore';
 
@@ -56,9 +56,21 @@ export default function LoginScreen({ navigation }) {
     }
   }
 
-  // Google popup auth only works on web. Native needs expo-auth-session
-  // (a separate, larger setup) — surface the button only where it works.
-  const showGoogle = Platform.OS === 'web' && isFirebaseConfigured;
+  async function handleApple() {
+    setLoading(true);
+    try {
+      const { user } = await signInWithApple();
+      if (user) setUser({ ...user, role: user.role || ROLES.MEMBER });
+    } catch (e) {
+      Alert.alert('Apple sign in failed', e.message || 'Try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Popup auth only works on web. Native needs expo-auth-session
+  // (a separate, larger setup) — surface the buttons only where they work.
+  const showOAuth = Platform.OS === 'web' && isFirebaseConfigured;
 
   return (
     <KeyboardAvoidingView
@@ -99,7 +111,7 @@ export default function LoginScreen({ navigation }) {
             style={styles.btn}
           />
 
-          {showGoogle && (
+          {showOAuth && (
             <>
               <View style={styles.divider}>
                 <View style={styles.dividerLine} />
@@ -114,6 +126,15 @@ export default function LoginScreen({ navigation }) {
               >
                 <Text style={styles.googleG}>G</Text>
                 <Text style={styles.googleText}>Continue with Google</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.appleBtn}
+                onPress={handleApple}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.appleLogo}></Text>
+                <Text style={styles.appleText}>Continue with Apple</Text>
               </TouchableOpacity>
             </>
           )}
@@ -163,6 +184,25 @@ const styles = StyleSheet.create({
   googleText: {
     fontSize: 15,
     color: Colors.dark,
+    fontWeight: '600',
+  },
+  appleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: Radius.lg,
+    backgroundColor: '#000',
+    marginTop: 10,
+  },
+  appleLogo: {
+    fontSize: 18,
+    color: '#fff',
+  },
+  appleText: {
+    fontSize: 15,
+    color: '#fff',
     fontWeight: '600',
   },
 });
