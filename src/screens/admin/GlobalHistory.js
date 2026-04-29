@@ -95,7 +95,7 @@ export default function GlobalHistory({ navigation }) {
       <BrushText variant="screenTitle" style={styles.title}>
         Global History
       </BrushText>
-      <Text style={styles.subtitle}>All activity across Better Nature</Text>
+      <Text style={styles.subtitle}>All activity across BetterNature</Text>
 
       <ScrollView
         horizontal

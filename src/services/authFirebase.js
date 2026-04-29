@@ -12,6 +12,7 @@ import {
   OAuthProvider,
   signInWithPopup,
   signInWithCredential,
+  fetchSignInMethodsForEmail,
 } from 'firebase/auth';
 import {
   doc,
@@ -160,11 +161,37 @@ async function bootstrapSocialUser(fbUser) {
 // Sign in (or sign up) with Google. Web-only popup flow today; native
 // will use expo-auth-session in a follow-up. `restrictDomain` rejects
 // accounts outside a Google Workspace (used on the admin login).
+// Friendly handler for "this email is already on a different provider".
+// We don't auto-link silently (Firebase requires re-auth with the original
+// method), but we tell the user *which* method to use so they don't end up
+// with two separate accounts under the same email.
+async function explainLinkingError(err) {
+  if (err?.code !== 'auth/account-exists-with-different-credential') return err;
+  try {
+    const email = err.customData?.email;
+    if (email) {
+      const methods = await fetchSignInMethodsForEmail(auth, email);
+      const human = methods.map(m => (
+        m === 'google.com' ? 'Google' :
+        m === 'apple.com'  ? 'Apple' :
+        m === 'password'   ? 'email + password' : m
+      )).join(' or ');
+      return new Error(
+        `This email already has an account using ${human}. ` +
+        `Sign in with ${human} first to keep everything in one account.`
+      );
+    }
+  } catch {}
+  return err;
+}
+
 export async function signInWithGoogle({ restrictDomain } = {}) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   const provider = new GoogleAuthProvider();
   if (restrictDomain) provider.setCustomParameters({ hd: restrictDomain });
-  const cred = await signInWithPopup(auth, provider);
+  let cred;
+  try { cred = await signInWithPopup(auth, provider); }
+  catch (e) { throw await explainLinkingError(e); }
   if (restrictDomain && !cred.user.email?.toLowerCase().endsWith(`@${restrictDomain.toLowerCase()}`)) {
     await fbSignOut(auth);
     throw new Error(`Use a @${restrictDomain} Google account.`);
@@ -183,7 +210,9 @@ export async function signInWithApple() {
   const provider = new OAuthProvider('apple.com');
   provider.addScope('email');
   provider.addScope('name');
-  const cred = await signInWithPopup(auth, provider);
+  let cred;
+  try { cred = await signInWithPopup(auth, provider); }
+  catch (e) { throw await explainLinkingError(e); }
   // Apple only sends the displayName on first sign-in. Capture it here
   // so the CompleteProfile screen can pre-split it into first/last.
   if (cred.user && !cred.user.displayName) {

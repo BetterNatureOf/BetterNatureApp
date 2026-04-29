@@ -484,7 +484,7 @@
   if (C.brand.donateEmbedUrl) {
     setHTML('#donateEmbed', `
       <iframe
-        title="Donate to Better Nature"
+        title="Donate to BetterNature"
         src="${C.brand.donateEmbedUrl}"
         allowpaymentrequest="true"
         allowtransparency="true"
@@ -641,7 +641,7 @@
           });
           if (!res.ok) throw new Error('Submit failed: ' + res.status);
 
-          // If the visitor provided an email + password, create their Better Nature
+          // If the visitor provided an email + password, create their BetterNature
           // account right here so it works on the app + web app + website.
           let accountMsg = '';
           if (window.BN_SIGNUP && data.email && data.password) {
@@ -656,14 +656,14 @@
                 zip: data.zip || '',
                 referralCode,
               });
-              accountMsg = ' Your account is active — open the Better Nature app with the same email and password to finish setup.';
+              accountMsg = ' Your account is active — open the BetterNature app with the same email and password to finish setup.';
             } catch (authErr) {
               accountMsg = ` (Could not auto-create account: ${authErr.message}. Sign up in the app with the same email.)`;
             }
           } else if (track === 'chapter') {
             accountMsg = '';
           } else {
-            accountMsg = ' To finish joining the network, download the Better Nature app and sign up with the same email.';
+            accountMsg = ' To finish joining the network, download the BetterNature app and sign up with the same email.';
           }
 
           form.reset();
@@ -706,7 +706,7 @@
   // verify tax-exempt status without asking.
   if (C.brand.ein) {
     const fl = document.getElementById('footerLegal');
-    if (fl) fl.textContent = `Better Nature Inc. is a 501(c)(3) nonprofit · EIN ${C.brand.ein}`;
+    if (fl) fl.textContent = `BetterNature Inc. is a 501(c)(3) nonprofit · EIN ${C.brand.ein}`;
   }
 
   // Social icons (inline SVGs, links from CONTENT)

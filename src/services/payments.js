@@ -72,7 +72,7 @@ export async function payWithApplePay({ amount, label, recurring = false }) {
             type: recurring ? 'pending' : 'final',
           },
           {
-            label: 'Better Nature',
+            label: 'BetterNature',
             amount: amount.toFixed(2),
             type: 'final',
           },

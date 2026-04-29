@@ -59,7 +59,7 @@ export default function SettingsScreen({ navigation }) {
 
       <BrushDivider />
 
-      <Text style={styles.version}>Better Nature v1.0.0</Text>
+      <Text style={styles.version}>BetterNature v1.0.0</Text>
     </ScrollView>
   );
 }

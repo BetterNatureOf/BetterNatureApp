@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Better Nature",
+    "name": "BetterNature",
     "slug": "better-nature",
     "version": "1.0.0",
     "runtimeVersion": {
@@ -22,8 +22,8 @@
       "bundleIdentifier": "org.betternature.app",
       "buildNumber": "1",
       "infoPlist": {
-        "NSCameraUsageDescription": "Better Nature uses the camera so you can photograph food rescue pickups and conservation events.",
-        "NSPhotoLibraryUsageDescription": "Better Nature accesses your photo library so you can share event and pickup photos.",
+        "NSCameraUsageDescription": "BetterNature uses the camera so you can photograph food rescue pickups and conservation events.",
+        "NSPhotoLibraryUsageDescription": "BetterNature accesses your photo library so you can share event and pickup photos.",
         "CFBundleAllowMixedLocalizations": true
       },
       "config": {
@@ -47,8 +47,8 @@
       "bundler": "metro",
       "output": "single",
       "favicon": "./src/assets/images/logo-circle.png",
-      "name": "Better Nature",
-      "shortName": "Better Nature",
+      "name": "BetterNature",
+      "shortName": "BetterNature",
       "themeColor": "#2F5D50",
       "backgroundColor": "#F9F7F4"
     },

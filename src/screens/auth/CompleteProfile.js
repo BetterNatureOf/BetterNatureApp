@@ -1,4 +1,4 @@
-// Shown after Google / Apple sign-in when the user has no Better Nature
+// Shown after Google / Apple sign-in when the user has no BetterNature
 // profile yet. Captures the fields the email signup flow collects so every
 // account ends up with the same baseline data: first/last name, phone, and
 // location. Selecting a chapter is optional — they can do it later.

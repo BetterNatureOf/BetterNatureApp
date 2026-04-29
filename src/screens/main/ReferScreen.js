@@ -55,7 +55,7 @@ export default function ReferScreen({ navigation }) {
 
   const link = code ? referralLink(code) : '';
   const message =
-    `Join me on Better Nature — we rescue food, plant trees, and clean waterways. ` +
+    `Join me on BetterNature — we rescue food, plant trees, and clean waterways. ` +
     `Sign up with my code ${code || ''} and we both get credit.\n${link}`;
 
   async function handleCopy() {
@@ -71,10 +71,10 @@ export default function ReferScreen({ navigation }) {
   async function handleShare() {
     try {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({ title: 'Better Nature', text: message, url: link });
+        await navigator.share({ title: 'BetterNature', text: message, url: link });
         return;
       }
-      await Share.share({ message, url: link, title: 'Better Nature' });
+      await Share.share({ message, url: link, title: 'BetterNature' });
     } catch {}
   }
 

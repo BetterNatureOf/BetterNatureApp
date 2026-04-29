@@ -48,10 +48,10 @@ export default function StartChapter({ navigation, route }) {
           Start a Chapter
         </BrushText>
         <Text style={styles.subtitle}>
-          Bring Better Nature to your community. Start a local chapter and make an impact.
+          Bring BetterNature to your community. Start a local chapter and make an impact.
         </Text>
 
-        <Input label="Chapter Name" placeholder="e.g., Better Nature Austin" value={name} onChangeText={setName} />
+        <Input label="Chapter Name" placeholder="e.g., BetterNature Austin" value={name} onChangeText={setName} />
         <View style={styles.row}>
           <Input label="City" placeholder="City" value={city} onChangeText={setCity} containerStyle={styles.half} />
           <Input label="State" placeholder="State" value={state} onChangeText={setState} containerStyle={styles.half} />
@@ -64,7 +64,7 @@ export default function StartChapter({ navigation, route }) {
         />
 
         <Text style={styles.note}>
-          Your chapter will be reviewed by the Better Nature executive team before going live.
+          Your chapter will be reviewed by the BetterNature executive team before going live.
           You'll be notified within 48 hours.
         </Text>
 

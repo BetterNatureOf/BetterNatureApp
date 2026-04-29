@@ -121,7 +121,7 @@ export default function SignupStep3({ route }) {
         Skip for now
       </Text>
       <Text style={styles.note}>
-        Your ID is stored securely and only visible to Better Nature executives for verification.
+        Your ID is stored securely and only visible to BetterNature executives for verification.
       </Text>
     </ScrollView>
   );

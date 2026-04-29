@@ -31,7 +31,7 @@ window.CONTENT = {
 
   // ── BRAND ─────────────────────────────────────────────────────────────
   brand: {
-    name: "Better Nature",
+    name: "BetterNature",
     tagline: "Rescue. Restore. Protect.",
     email: "info@betternatureofficial.org",
     ein: "99-4028399",
@@ -60,7 +60,7 @@ window.CONTENT = {
   // ── GET THE APP ───────────────────────────────────────────────────────
   getApp: {
     eyebrow: "Take it with you",
-    title: "The Better Nature app.",
+    title: "The BetterNature app.",
     body: "Claim shifts, log pickups, track your impact, and connect with your chapter — wherever you are. Scan the code or grab it from your store.",
     qrNote: "Scan to download",
   },
@@ -88,7 +88,7 @@ window.CONTENT = {
           { name: "phone", label: "Phone", type: "tel", required: true },
           { name: "city", label: "City & state", type: "text", required: true },
           { name: "volume", label: "Est. surplus / week (lbs)", type: "text", required: false },
-          { name: "password", label: "Create a password (6+ chars) — you'll use it to sign in on the Better Nature app too", type: "password", required: true, minLength: 6 },
+          { name: "password", label: "Create a password (6+ chars) — you'll use it to sign in on the BetterNature app too", type: "password", required: true, minLength: 6 },
           { name: "notes", label: "Anything we should know?", type: "textarea", required: false },
         ],
         submit: "Create partner account",
@@ -106,7 +106,7 @@ window.CONTENT = {
           { name: "age", label: "Age", type: "text", required: false },
           { name: "interests", label: "Which program excites you most?", type: "select", options: ["IRIS — Food rescue", "Evergreen — Conservation", "Hydro — Waterways", "All of them"], required: true },
           { name: "availability", label: "When are you free?", type: "textarea", required: false },
-          { name: "password", label: "Create a password (6+ chars) — you'll use it to sign in on the Better Nature app too", type: "password", required: true, minLength: 6 },
+          { name: "password", label: "Create a password (6+ chars) — you'll use it to sign in on the BetterNature app too", type: "password", required: true, minLength: 6 },
         ],
         submit: "Create volunteer account",
         mailto: "info@betternatureofficial.org",
@@ -114,7 +114,7 @@ window.CONTENT = {
       {
         key: "chapter",
         label: "Start a chapter",
-        tagline: "Bring Better Nature to your city. Tell us about you and where you want to build — we'll send the chapter playbook, insurance details, and onboarding call invite within 48 hours.",
+        tagline: "Bring BetterNature to your city. Tell us about you and where you want to build — we'll send the chapter playbook, insurance details, and onboarding call invite within 48 hours.",
         fields: [
           { name: "fullName", label: "Your name", type: "text", required: true },
           { name: "email", label: "Email", type: "email", required: true },
@@ -138,7 +138,7 @@ window.CONTENT = {
     eyebrow: "Food rescue · Reforestation · Waterways",
     headline: "Feed people. Plant forests.",
     headlineItalic: "Protect the water.",
-    subhead: "Better Nature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission.",
+    subhead: "BetterNature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission.",
     primaryCta: { text: "Read our mission", href: "#mission" },
     secondaryCta: { text: "Partner your business", href: "#signup" },
     // Tile 1 (top-left, biggest): forest. Tile 2 (top-right): clean water.
@@ -165,7 +165,7 @@ window.CONTENT = {
   mission: {
     eyebrow: "Our mission",
     title: "We refuse the world where food gets thrown out while people go hungry.",
-    body: "Better Nature is a youth-led 501(c)(3) nonprofit building the infrastructure to redirect surplus food, restore ecosystems, and protect communities from climate harm. We operate across three interlocking programs — because the climate crisis, the hunger crisis, and the biodiversity crisis are the same crisis. We don't wait for permission. We build the pickup route, plant the tree, clean the waterway, and train the next chapter leader.",
+    body: "BetterNature is a youth-led 501(c)(3) nonprofit building the infrastructure to redirect surplus food, restore ecosystems, and protect communities from climate harm. We operate across three interlocking programs — because the climate crisis, the hunger crisis, and the biodiversity crisis are the same crisis. We don't wait for permission. We build the pickup route, plant the tree, clean the waterway, and train the next chapter leader.",
     pillars: [
       {
         number: "01",
@@ -290,10 +290,10 @@ window.CONTENT = {
   team: {
     eyebrow: "The people",
     title: "Youth-led. Community-rooted.",
-    body: "Better Nature is run end-to-end by young organizers. Our national leadership team coordinates chapter presidents across the country.",
+    body: "BetterNature is run end-to-end by young organizers. Our national leadership team coordinates chapter presidents across the country.",
     members: [
       // Add real team members here. Each member: name, role, city, bio (short), photo (optional)
-      { name: "Satvik Koya", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started Better Nature after seeing surplus trays thrown out behind his local restaurants.", photo: "" },
+      { name: "Satvik Koya", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started BetterNature after seeing surplus trays thrown out behind his local restaurants.", photo: "" },
     ],
   },
 
@@ -353,7 +353,7 @@ window.CONTENT = {
   donate: {
     eyebrow: "Fuel the work",
     title: "Every dollar moves a meal, plants a tree, or protects a waterway.",
-    body: "Better Nature runs on donations. Zero overhead skimming — we use Zeffy, the only truly zero-fee donation platform for nonprofits. 100% of your gift goes to chapters.",
+    body: "BetterNature runs on donations. Zero overhead skimming — we use Zeffy, the only truly zero-fee donation platform for nonprofits. 100% of your gift goes to chapters.",
     tiers: [
       { amount: "$25", impact: "Helps fuel volunteer pickup routes" },
       { amount: "$100", impact: "Goes toward planting native trees in the communities we serve" },

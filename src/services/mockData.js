@@ -168,7 +168,7 @@ export const mockNotifications = [
   {
     id: 'n-2',
     user_id: 'u-1',
-    title: 'Welcome to Better Nature',
+    title: 'Welcome to BetterNature',
     body: 'Thanks for joining the movement.',
     read: true,
     created_at: new Date(Date.now() - 86400000).toISOString(),

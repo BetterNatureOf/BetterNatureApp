@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Donation Receipt — Better Nature</title>
+<title>Donation Receipt — BetterNature</title>
 <link rel="icon" type="image/png" href="logo.png" />
 <style>
   :root {
@@ -98,7 +98,7 @@ const fmtDate = (iso) => iso
 
 function render(r) {
   const ein = (r.org && r.org.ein) ? r.org.ein : 'pending IRS determination';
-  const orgName = (r.org && r.org.legalName) || 'Better Nature Inc.';
+  const orgName = (r.org && r.org.legalName) || 'BetterNature Inc.';
   const orgSite = (r.org && r.org.website) || 'betternatureofficial.org';
   const orgEmail = (r.org && r.org.email) || 'info@betternatureofficial.org';
   document.getElementById('root').innerHTML = `
@@ -119,7 +119,7 @@ function render(r) {
 
     <div class="row"><span class="k">Donor</span><span class="v">${r.restaurant_name || '—'}</span></div>
     <div class="row"><span class="k">Date of donation</span><span class="v">${fmtDate(r.picked_up_at)}</span></div>
-    <div class="row"><span class="k">Picked up by</span><span class="v">${r.volunteer_name || 'Better Nature volunteer'}${r.chapter_name ? ' · ' + r.chapter_name + ' Chapter' : ''}</span></div>
+    <div class="row"><span class="k">Picked up by</span><span class="v">${r.volunteer_name || 'BetterNature volunteer'}${r.chapter_name ? ' · ' + r.chapter_name + ' Chapter' : ''}</span></div>
     <div class="row"><span class="k">Issued</span><span class="v">${fmtDate(r.issued_at_iso)}</span></div>
 
     <div class="description">

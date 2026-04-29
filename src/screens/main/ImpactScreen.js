@@ -60,7 +60,7 @@ export default function ImpactScreen() {
 
       {/* Organization-wide Stats */}
       <BrushText variant="sectionHeader" style={styles.sectionTitle}>
-        Better Nature Overall
+        BetterNature Overall
       </BrushText>
 
       <LinearGradient

@@ -40,7 +40,7 @@ export default function WelcomeScreen({ navigation }) {
             <Logo size={120} style={styles.logo} />
           </View>
           <BrushText variant="heroStat" style={styles.title}>
-            Better Nature
+            BetterNature
           </BrushText>
           <Text style={styles.tagline}>Food rescue {'\u00B7'} Conservation {'\u00B7'} Clean water</Text>
 

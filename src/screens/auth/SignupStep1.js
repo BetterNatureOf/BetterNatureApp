@@ -48,7 +48,7 @@ export default function SignupStep1({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <BrushText variant="screenTitle" style={styles.title}>
-          Join Better Nature
+          Join BetterNature
         </BrushText>
         <Text style={styles.subtitle}>Tell us about yourself</Text>
 

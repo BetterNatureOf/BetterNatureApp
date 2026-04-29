@@ -42,7 +42,7 @@ export default function ImpactMap({ navigation }) {
   const startChapter = (p) => {
     const subject = encodeURIComponent(`Start a chapter in ${p.city}, ${p.state}`);
     const body = encodeURIComponent(
-      `Hi Better Nature team,\n\nI'd like to start a chapter in ${p.city}. Please send me the playbook.\n\n`
+      `Hi BetterNature team,\n\nI'd like to start a chapter in ${p.city}. Please send me the playbook.\n\n`
     );
     Linking.openURL(`mailto:info@betternatureofficial.org?subject=${subject}&body=${body}`);
   };

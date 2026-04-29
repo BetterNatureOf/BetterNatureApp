@@ -35,7 +35,7 @@ export default function LoadingScreen() {
         ]}
       >
         <BrushText variant="heroStat" style={styles.title}>
-          Better Nature
+          BetterNature
         </BrushText>
         <BrushText variant="sectionHeader" style={styles.tagline}>
           Rescue. Protect. Sustain.

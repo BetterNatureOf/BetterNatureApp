@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Better Nature — Admin</title>
+  <title>BetterNature — Admin</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
   <style>
@@ -143,7 +143,7 @@
 <div class="admin-nav">
   <div class="admin-nav__brand">
     <img src="logo.png" alt="" />
-    <span>Better Nature Admin</span>
+    <span>BetterNature Admin</span>
   </div>
   <div class="admin-nav__actions">
     <span class="admin-nav__status saved" id="status">Synced</span>
@@ -426,7 +426,9 @@ loginScreen.querySelector('#login-create').addEventListener('click', async () =>
   const code = loginScreen.querySelector('#login-code').value;
   if (!email || !pass || pass.length < 6) return showErr('Enter an email and a 6+ char password first.');
   try {
-    await signUp({ email, password: pass, name: email.split('@')[0], role: 'member', adminCode: code });
+    // Leave name blank — the user fills in their real name during onboarding.
+    // Using the email handle (e.g. "satvik.koya") would show that as their name everywhere.
+    await signUp({ email, password: pass, name: '', role: 'member', adminCode: code });
   } catch (err) { showErr(err.message || 'Create account failed'); }
 });
 

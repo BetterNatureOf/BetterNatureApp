@@ -39,7 +39,7 @@ export default function DonateScreen() {
       const fn = method === 'apple' ? payWithApplePay : payWithCard;
       const result = await fn({
         amount,
-        label: 'Better Nature Donation',
+        label: 'BetterNature Donation',
         recurring: isRecurring,
       });
       if (result.ok) {
@@ -70,7 +70,7 @@ export default function DonateScreen() {
         Make a Donation
       </BrushText>
       <Text style={styles.subtitle}>
-        100% of your donation goes to Better Nature programs. Tax-deductible.
+        100% of your donation goes to BetterNature programs. Tax-deductible.
       </Text>
 
       {/* Amount Selection */}

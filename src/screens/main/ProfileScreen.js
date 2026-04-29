@@ -19,7 +19,7 @@ import { signOut } from '../../services/auth';
 const MENU_ITEMS = [
   { key: 'refer', label: 'Bring a friend', emoji: '\u{1F381}', screen: 'Refer' },
   { key: 'settings', label: 'Settings', emoji: '\u2699\uFE0F', screen: 'Settings' },
-  { key: 'about', label: 'About Better Nature', emoji: '\u{1F33F}', screen: 'About' },
+  { key: 'about', label: 'About BetterNature', emoji: '\u{1F33F}', screen: 'About' },
   { key: 'slack', label: 'Open Slack', emoji: '\u{1F4AC}', action: 'slack' },
   { key: 'chapter', label: 'Chapter Info', emoji: '\u{1F4CD}', screen: 'ChapterChecklist' },
 ];

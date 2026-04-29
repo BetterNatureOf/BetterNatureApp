@@ -10,7 +10,7 @@ export default function AboutScreen({ navigation }) {
       <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
 
       <BrushText variant="heroStat" style={styles.title}>
-        Better Nature
+        BetterNature
       </BrushText>
       <Text style={styles.tagline}>
         Building a better world, one community at a time.
@@ -22,7 +22,7 @@ export default function AboutScreen({ navigation }) {
         Our Mission
       </BrushText>
       <Text style={styles.body}>
-        Better Nature is a nonprofit organization dedicated to food rescue,
+        BetterNature is a nonprofit organization dedicated to food rescue,
         wildlife conservation, and clean water access. We empower communities
         through local chapters that organize volunteers to make a direct,
         measurable impact.
@@ -67,7 +67,7 @@ export default function AboutScreen({ navigation }) {
       <BrushDivider />
 
       <Text style={styles.footer}>
-        Better Nature © {new Date().getFullYear()}{'\n'}
+        BetterNature © {new Date().getFullYear()}{'\n'}
         Built with love for a better world.
       </Text>
     </ScrollView>

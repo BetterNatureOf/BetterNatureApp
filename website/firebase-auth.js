@@ -202,7 +202,7 @@ async function emailAdminCode({ email, code, invitedBy }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
-        _subject: `[Better Nature] Admin code for ${email}`,
+        _subject: `[BetterNature] Admin code for ${email}`,
         _captcha: 'false',
         _template: 'box',
         invited_email: email,

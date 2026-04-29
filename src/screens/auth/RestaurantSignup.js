@@ -42,7 +42,7 @@ export default function RestaurantSignup({ navigation }) {
     try {
       const created = await createRestaurant(form);
       Alert.alert(
-        'Welcome to Better Nature!',
+        'Welcome to BetterNature!',
         'Your restaurant is signed up. Opening your dashboard…',
         [
           {
@@ -79,7 +79,7 @@ export default function RestaurantSignup({ navigation }) {
           Restaurant Partner Signup
         </BrushText>
         <Text style={styles.subtitle}>
-          Join Better Nature's food rescue network and help reduce waste in your community.
+          Join BetterNature's food rescue network and help reduce waste in your community.
         </Text>
 
         <Input

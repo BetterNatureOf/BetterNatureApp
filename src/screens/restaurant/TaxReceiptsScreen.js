@@ -72,7 +72,7 @@ export default function TaxReceiptsScreen({ navigation }) {
           <Text style={styles.emptyEmoji}>🧾</Text>
           <Text style={styles.emptyText}>No receipts yet</Text>
           <Text style={styles.emptySub}>
-            A receipt is generated automatically every time a Better Nature
+            A receipt is generated automatically every time a BetterNature
             volunteer completes a pickup from your restaurant.
           </Text>
         </Card>

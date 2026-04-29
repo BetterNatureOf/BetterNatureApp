@@ -70,9 +70,9 @@ export default function RestDashboard({ navigation }) {
   const tools = [
     {
       key: 'schedule',
-      emoji: '📦',
-      title: 'Schedule a Pickup',
-      desc: 'Set up a new food pickup for volunteers',
+      emoji: '📸',
+      title: 'Post surplus (60 sec)',
+      desc: 'Snap a photo, pick a weight, post it. Volunteers claim it.',
       onPress: () => navigation.navigate('ScheduleDonation'),
     },
     {

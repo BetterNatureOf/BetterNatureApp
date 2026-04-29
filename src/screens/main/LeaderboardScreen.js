@@ -95,7 +95,7 @@ export function LeaderboardBody({ embedded = false }) {
             Leaderboard
           </BrushText>
           <Text style={styles.subtitle}>
-            See who's making the biggest impact across Better Nature.
+            See who's making the biggest impact across BetterNature.
           </Text>
         </>
       )}

@@ -14,12 +14,12 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 
-// Better Nature's nonprofit identity. EIN gets filled in once the IRS
+// BetterNature's nonprofit identity. EIN gets filled in once the IRS
 // determination letter lands — until then the receipt page renders
 // "(EIN pending)" but is otherwise valid.
 export const ORG_INFO = {
-  name: 'Better Nature',
-  legalName: 'Better Nature Inc.',
+  name: 'BetterNature',
+  legalName: 'BetterNature Inc.',
   ein: '99-4028399',
   address: '',
   email: 'info@betternatureofficial.org',
@@ -109,11 +109,11 @@ export async function emailReceiptLink({ to, restaurantName, weightLbs, receiptI
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
-        _subject: `Your Better Nature donation receipt — ${weightLbs} lbs`,
+        _subject: `Your BetterNature donation receipt — ${weightLbs} lbs`,
         _captcha: 'false',
         _template: 'box',
         message:
-          `Thank you for your donation to Better Nature.\n\n` +
+          `Thank you for your donation to BetterNature.\n\n` +
           `Your IRS-style receipt for ${weightLbs} lbs of food rescued is here:\n` +
           `${receiptUrl(receiptId)}\n\n` +
           `${ORG_INFO.legalName} is a 501(c)(3) nonprofit. ` +
@@ -139,7 +139,7 @@ export function buildReceiptText(r) {
     `Donor: ${r.restaurant_name}`,
     `Description: ${r.weight_lbs} lbs of prepared / perishable food`,
     `(equivalent to approximately ${r.meals_equivalent} meals)`,
-    `Picked up: ${fmtDate(r.picked_up_at)} by ${r.volunteer_name || 'a Better Nature volunteer'}`,
+    `Picked up: ${fmtDate(r.picked_up_at)} by ${r.volunteer_name || 'a BetterNature volunteer'}`,
     ``,
     `No goods or services were provided in exchange for this contribution.`,
     `${ORG_INFO.legalName} is a 501(c)(3) tax-exempt nonprofit.`,
