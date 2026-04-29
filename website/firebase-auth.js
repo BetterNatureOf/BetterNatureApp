@@ -24,7 +24,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, updateDoc, addDoc, collection,
-  serverTimestamp, query, where, getDocs, orderBy, limit,
+  serverTimestamp, query, where, getDocs, orderBy, limit, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // Same Firebase project as the app (see app.json → extra.firebase).
@@ -51,7 +51,7 @@ export async function signIn(email, password) {
   return cred.user;
 }
 
-export async function signUp({ email, password, name, role = 'volunteer', phone = '', city = '', zip = '', adminCode = '' }) {
+export async function signUp({ email, password, name, role = 'volunteer', phone = '', city = '', zip = '', adminCode = '', referralCode = '' }) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   if (name) await updateProfile(cred.user, { displayName: name });
   // If an admin code was provided, validate it. Valid code → role becomes 'admin'.
@@ -66,6 +66,9 @@ export async function signUp({ email, password, name, role = 'volunteer', phone 
     );
   }
   await ensureUserDoc(cred.user, { name, role: finalRole, phone, city, zip });
+  // Attribute the inviter if a referral code came along.
+  const code = (referralCode || '').trim().toUpperCase();
+  if (code) { try { await applyReferralCode(cred.user.uid, code); } catch (e) { console.warn('referral apply failed', e); } }
   return cred.user;
 }
 
@@ -128,10 +131,37 @@ export async function ensureUserDoc(user, extra = {}) {
     phone: extra.phone || '',
     city: extra.city || '',
     zip: extra.zip || '',
+    referral_code: generateReferralCode(),
+    referrals_count: 0,
+    referred_by: null,
     createdAt: serverTimestamp(),
   };
   await setDoc(ref, data);
   return data;
+}
+
+// ── Referral helpers (mirrors src/services/referrals.js) ────────────────
+const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function generateReferralCode(len = 7) {
+  let s = 'BN';
+  for (let i = 0; i < len; i++) s += REF_ALPHABET[Math.floor(Math.random() * REF_ALPHABET.length)];
+  return s;
+}
+async function findUserByReferralCode(code) {
+  const q = query(collection(db, 'users'), where('referral_code', '==', code), limit(1));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+async function applyReferralCode(newUserId, code) {
+  const inviter = await findUserByReferralCode(code);
+  if (!inviter || inviter.id === newUserId) return;
+  await updateDoc(doc(db, 'users', newUserId), { referred_by: inviter.id });
+  await updateDoc(doc(db, 'users', inviter.id), {
+    referrals_count: increment(1),
+    referrals_updated_at: serverTimestamp(),
+  });
 }
 
 export async function getProfile(uid) {

@@ -19,6 +19,14 @@
   }
   let C = window.CONTENT;
   if (!C) { console.error('CONTENT not loaded'); return; }
+
+  // Referral capture — first visitor with ?ref=CODE has it stashed so it
+  // survives the click into signup (or the click into the web app build,
+  // where authFirebase reads it back via readPendingReferralCode()).
+  try {
+    const refCode = new URL(window.location.href).searchParams.get('ref');
+    if (refCode) localStorage.setItem('bn_ref', refCode.trim().toUpperCase());
+  } catch (e) {}
   try {
     const overrides = JSON.parse(localStorage.getItem('betternature.content.overrides') || 'null');
     if (overrides) C = deepMerge(C, overrides);
@@ -608,11 +616,17 @@
           track === 'volunteer' ? 'Volunteer' :
           'Business partner';
         const subject = `[${trackLabel}] ${data.businessName || data.fullName || 'New signup'}${data.city ? ` — ${data.city}` : ''}`;
+        // Carry the referral code (if any) into both the FormSubmit email
+        // AND the auto-created Firebase account.
+        const referralCode = (() => {
+          try { return localStorage.getItem('bn_ref') || ''; } catch { return ''; }
+        })();
         const payload = {
           _subject: subject,
           _template: 'table',
           _captcha: 'false',
           track,
+          referral_code: referralCode,
           ...data,
         };
         btn.disabled = true;
@@ -640,6 +654,7 @@
                 phone: data.phone || '',
                 city: data.city || '',
                 zip: data.zip || '',
+                referralCode,
               });
               accountMsg = ' Your account is active — open the Better Nature app with the same email and password to finish setup.';
             } catch (authErr) {

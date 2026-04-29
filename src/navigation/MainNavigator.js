@@ -12,6 +12,7 @@ import ImpactScreen from '../screens/main/ImpactScreen';
 import LeaderboardScreen from '../screens/main/LeaderboardScreen';
 import DonateScreen from '../screens/main/DonateScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
+import ReferScreen from '../screens/main/ReferScreen';
 
 import IrisScreen from '../screens/projects/IrisScreen';
 import EvergreenScreen from '../screens/projects/EvergreenScreen';
@@ -207,6 +208,7 @@ export default function MainNavigator() {
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="ChapterChecklist" component={ChapterChecklist} />
+      <Stack.Screen name="Refer" component={ReferScreen} />
       <Stack.Screen name="RestDashboard" component={RestDashboard} />
       <Stack.Screen name="ScheduleDonation" component={ScheduleDonation} />
       <Stack.Screen name="DonationHistory" component={DonationHistory} />

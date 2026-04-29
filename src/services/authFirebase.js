@@ -22,6 +22,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage, isFirebaseConfigured } from '../config/firebase';
+import { generateReferralCode, applyReferral, readPendingReferralCode } from './referrals';
 
 function makeMockUser({ email, name, phone, city, zip, role }) {
   return {
@@ -36,7 +37,7 @@ function makeMockUser({ email, name, phone, city, zip, role }) {
   };
 }
 
-export async function signUp({ email, password, name, phone, city, zip, role }) {
+export async function signUp({ email, password, name, phone, city, zip, role, referralCode }) {
   if (!isFirebaseConfigured) {
     const user = makeMockUser({ email, name, phone, city, zip, role });
     return { user, session: { user } };
@@ -60,9 +61,18 @@ export async function signUp({ email, password, name, phone, city, zip, role }) 
     meals_rescued: 0,
     // Email signup collects everything we need, so they're complete on creation.
     profile_complete: true,
+    referral_code: generateReferralCode(),
+    referrals_count: 0,
+    referred_by: null,
     created_at: serverTimestamp(),
   };
   await setDoc(doc(db, 'users', cred.user.uid), userDoc);
+
+  // Attribute the inviter if a code was supplied (form field or ?ref= URL).
+  const inviteCode = (referralCode || readPendingReferralCode() || '').trim();
+  if (inviteCode) {
+    try { await applyReferral(cred.user.uid, inviteCode); } catch {}
+  }
 
   return {
     user: userDoc,
@@ -132,9 +142,18 @@ async function bootstrapSocialUser(fbUser) {
     // and the app routes them to CompleteProfile to collect first/last
     // name, phone, and location.
     profile_complete: !!isSuper,
+    referral_code: generateReferralCode(),
+    referrals_count: 0,
+    referred_by: null,
     created_at: serverTimestamp(),
   };
   await setDoc(ref, data);
+
+  // OAuth users may have arrived via a /?ref= link — attribute now.
+  const inviteCode = (readPendingReferralCode() || '').trim();
+  if (inviteCode) {
+    try { await applyReferral(fbUser.uid, inviteCode); } catch {}
+  }
   return data;
 }
 
