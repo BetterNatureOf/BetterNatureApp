@@ -702,6 +702,12 @@
   fe.textContent = C.brand.email;
   fe.href = 'mailto:' + C.brand.email;
   $('#year').textContent = new Date().getFullYear();
+  // Surface the 501(c)(3) + EIN in the footer so donors and partners can
+  // verify tax-exempt status without asking.
+  if (C.brand.ein) {
+    const fl = document.getElementById('footerLegal');
+    if (fl) fl.textContent = `Better Nature Inc. is a 501(c)(3) nonprofit · EIN ${C.brand.ein}`;
+  }
 
   // Social icons (inline SVGs, links from CONTENT)
   const social = [

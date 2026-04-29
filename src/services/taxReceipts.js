@@ -20,7 +20,7 @@ import { db, isFirebaseConfigured } from '../config/firebase';
 export const ORG_INFO = {
   name: 'Better Nature',
   legalName: 'Better Nature Inc.',
-  ein: '', // TODO: paste EIN from IRS determination letter
+  ein: '99-4028399',
   address: '',
   email: 'info@betternatureofficial.org',
   website: 'betternatureofficial.org',

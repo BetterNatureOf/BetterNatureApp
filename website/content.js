@@ -34,6 +34,7 @@ window.CONTENT = {
     name: "Better Nature",
     tagline: "Rescue. Restore. Protect.",
     email: "info@betternatureofficial.org",
+    ein: "99-4028399",
     phone: "",
     instagram: "https://instagram.com/official.better.nature",
     twitter: "https://twitter.com/betternature24",
