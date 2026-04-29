@@ -118,6 +118,20 @@ service cloud.firestore {
     match /member_of_month/{id}   { allow read: if true; allow write: if isExec(); }
     match /checklist_progress/{id}{ allow read: if isSignedIn(); allow write: if isExec(); }
 
+    // ── tax_receipts ──
+    // Public read so a restaurant can open the receipt URL we email them
+    // without signing in. The doc id is unguessable (Firestore-generated)
+    // so it functions as a capability token. Only execs can mint or edit;
+    // nobody deletes — receipt history is immutable for audit.
+    match /tax_receipts/{id} {
+      allow read: if true;
+      // Receipts are minted from completePickup() which runs as the
+      // volunteer (member role). Anyone signed in can create; nobody
+      // can edit or delete an issued receipt — it's audit history.
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
     // ── admin_invites (website /admin.html) ──
     // Only super admins create/list/revoke; signup flow needs to read+update
     // its own doc to consume a one-time code, so we allow read by anyone

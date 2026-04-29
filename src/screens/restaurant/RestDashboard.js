@@ -83,6 +83,13 @@ export default function RestDashboard({ navigation }) {
       onPress: () => navigation.navigate('DonationHistory'),
     },
     {
+      key: 'receipts',
+      emoji: '🧾',
+      title: 'Tax Receipts',
+      desc: 'IRS-style receipts for every pickup',
+      onPress: () => navigation.navigate('TaxReceipts'),
+    },
+    {
       key: 'settings',
       emoji: '⚙️',
       title: 'Restaurant Settings',

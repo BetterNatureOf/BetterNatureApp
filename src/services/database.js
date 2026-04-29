@@ -486,6 +486,47 @@ export async function completePickup(pickupId, actualWeightLbs) {
       read: false,
       created_at: serverTimestamp(),
     });
+
+    // Mint the restaurant's tax receipt and email them the link.
+    // Best-effort — never blocks completion.
+    try {
+      const { issueReceiptForPickup, emailReceiptLink } = await import('./taxReceipts');
+      // Pull volunteer + restaurant names for the receipt body.
+      let volunteerName = '';
+      try {
+        const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
+        if (vSnap.exists()) volunteerName = vSnap.data().name || '';
+      } catch {}
+      let restaurantEmail = '';
+      if (pk.restaurant_id) {
+        try {
+          const rSnap = await getDoc(doc(db, 'restaurants', pk.restaurant_id));
+          if (rSnap.exists()) {
+            const r = rSnap.data();
+            restaurantEmail = r.email || r.contact_email || '';
+          }
+        } catch {}
+      }
+      const receipt = await issueReceiptForPickup({
+        pickupId,
+        restaurantId: pk.restaurant_id || null,
+        restaurantName: pk.restaurant_name || '',
+        restaurantEmail,
+        weightLbs: weight,
+        mealsEquivalent: meals,
+        pickedUpAt: now,
+        volunteerName,
+        chapterName: pk.chapter_name || '',
+      });
+      if (receipt && restaurantEmail) {
+        emailReceiptLink({
+          to: restaurantEmail,
+          restaurantName: pk.restaurant_name || '',
+          weightLbs: weight,
+          receiptId: receipt.id,
+        }).catch(() => {});
+      }
+    } catch (e) { console.warn('tax receipt issue failed', e); }
   }
 }
 

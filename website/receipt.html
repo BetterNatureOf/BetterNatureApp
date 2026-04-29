@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Donation Receipt — Better Nature</title>
+<link rel="icon" type="image/png" href="logo.png" />
+<style>
+  :root {
+    --forest: #1B3A2D;
+    --pink: #E27396;
+    --cream: #FAF7F2;
+    --ink: #1A1F2E;
+    --ink-60: #6B7280;
+    --line: #E6E1D7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--cream);
+    padding: 40px 20px;
+    line-height: 1.55;
+  }
+  .receipt {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 56px;
+    box-shadow: 0 24px 60px rgba(27,58,45,0.08);
+  }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+  .logo { width: 56px; height: 56px; border-radius: 50%; }
+  .org-name { font-size: 22px; font-weight: 700; color: var(--forest); margin: 0; }
+  .org-sub { font-size: 13px; color: var(--ink-60); margin: 2px 0 0; }
+  .badge { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--pink); font-weight: 700; }
+  h1 {
+    font-size: 28px; margin: 32px 0 4px; color: var(--forest);
+    font-weight: 700; letter-spacing: -0.01em;
+  }
+  .receipt-no { font-size: 13px; color: var(--ink-60); margin: 0 0 28px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
+  .row { display: flex; justify-content: space-between; gap: 20px; margin: 10px 0; font-size: 14px; }
+  .row .k { color: var(--ink-60); }
+  .row .v { font-weight: 600; text-align: right; }
+  .description {
+    background: var(--cream); border-radius: 10px; padding: 18px 20px; margin: 16px 0;
+    font-size: 15px;
+  }
+  .description b { display: block; font-size: 18px; margin-bottom: 4px; }
+  .legal {
+    font-size: 12px; color: var(--ink-60); margin-top: 28px; line-height: 1.6;
+    border-left: 3px solid var(--pink); padding-left: 14px;
+  }
+  .actions { margin-top: 28px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    appearance: none; border: 0; cursor: pointer; font: inherit;
+    padding: 11px 18px; border-radius: 9px; font-weight: 600; font-size: 14px;
+    text-decoration: none; display: inline-block;
+  }
+  .btn--pink { background: var(--pink); color: #fff; }
+  .btn--ghost { background: #fff; color: var(--forest); border: 1px solid var(--line); }
+  .err, .loading { text-align: center; color: var(--ink-60); padding: 40px; }
+  .err { color: #B91C3D; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .receipt { box-shadow: none; border: 0; padding: 32px; }
+    .actions { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root" class="receipt">
+  <div class="loading">Loading receipt…</div>
+</div>
+
+<script type="module">
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBoaYGVe8rObfGC-BKJo3yohbyZOWUD8gw",
+  authDomain: "better-nature-app.firebaseapp.com",
+  projectId: "better-nature-app",
+  storageBucket: "better-nature-app.firebasestorage.app",
+  messagingSenderId: "102288708316",
+  appId: "1:102288708316:web:d15cda309e77d14b921a19",
+};
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const fmtDate = (iso) => iso
+  ? new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  : '';
+
+function render(r) {
+  const ein = (r.org && r.org.ein) ? r.org.ein : 'pending IRS determination';
+  const orgName = (r.org && r.org.legalName) || 'Better Nature Inc.';
+  const orgSite = (r.org && r.org.website) || 'betternatureofficial.org';
+  const orgEmail = (r.org && r.org.email) || 'info@betternatureofficial.org';
+  document.getElementById('root').innerHTML = `
+    <div class="header">
+      <div>
+        <p class="badge">501(c)(3) Donation Receipt</p>
+        <h1>Thank you for your contribution.</h1>
+        <p class="receipt-no">Receipt No. ${r.receipt_no || '—'}</p>
+      </div>
+      <div style="text-align:right;">
+        <img src="logo.png" alt="" class="logo" onerror="this.style.display='none'" />
+        <p class="org-name" style="margin-top:8px;">${orgName}</p>
+        <p class="org-sub">${orgSite}</p>
+      </div>
+    </div>
+
+    <hr/>
+
+    <div class="row"><span class="k">Donor</span><span class="v">${r.restaurant_name || '—'}</span></div>
+    <div class="row"><span class="k">Date of donation</span><span class="v">${fmtDate(r.picked_up_at)}</span></div>
+    <div class="row"><span class="k">Picked up by</span><span class="v">${r.volunteer_name || 'Better Nature volunteer'}${r.chapter_name ? ' · ' + r.chapter_name + ' Chapter' : ''}</span></div>
+    <div class="row"><span class="k">Issued</span><span class="v">${fmtDate(r.issued_at_iso)}</span></div>
+
+    <div class="description">
+      <b>${r.weight_lbs} lbs of prepared / perishable food</b>
+      Equivalent to approximately ${r.meals_equivalent} meals served.
+    </div>
+
+    <p class="legal">
+      <b>No goods or services were provided in exchange for this contribution.</b><br/>
+      ${orgName} is a 501(c)(3) tax-exempt nonprofit organization. EIN: ${ein}.
+      Per IRS Publication 561, the donor is responsible for determining the
+      fair-market value of donated goods. This receipt acknowledges only the
+      description and quantity of items received. Please retain this receipt
+      for your tax records. Questions: ${orgEmail}.
+    </p>
+
+    <div class="actions">
+      <button class="btn btn--pink" onclick="window.print()">Print / Save as PDF</button>
+      <a class="btn btn--ghost" href="https://${orgSite}">Visit ${orgName}</a>
+    </div>
+  `;
+}
+
+async function load() {
+  try {
+    const id = new URL(window.location.href).searchParams.get('id');
+    if (!id) {
+      document.getElementById('root').innerHTML = '<div class="err">Missing receipt id.</div>';
+      return;
+    }
+    const snap = await getDoc(doc(db, 'tax_receipts', id));
+    if (!snap.exists()) {
+      document.getElementById('root').innerHTML = '<div class="err">Receipt not found.</div>';
+      return;
+    }
+    render({ id: snap.id, ...snap.data() });
+  } catch (e) {
+    console.error(e);
+    document.getElementById('root').innerHTML = '<div class="err">Could not load receipt.</div>';
+  }
+}
+load();
+</script>
+</body>
+</html>
