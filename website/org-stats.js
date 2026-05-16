@@ -18,6 +18,7 @@ export async function fetchOrgStats() {
       water: d.water || 0,
       events: d.events || 0,
       hours: d.hours || 0,
+      volunteers: d.volunteers || 0,
     };
   } catch (e) {
     console.warn('org stats fetch failed', e);
@@ -26,7 +27,7 @@ export async function fetchOrgStats() {
 }
 
 function zeros() {
-  return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0 };
+  return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0, volunteers: 0 };
 }
 
 // Format a number for display. 0 → "0", small numbers as-is, larger with commas.
@@ -39,6 +40,7 @@ function fmt(n) {
 // the existing renderer can drop these in unchanged.
 export function statsToTicker(s) {
   return [
+    { value: fmt(s.volunteers), label: 'volunteers' },
     { value: fmt(s.meals), label: 'meal kits delivered' },
     { value: `${fmt(s.lbs)} lbs`, label: 'food rescued' },
     { value: fmt(s.individuals), label: 'individuals served' },
@@ -50,11 +52,11 @@ export function statsToTicker(s) {
 // Same shape as `impact.stats` in content.js.
 export function statsToImpactCards(s) {
   return [
+    { value: fmt(s.volunteers), label: 'Volunteers', sublabel: 'Active members across every chapter' },
     { value: fmt(s.meals), label: 'Meal kits delivered', sublabel: 'From rescued surplus to neighbors who need them' },
     { value: fmt(s.lbs), label: 'Pounds of food rescued', sublabel: 'Direct from partner kitchens to recipients' },
     { value: fmt(s.individuals), label: 'Individuals served', sublabel: 'Across our active chapters' },
     { value: fmt(s.co2), label: 'Pounds of CO₂ avoided', sublabel: 'Emissions prevented by diverting food from landfills' },
     { value: fmt(s.water), label: 'Gallons of water saved', sublabel: 'Embedded water footprint of the food we rescued' },
-    { value: fmt(s.events), label: 'Events run', sublabel: 'Pickups, cleanups, and chapter actions to date' },
   ];
 }

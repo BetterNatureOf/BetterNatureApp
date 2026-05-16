@@ -26,11 +26,11 @@ const STATS_DOC = 'org_stats/global';
 // the website renders a real "we're just starting" state, not fake numbers.
 export async function getOrgStats() {
   if (!isFirebaseConfigured) {
-    return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0 };
+    return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0, volunteers: 0 };
   }
   const snap = await getDoc(doc(db, 'org_stats', 'global'));
   if (!snap.exists()) {
-    return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0 };
+    return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0, volunteers: 0 };
   }
   const d = snap.data();
   return {
@@ -41,6 +41,7 @@ export async function getOrgStats() {
     water: d.water || 0,
     events: d.events || 0,
     hours: d.hours || 0,
+    volunteers: d.volunteers || 0,
   };
 }
 
@@ -55,6 +56,7 @@ export async function bumpOrgStats({
   water,
   events,
   hours,
+  volunteers,
 } = {}) {
   if (!isFirebaseConfigured) return;
   const updates = { updated_at: serverTimestamp() };
@@ -71,6 +73,7 @@ export async function bumpOrgStats({
   if (individuals) updates.individuals = increment(individuals);
   if (events) updates.events = increment(events);
   if (hours) updates.hours = increment(hours);
+  if (volunteers) updates.volunteers = increment(volunteers);
 
   // setDoc with merge so the doc is created on first call.
   await setDoc(doc(db, 'org_stats', 'global'), updates, { merge: true });

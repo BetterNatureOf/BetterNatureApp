@@ -168,6 +168,20 @@ export async function ensureUserDoc(user, extra = {}) {
     createdAt: serverTimestamp(),
   };
   await setDoc(ref, data);
+
+  // Bump the org-wide volunteer counter. Only count actual member-role
+  // accounts (not partners or admins). Best-effort — never blocks signup.
+  // Mirrors src/services/authFirebase.js so the app + website touch the
+  // same Firestore doc the marketing-site ticker reads from.
+  if (data.role === 'member') {
+    try {
+      const statsRef = doc(db, 'org_stats', 'global');
+      await setDoc(statsRef, { volunteers: increment(1), updated_at: serverTimestamp() }, { merge: true });
+    } catch (e) {
+      console.warn('volunteer counter bump failed', e);
+    }
+  }
+
   return data;
 }
 

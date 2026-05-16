@@ -29,6 +29,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage, isFirebaseConfigured } from '../config/firebase';
 import { generateReferralCode, applyReferral, readPendingReferralCode } from './referrals';
 import { withNormalizedPhone } from './duplicates';
+import { bumpOrgStats } from './orgStats';
 
 function makeMockUser({ email, name, phone, city, zip, role }) {
   return {
@@ -115,6 +116,14 @@ export async function signUp({ email, password, name, phone, city, zip, role, re
   // future signups against this row regardless of formatting.
   await setDoc(doc(db, 'users', cred.user.uid), withNormalizedPhone(userDoc));
 
+  // Bump the org-wide volunteer counter so the homepage ticker reflects
+  // the new signup. We only count actual member volunteers — partner /
+  // restaurant accounts don't move this number. Best-effort: if the
+  // org_stats write fails the user is still fully signed up.
+  if ((userDoc.role || 'member') === 'member') {
+    try { await bumpOrgStats({ volunteers: 1 }); } catch (e) { console.warn('volunteer bump', e); }
+  }
+
   // Attribute the inviter if a code was supplied (form field or ?ref= URL).
   const inviteCode = (referralCode || readPendingReferralCode() || '').trim();
   if (inviteCode) {
@@ -195,6 +204,12 @@ async function bootstrapSocialUser(fbUser) {
     created_at: serverTimestamp(),
   };
   await setDoc(ref, data);
+
+  // Bump the org-wide volunteer counter on first OAuth sign-in. Skip
+  // super_admins (they're org staff, not volunteers). Best-effort.
+  if (data.role === 'member') {
+    try { await bumpOrgStats({ volunteers: 1 }); } catch (e) { console.warn('volunteer bump (oauth)', e); }
+  }
 
   // OAuth users may have arrived via a /?ref= link — attribute now.
   const inviteCode = (readPendingReferralCode() || '').trim();
