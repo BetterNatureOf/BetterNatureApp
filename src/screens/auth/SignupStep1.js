@@ -13,6 +13,8 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { emailAlreadyRegistered } from '../../services/auth';
+import { phoneAlreadyRegistered } from '../../services/duplicates';
+import { notify } from '../../services/ui';
 
 export default function SignupStep1({ navigation }) {
   const [checking, setChecking] = useState(false);
@@ -24,6 +26,12 @@ export default function SignupStep1({ navigation }) {
   const [zip, setZip] = useState('');
   const [errors, setErrors] = useState({});
 
+  // Top-of-form banner message. We surface validation + duplicate errors
+  // BOTH here and as a popup, because the inline red text under each
+  // input was easy to miss (especially on a tall form where the empty
+  // password is below the fold).
+  const [banner, setBanner] = useState(null);
+
   function validate() {
     const e = {};
     if (!name.trim()) e.name = 'Name is required';
@@ -32,29 +40,55 @@ export default function SignupStep1({ navigation }) {
     if (!password) e.password = 'Password is required';
     else if (password.length < 6) e.password = 'At least 6 characters';
     setErrors(e);
+    if (Object.keys(e).length) {
+      const first = Object.values(e)[0];
+      setBanner({ code: 'BN-001', text: first });
+    } else {
+      setBanner(null);
+    }
     return Object.keys(e).length === 0;
+  }
+
+  function showError(code, fieldKey, text) {
+    setErrors((prev) => ({ ...prev, [fieldKey]: text }));
+    setBanner({ code, text });
+    notify('Account error ' + code, text);
   }
 
   async function handleNext() {
     if (!validate()) return;
-    // Preflight: catch a duplicate email here so the user doesn't burn
-    // through Step 2 and Step 3 only to find out at Submit. Firebase
-    // still re-checks at create time as the authoritative gate; this is
-    // purely UX.
+    // Preflight: catch a duplicate email AND duplicate phone here so the
+    // user doesn't burn through Step 2 and Step 3 only to find out at
+    // Submit. Firebase Auth re-checks the email at create time as the
+    // authoritative gate; phone uniqueness is enforced in Firestore at
+    // create time via duplicates.js → phoneAlreadyRegistered.
     setChecking(true);
     try {
-      const taken = await emailAlreadyRegistered(email.trim().toLowerCase());
-      if (taken) {
-        setErrors({
-          email: 'That email is already registered. Sign in instead, or use a different email.',
-        });
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanPhone = (phone || '').replace(/\D/g, '');
+
+      const [emailTaken, phoneTaken] = await Promise.all([
+        emailAlreadyRegistered(cleanEmail),
+        cleanPhone.length >= 10 ? phoneAlreadyRegistered(cleanPhone) : Promise.resolve(false),
+      ]);
+
+      if (emailTaken) {
+        showError('BN-101', 'email',
+          'That email is already registered. Sign in instead, or use a different email.');
         return;
       }
-    } catch {
-      // Lookup failed — move on; create-time check will still block.
+      if (phoneTaken) {
+        showError('BN-102', 'phone',
+          'That phone number is already on another BetterNature account.');
+        return;
+      }
+    } catch (err) {
+      // Lookup failed — log but let user proceed; create-time still blocks.
+      console.warn('Signup preflight failed:', err);
     } finally {
       setChecking(false);
     }
+    setBanner(null);
     navigation.navigate('SignupStep2', { name, email, password, phone, city, zip });
   }
 
@@ -73,6 +107,13 @@ export default function SignupStep1({ navigation }) {
           Join BetterNature
         </BrushText>
         <Text style={styles.subtitle}>Tell us about yourself</Text>
+
+        {banner ? (
+          <View style={styles.banner}>
+            <Text style={styles.bannerCode}>{banner.code}</Text>
+            <Text style={styles.bannerText}>{banner.text}</Text>
+          </View>
+        ) : null}
 
         <Input
           label="Full Name"
@@ -104,6 +145,7 @@ export default function SignupStep1({ navigation }) {
           placeholder="(555) 123-4567"
           value={phone}
           onChangeText={setPhone}
+          error={errors.phone}
           keyboardType="phone-pad"
         />
         <View style={styles.row}>
@@ -152,4 +194,33 @@ const styles = StyleSheet.create({
   btn: { marginTop: 8 },
   loginLink: { textAlign: 'center', marginTop: 20, ...Type.caption },
   loginBold: { color: Colors.pink, fontWeight: '600' },
+  banner: {
+    backgroundColor: '#FFE5EE',
+    borderLeftWidth: 4,
+    borderLeftColor: '#C41E5A',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  bannerCode: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C41E5A',
+    letterSpacing: 0.5,
+    backgroundColor: 'rgba(196,30,90,0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  bannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#7A1838',
+    lineHeight: 18,
+  },
 });

@@ -28,6 +28,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage, isFirebaseConfigured } from '../config/firebase';
 import { generateReferralCode, applyReferral, readPendingReferralCode } from './referrals';
+import { withNormalizedPhone } from './duplicates';
 
 function makeMockUser({ email, name, phone, city, zip, role }) {
   return {
@@ -109,7 +110,10 @@ export async function signUp({ email, password, name, phone, city, zip, role, re
     referred_by: null,
     created_at: serverTimestamp(),
   };
-  await setDoc(doc(db, 'users', cred.user.uid), userDoc);
+  // Stamp the normalized phone alongside the raw value so the duplicate
+  // check (services/duplicates.js → phoneAlreadyRegistered) can match
+  // future signups against this row regardless of formatting.
+  await setDoc(doc(db, 'users', cred.user.uid), withNormalizedPhone(userDoc));
 
   // Attribute the inviter if a code was supplied (form field or ?ref= URL).
   const inviteCode = (referralCode || readPendingReferralCode() || '').trim();
@@ -271,10 +275,13 @@ export async function signInWithApple() {
 
 export async function updateProfile(userId, updates) {
   if (!isFirebaseConfigured) return { ...makeMockUser({}), ...updates };
-  await updateDoc(doc(db, 'users', userId), {
-    ...updates,
-    updated_at: serverTimestamp(),
-  });
+  // If the caller is updating `phone`, also update `phone_normalized` so
+  // the duplicate-phone lookup keeps working after edits.
+  const payload = { ...updates, updated_at: serverTimestamp() };
+  if (Object.prototype.hasOwnProperty.call(updates, 'phone')) {
+    payload.phone_normalized = withNormalizedPhone({ phone: updates.phone }).phone_normalized;
+  }
+  await updateDoc(doc(db, 'users', userId), payload);
   return getProfile(userId);
 }
 
