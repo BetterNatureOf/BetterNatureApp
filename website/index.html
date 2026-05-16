@@ -332,8 +332,11 @@
 <script type="module">
   // Bridge: expose Firebase signup to the non-module app.js so website signup
   // creates a real account that works in the app + web app + website.
-  import { signUp } from './firebase-auth.js';
+  import { signUp, emailAlreadyRegistered } from './firebase-auth.js';
   window.BN_SIGNUP = signUp;
+  // Used by app.js to preflight the signup form: if the email is already
+  // a Firebase account we surface the error before submitting anything.
+  window.BN_EMAIL_TAKEN = emailAlreadyRegistered;
 </script>
 </body>
 </html>

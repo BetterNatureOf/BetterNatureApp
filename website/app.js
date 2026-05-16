@@ -651,6 +651,26 @@
         const originalLabel = btn.textContent;
         btn.textContent = 'Sending…';
         if (status) { status.textContent = ''; status.className = 'signup__status'; }
+
+        // Preflight: if the visitor gave us an email + password, check
+        // up front whether that email is already a Firebase account.
+        // Catching the duplicate here means we don't blast FormSubmit
+        // with a signup that will then error on the auth step.
+        if (data.email && data.password && window.BN_EMAIL_TAKEN) {
+          try {
+            const taken = await window.BN_EMAIL_TAKEN(data.email.trim().toLowerCase());
+            if (taken) {
+              if (status) {
+                status.className = 'signup__status is-err';
+                status.innerHTML = 'That email is already registered. <a href="/admin.html">Sign in</a> instead, or use a different email.';
+              }
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+              return;
+            }
+          } catch {}
+        }
+
         try {
           const res = await fetch(endpoint, {
             method: 'POST',

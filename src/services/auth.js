@@ -13,6 +13,7 @@ export {
   uploadIdDocument,
   changePassword,
   sendResetEmail,
+  emailAlreadyRegistered,
   signInWithGoogle,
   signInWithApple,
   onAuthStateChange,

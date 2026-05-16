@@ -12,8 +12,10 @@ import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import { emailAlreadyRegistered } from '../../services/auth';
 
 export default function SignupStep1({ navigation }) {
+  const [checking, setChecking] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,8 +35,26 @@ export default function SignupStep1({ navigation }) {
     return Object.keys(e).length === 0;
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (!validate()) return;
+    // Preflight: catch a duplicate email here so the user doesn't burn
+    // through Step 2 and Step 3 only to find out at Submit. Firebase
+    // still re-checks at create time as the authoritative gate; this is
+    // purely UX.
+    setChecking(true);
+    try {
+      const taken = await emailAlreadyRegistered(email.trim().toLowerCase());
+      if (taken) {
+        setErrors({
+          email: 'That email is already registered. Sign in instead, or use a different email.',
+        });
+        return;
+      }
+    } catch {
+      // Lookup failed — move on; create-time check will still block.
+    } finally {
+      setChecking(false);
+    }
     navigation.navigate('SignupStep2', { name, email, password, phone, city, zip });
   }
 
@@ -104,7 +124,13 @@ export default function SignupStep1({ navigation }) {
           />
         </View>
 
-        <Button title="Next" onPress={handleNext} style={styles.btn} />
+        <Button
+          title={checking ? 'Checking…' : 'Next'}
+          onPress={handleNext}
+          loading={checking}
+          disabled={checking}
+          style={styles.btn}
+        />
 
         <Text style={styles.loginLink} onPress={() => navigation.navigate('Login')}>
           Already have an account? <Text style={styles.loginBold}>Sign in</Text>

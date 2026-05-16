@@ -51,8 +51,39 @@ export async function signIn(email, password) {
   return cred.user;
 }
 
+// Map Firebase auth/* codes onto plain-English messages a user can act on.
+// Mirrors src/services/authFirebase.js → friendlyAuthError so the web and
+// the app speak the same language for the same failure.
+function friendlyAuthError(err) {
+  const code = err?.code || '';
+  if (code === 'auth/email-already-in-use')
+    return new Error('That email is already registered. Try signing in instead, or use a different email.');
+  if (code === 'auth/invalid-email')   return new Error('That email doesn’t look right. Check the spelling.');
+  if (code === 'auth/weak-password')   return new Error('Password is too weak. Use at least 6 characters.');
+  if (code === 'auth/network-request-failed') return new Error('No network — check your connection and try again.');
+  if (code === 'auth/too-many-requests') return new Error('Too many attempts. Wait a minute and try again.');
+  return err;
+}
+
+// Preflight check exposed for the signup form: returns true if a Firebase
+// auth user already exists for this email. Lets the form block the
+// submit button before the request hits createUser.
+export async function emailAlreadyRegistered(email) {
+  if (!email) return false;
+  try {
+    const { fetchSignInMethodsForEmail } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js');
+    const methods = await fetchSignInMethodsForEmail(auth, email.trim());
+    return Array.isArray(methods) && methods.length > 0;
+  } catch { return false; }
+}
+
 export async function signUp({ email, password, name, role = 'volunteer', phone = '', city = '', zip = '', adminCode = '', referralCode = '' }) {
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  let cred;
+  try {
+    cred = await createUserWithEmailAndPassword(auth, email, password);
+  } catch (e) {
+    throw friendlyAuthError(e);
+  }
   if (name) await updateProfile(cred.user, { displayName: name });
   // If an admin code was provided, validate it. Valid code → role becomes 'admin'.
   let finalRole = role;

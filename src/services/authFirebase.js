@@ -42,13 +42,51 @@ function makeMockUser({ email, name, phone, city, zip, role }) {
   };
 }
 
+// Map Firebase's auth/* error codes to plain-English messages a user can
+// actually act on. Anything we don't recognize falls through to the raw
+// message so we still surface something useful.
+function friendlyAuthError(err) {
+  const code = err?.code || '';
+  if (code === 'auth/email-already-in-use') {
+    return new Error(
+      'That email is already registered. Try signing in instead, ' +
+      'or use a different email.'
+    );
+  }
+  if (code === 'auth/invalid-email')   return new Error('That email doesn’t look right. Check the spelling.');
+  if (code === 'auth/weak-password')   return new Error('Password is too weak. Use at least 6 characters.');
+  if (code === 'auth/network-request-failed') return new Error('No network — check your connection and try again.');
+  if (code === 'auth/too-many-requests') return new Error('Too many attempts. Wait a minute and try again.');
+  return err;
+}
+
+// Quick check for the signup form: returns true if a Firebase Auth user
+// already exists for this email. Lets us warn on Step 1 (before the user
+// fills out the rest of the form) instead of at Submit.
+export async function emailAlreadyRegistered(email) {
+  if (!isFirebaseConfigured || !email) return false;
+  try {
+    const methods = await fetchSignInMethodsForEmail(auth, email.trim());
+    return Array.isArray(methods) && methods.length > 0;
+  } catch {
+    // If the lookup itself errors (rate-limit, network), don't block
+    // signup — Firebase will catch a true duplicate at create time.
+    return false;
+  }
+}
+
 export async function signUp({ email, password, name, phone, city, zip, role, referralCode }) {
   if (!isFirebaseConfigured) {
     const user = makeMockUser({ email, name, phone, city, zip, role });
     return { user, session: { user } };
   }
 
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  let cred;
+  try {
+    cred = await createUserWithEmailAndPassword(auth, email, password);
+  } catch (e) {
+    throw friendlyAuthError(e);
+  }
   if (name) await fbUpdateProfile(cred.user, { displayName: name });
 
   // Mirror Supabase's handle_new_user() trigger: create the users/{uid} doc.
