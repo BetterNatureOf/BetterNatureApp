@@ -13,6 +13,7 @@ import CompleteProfile from './src/screens/auth/CompleteProfile';
 import useAuthStore, { ROLES } from './src/store/authStore';
 import useAuth from './src/hooks/useAuth';
 import linking from './src/navigation/linking';
+import { injectWebFonts } from './src/config/webFonts';
 import { fp } from './src/config/scale';
 
 // Lock font scaling across the whole app so layouts stay consistent
@@ -23,6 +24,17 @@ Text.defaultProps.maxFontSizeMultiplier = 1.2;
 if (TextInput.defaultProps == null) TextInput.defaultProps = {};
 TextInput.defaultProps.allowFontScaling = false;
 TextInput.defaultProps.maxFontSizeMultiplier = 1.2;
+
+// On web, react-native-web emits inline font-family on every <Text> that
+// overrides the html-level default. Stamp Inter as the baseline so any
+// component that hasn't opted into Type.* still reads in the right
+// family.
+if (Platform.OS === 'web') {
+  const interStack =
+    'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  Text.defaultProps.style = [{ fontFamily: interStack }, Text.defaultProps.style].filter(Boolean);
+  TextInput.defaultProps.style = [{ fontFamily: interStack }, TextInput.defaultProps.style].filter(Boolean);
+}
 
 // Responsive font scaling — monkey-patch Text.render so every <Text> in the
 // app automatically has its fontSize run through fp() based on device width.
@@ -74,6 +86,11 @@ function rootForRole(role) {
 if (Platform.OS === 'web' && typeof window !== 'undefined') {
   try { window.localStorage.removeItem('BN_NAV_STATE_v1'); } catch {}
 }
+
+// Inject the Google Fonts <link> + base font-family on the web so the
+// editorial type stack we reference in typography.js actually loads
+// instead of silently falling back to Times New Roman.
+injectWebFonts();
 
 export default function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);

@@ -10,69 +10,90 @@
 // to every fontSize at render time, so we use raw baseline sizes here.
 import { Platform } from 'react-native';
 
-// Display = a serif on web (Instrument Serif matches the website),
-// platform default elsewhere. Body uses the system sans everywhere.
+// On web we load Inter + Instrument Serif via webFonts.js at boot.
+// Native uses platform defaults (SF Pro / Roboto) since loading Google
+// Fonts on native would require a custom Font.loadAsync step we
+// intentionally dropped.
 const DISPLAY = Platform.select({
   web: '"Instrument Serif", "Times New Roman", Georgia, serif',
-  ios: undefined,      // SF Pro
-  android: undefined,  // Roboto
+  default: undefined,
+});
+
+const SANS = Platform.select({
+  web: 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   default: undefined,
 });
 
 export const Fonts = {
   display: DISPLAY,
-  brush: DISPLAY, // back-compat: anything still asking for brush gets the display serif
-  system: undefined,
+  sans: SANS,
+  brush: DISPLAY, // back-compat: anything still asking for brush gets display serif
+  system: SANS,
 };
 
 export const Type = {
+  // Display — editorial serif for screen titles and section headers.
   screenTitle: {
     fontFamily: DISPLAY,
-    fontSize: 30,
-    fontWeight: '600',
+    fontSize: 34,
+    fontWeight: '400',  // Instrument Serif only ships in 400; serif weight comes from the shape itself
     letterSpacing: -0.5,
-    lineHeight: 36,
+    lineHeight: 40,
   },
   sectionHeader: {
     fontFamily: DISPLAY,
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '400',
     letterSpacing: -0.3,
+    lineHeight: 30,
   },
+
+  // Stat numerics — Inter Bold with tabular-style tracking. Big and tight.
   heroStat: {
+    fontFamily: SANS,
     fontSize: 44,
     fontWeight: '800',
-    letterSpacing: -1.2,
+    letterSpacing: -1.4,
+    lineHeight: 48,
   },
   statNumber: {
+    fontFamily: SANS,
     fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontWeight: '700',
+    letterSpacing: -0.6,
+    lineHeight: 32,
   },
+
+  // Body + UI — Inter at three weights.
   body: {
+    fontFamily: SANS,
     fontSize: 15,
     fontWeight: '400',
     lineHeight: 22,
   },
   bodyMedium: {
+    fontFamily: SANS,
     fontSize: 15,
     fontWeight: '500',
     lineHeight: 22,
   },
   caption: {
+    fontFamily: SANS,
     fontSize: 13,
     color: '#5C6370',
     lineHeight: 18,
   },
   eyebrow: {
+    fontFamily: SANS,
     fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1.4,
     textTransform: 'uppercase',
   },
   button: {
+    fontFamily: SANS,
     fontSize: 15,
     fontWeight: '600',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
 };
