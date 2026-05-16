@@ -1,31 +1,53 @@
+// Type system — editorial sans + tighter tracking, no decorative handwriting.
+//
+// Previously this file pinned everything to Caveat (a casual brush font),
+// which read as a kids-camp poster instead of a credible nonprofit. We
+// dropped it entirely. Platform system fonts (SF Pro on iOS, Roboto on
+// Android, native system stack on web) carry the weight; negative
+// letter-spacing on display sizes gives the modern editorial feel.
+//
+// The global Text render patch in App.js applies responsive scaling (fp)
+// to every fontSize at render time, so we use raw baseline sizes here.
+import { Platform } from 'react-native';
+
+// Display = a serif on web (Instrument Serif matches the website),
+// platform default elsewhere. Body uses the system sans everywhere.
+const DISPLAY = Platform.select({
+  web: '"Instrument Serif", "Times New Roman", Georgia, serif',
+  ios: undefined,      // SF Pro
+  android: undefined,  // Roboto
+  default: undefined,
+});
+
 export const Fonts = {
-  brush: 'Caveat-Bold',
-  system: undefined, // Platform default (SF Pro on iOS)
+  display: DISPLAY,
+  brush: DISPLAY, // back-compat: anything still asking for brush gets the display serif
+  system: undefined,
 };
 
-// NOTE: these are raw baseline sizes. The global Text render patch in App.js
-// applies responsive scaling (fp) to every fontSize at render time, so we
-// don't call fp() here — otherwise sizes would get scaled twice.
 export const Type = {
   screenTitle: {
-    fontFamily: 'Caveat-Bold',
+    fontFamily: DISPLAY,
     fontSize: 30,
-    fontWeight: '700',
+    fontWeight: '600',
+    letterSpacing: -0.5,
+    lineHeight: 36,
   },
   sectionHeader: {
-    fontFamily: 'Caveat-Bold',
+    fontFamily: DISPLAY,
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '600',
+    letterSpacing: -0.3,
   },
   heroStat: {
-    fontFamily: 'Caveat-Bold',
-    fontSize: 46,
+    fontSize: 44,
     fontWeight: '800',
+    letterSpacing: -1.2,
   },
   statNumber: {
-    fontFamily: 'Caveat-Bold',
-    fontSize: 26,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
   body: {
     fontSize: 15,
@@ -51,6 +73,6 @@ export const Type = {
   button: {
     fontSize: 15,
     fontWeight: '600',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 };

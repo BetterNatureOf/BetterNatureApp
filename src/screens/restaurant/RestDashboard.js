@@ -9,6 +9,10 @@ import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 import { payWithApplePay, isApplePayAvailable } from '../../services/payments';
 import { recordDonation, fetchDonationHistory, fetchPickups } from '../../services/database';
+import { requireVerifiedId } from '../../services/idGate';
+import Icon from '../../components/ui/Icon';
+import AnimatedPressable from '../../components/ui/AnimatedPressable';
+import FadeInView from '../../components/ui/FadeInView';
 
 export default function RestDashboard({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -70,28 +74,31 @@ export default function RestDashboard({ navigation }) {
   const tools = [
     {
       key: 'schedule',
-      emoji: '📸',
+      icon: 'camera',
       title: 'Post surplus (60 sec)',
       desc: 'Snap a photo, pick a weight, post it. Volunteers claim it.',
-      onPress: () => navigation.navigate('ScheduleDonation'),
+      onPress: () => {
+        if (!requireVerifiedId(user, navigation)) return;
+        navigation.navigate('ScheduleDonation');
+      },
     },
     {
       key: 'history',
-      emoji: '📋',
+      icon: 'clipboard',
       title: 'Donation History',
       desc: 'View past pickups and ratings',
       onPress: () => navigation.navigate('DonationHistory'),
     },
     {
       key: 'receipts',
-      emoji: '🧾',
+      icon: 'receipt',
       title: 'Tax Receipts',
       desc: 'IRS-style receipts for every pickup',
       onPress: () => navigation.navigate('TaxReceipts'),
     },
     {
       key: 'settings',
-      emoji: '⚙️',
+      icon: 'settings',
       title: 'Restaurant Settings',
       desc: 'Hours, contact info, preferences',
       onPress: () => navigation.navigate('Settings'),
@@ -140,17 +147,19 @@ export default function RestDashboard({ navigation }) {
         </BrushText>
 
         <View style={[styles.toolGrid, isWide && styles.toolGridWide]}>
-          {tools.map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.toolCard, isWide && styles.toolCardWide]}
-              activeOpacity={0.8}
-              onPress={t.onPress}
-            >
-              <Text style={styles.toolEmoji}>{t.emoji}</Text>
-              <Text style={styles.toolTitle}>{t.title}</Text>
-              <Text style={styles.toolDesc}>{t.desc}</Text>
-            </TouchableOpacity>
+          {tools.map((t, i) => (
+            <FadeInView key={t.key} delay={80 + i * 60} style={isWide ? styles.toolCardWide : null}>
+              <AnimatedPressable
+                style={styles.toolCard}
+                onPress={t.onPress}
+              >
+                <View style={styles.toolIconWrap}>
+                  <Icon name={t.icon} size={26} color={Colors.green} strokeWidth={2.25} />
+                </View>
+                <Text style={styles.toolTitle}>{t.title}</Text>
+                <Text style={styles.toolDesc}>{t.desc}</Text>
+              </AnimatedPressable>
+            </FadeInView>
           ))}
         </View>
       </ResponsiveContainer>
@@ -214,7 +223,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: 240,
   },
-  toolEmoji: { fontSize: 30, marginBottom: 8 },
+  toolIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 12,
+  },
   toolTitle: { fontSize: 16, fontWeight: '700', color: Colors.dark },
   toolDesc: { ...Type.caption, marginTop: 4 },
 });

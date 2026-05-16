@@ -2,14 +2,16 @@ import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import Icon from '../../components/ui/Icon';
 
 const ADMIN_ITEMS = [
-  { key: 'chapters', label: 'Manage Chapters', emoji: '📍', desc: 'View, edit, and approve chapters', screen: 'ManageChapters' },
-  { key: 'members', label: 'Manage Members', emoji: '👥', desc: 'Search, filter, promote/demote members', screen: 'ManageMembers' },
-  { key: 'restaurants', label: 'Manage Restaurants', emoji: '🍽️', desc: 'Approve/reject restaurant applications', screen: 'ManageRestaurants' },
-  { key: 'history', label: 'Global History', emoji: '📊', desc: 'All activity across the organization', screen: 'GlobalHistory' },
-  { key: 'broadcast', label: 'Broadcast', emoji: '📢', desc: 'Send announcements to chapters/restaurants', screen: 'Broadcast' },
-  { key: 'reports', label: 'Export Reports', emoji: '📄', desc: 'Generate PDF/CSV reports', screen: 'ExportReports' },
+  { key: 'chapters', label: 'Manage Chapters', icon: 'pin', desc: 'View, edit, and approve chapters', screen: 'ManageChapters' },
+  { key: 'members', label: 'Manage Members', icon: 'users', desc: 'Search, filter, promote/demote members', screen: 'ManageMembers' },
+  { key: 'restaurants', label: 'Manage Restaurants', icon: 'store', desc: 'Approve/reject restaurant applications', screen: 'ManageRestaurants' },
+  { key: 'fridges', label: 'Manage Fridges', icon: 'pin', desc: 'Add or edit community fridge drop-off locations', screen: 'ManageFridges' },
+  { key: 'history', label: 'Global History', icon: 'trending', desc: 'All activity across the organization', screen: 'GlobalHistory' },
+  { key: 'broadcast', label: 'Broadcast', icon: 'bell', desc: 'Send announcements to chapters/restaurants', screen: 'Broadcast' },
+  { key: 'reports', label: 'Export Reports', icon: 'file', desc: 'Generate PDF/CSV reports', screen: 'ExportReports' },
 ];
 
 export default function AdminPanel({ navigation }) {
@@ -27,7 +29,9 @@ export default function AdminPanel({ navigation }) {
           onPress={() => navigation.navigate(item.screen)}
           activeOpacity={0.7}
         >
-          <Text style={styles.emoji}>{item.emoji}</Text>
+          <View style={styles.iconWrap}>
+            <Icon name={item.icon} size={22} color={Colors.green} strokeWidth={2.25} />
+          </View>
           <View style={styles.textWrap}>
             <Text style={styles.label}>{item.label}</Text>
             <Text style={styles.desc}>{item.desc}</Text>
@@ -53,7 +57,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     ...Shadows.card,
   },
-  emoji: { fontSize: 28, marginRight: 16 },
+  iconWrap: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 14,
+  },
   textWrap: { flex: 1 },
   label: { fontSize: 16, fontWeight: '700', color: Colors.dark },
   desc: { ...Type.caption, marginTop: 2 },

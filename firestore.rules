@@ -77,9 +77,16 @@ service cloud.firestore {
     }
 
     // ── notifications ──
+    // Reads/updates are scoped to the recipient. Creates allowed for any
+    // signed-in user: the pickup workflow generates them as side effects
+    // of legitimate actions (createPickup notifies chapter members,
+    // setPickupEnroute notifies the restaurant, completePickup notifies
+    // both). Notifications carry no privileges — only a recipient + a
+    // human-readable body — so the worst-case abuse is one user spamming
+    // another, which we accept for now and can rate-limit later if needed.
     match /notifications/{id} {
       allow read, update: if isSignedIn() && resource.data.user_id == request.auth.uid;
-      allow create: if isExec();
+      allow create: if isSignedIn();
       allow delete: if isSelf(resource.data.user_id) || isAdmin();
     }
 
@@ -130,6 +137,15 @@ service cloud.firestore {
       // can edit or delete an issued receipt — it's audit history.
       allow create: if isSignedIn();
       allow update, delete: if false;
+    }
+
+    // ── fridges (community fridge network) ──
+    // Public read so the marketing site can render fridge pins on the map
+    // without auth. Only admins manage the network (add/edit/deactivate
+    // fridges); volunteers and restaurants merely read.
+    match /fridges/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // ── admin_invites (website /admin.html) ──

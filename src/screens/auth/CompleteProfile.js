@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
+import PlaceInput from '../../components/ui/PlaceInput';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { fetchChapters } from '../../services/database';
@@ -88,6 +90,7 @@ export default function CompleteProfile() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+       <ResponsiveContainer maxWidth={560}>
         <BrushText variant="screenTitle" style={styles.title}>
           Welcome!
         </BrushText>
@@ -126,14 +129,19 @@ export default function CompleteProfile() {
         />
 
         <View style={styles.row}>
-          <Input
-            label="City"
-            placeholder="City"
-            value={city}
-            onChangeText={setCity}
-            error={errors.city}
-            containerStyle={styles.cityInput}
-          />
+          <View style={styles.cityInput}>
+            <Text style={{ fontSize: 13, fontWeight: '700', marginBottom: 6, color: '#1A1F2E' }}>City</Text>
+            <PlaceInput
+              value={city}
+              onChange={(v) => {
+                // Pulling "City, ST" from a suggestion auto-fills state too.
+                const m = /,\s*([A-Z]{2})$/.exec(v || '');
+                if (m) { setCity(v.split(',')[0]); setState(m[1]); }
+                else setCity(v);
+              }}
+              placeholder="Start typing your city…"
+            />
+          </View>
           <Input
             label="State"
             placeholder="TN"
@@ -187,6 +195,7 @@ export default function CompleteProfile() {
           loading={saving}
           style={styles.btn}
         />
+       </ResponsiveContainer>
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -20,6 +20,10 @@ import useEvents from '../../hooks/useEvents';
 import useAuthStore from '../../store/authStore';
 import { getOrgStats } from '../../services/orgStats';
 import { fetchRestaurants, fetchAllMembers } from '../../services/database';
+import { requireVerifiedId } from '../../services/idGate';
+import PickupCard from '../../components/pickup/PickupCard';
+import Icon from '../../components/ui/Icon';
+import AnimatedPressable from '../../components/ui/AnimatedPressable';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -47,6 +51,7 @@ export default function IrisScreen({ navigation }) {
   }
 
   async function handleClaim(pickupId) {
+    if (!requireVerifiedId(user, navigation)) return;
     Alert.alert(
       'Claim Pickup',
       'Are you sure you want to claim this pickup? The restaurant will receive your contact info.',
@@ -120,33 +125,31 @@ export default function IrisScreen({ navigation }) {
 
       {pickups.length === 0 ? (
         <Card style={styles.emptyCard}>
-          <Text style={styles.emptyEmoji}>🍽️</Text>
-          <Text style={styles.emptyText}>No pickups available right now</Text>
-          <Text style={styles.emptySubtext}>Check back soon!</Text>
+          <Icon name="clipboard" size={36} color={Colors.green} strokeWidth={1.5} />
+          <Text style={[styles.emptyText, { marginTop: 10 }]}>No pickups available right now</Text>
+          <Text style={styles.emptySubtext}>Check back soon</Text>
         </Card>
       ) : (
-        pickups.map((pickup) => (
-          <Card key={pickup.id} accentColor={Colors.sage} style={styles.pickupCard}>
-            <Text style={styles.pickupRestaurant}>{pickup.restaurant_name}</Text>
-            <Text style={styles.pickupItems}>{pickup.items}</Text>
-            <View style={styles.pickupMeta}>
-              <Text style={styles.pickupDate}>
-                {pickup.scheduled_date} · {pickup.scheduled_time}
-              </Text>
-              <Text style={styles.pickupQty}>{pickup.quantity}</Text>
-            </View>
-            {pickup.instructions && (
-              <Text style={styles.pickupInstructions}>{pickup.instructions}</Text>
-            )}
-            <Button
-              title={pickup.status === 'claimed' ? 'Claimed ✓' : 'Claim Pickup'}
-              variant={pickup.status === 'claimed' ? 'secondary' : 'primary'}
-              disabled={pickup.status === 'claimed'}
-              onPress={() => handleClaim(pickup.id)}
-              style={styles.claimBtn}
-            />
-          </Card>
-        ))
+        <View style={{ gap: 14 }}>
+          {pickups.map((pickup) => (
+            <AnimatedPressable
+              key={pickup.id}
+              onPress={() => navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup })}
+              scaleTo={0.99}
+            >
+              <PickupCard
+                pickup={pickup}
+                cta={{
+                  label: pickup.status === 'claimed' ? 'Open' : 'Claim pickup',
+                  onPress: () => {
+                    if (pickup.status === 'available' && !requireVerifiedId(user, navigation)) return;
+                    navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup });
+                  },
+                }}
+              />
+            </AnimatedPressable>
+          ))}
+        </View>
       )}
 
       <BrushDivider color={Colors.sage} />

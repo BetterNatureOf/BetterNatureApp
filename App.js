@@ -11,6 +11,8 @@ import RestaurantNavigator from './src/navigation/RestaurantNavigator';
 import LoadingScreen from './src/screens/auth/LoadingScreen';
 import CompleteProfile from './src/screens/auth/CompleteProfile';
 import useAuthStore, { ROLES } from './src/store/authStore';
+import useAuth from './src/hooks/useAuth';
+import linking from './src/navigation/linking';
 import { fp } from './src/config/scale';
 
 // Lock font scaling across the whole app so layouts stay consistent
@@ -67,8 +69,18 @@ function rootForRole(role) {
   return <MainNavigator />;
 }
 
+// Clear any stale localStorage state from the older state-persistence
+// approach so it can't confuse anything if it's still hanging around.
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  try { window.localStorage.removeItem('BN_NAV_STATE_v1'); } catch {}
+}
+
 export default function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  // Subscribe to Firebase auth state so the user is rehydrated on every
+  // reload. Without this, refreshing the page always boots back to the
+  // login screen even though Firebase still has a valid session.
+  useAuth();
   const { isAuthenticated, isLoading, setLoading, role, user } = useAuthStore();
   // Google / Apple sign-in lands here without ever filling out the email
   // signup form, so we route them through CompleteProfile first.
@@ -76,16 +88,14 @@ export default function App() {
 
   useEffect(() => {
     async function loadFonts() {
-      try {
-        await Font.loadAsync({
-          'Caveat-Bold': require('./src/assets/fonts/Caveat-Bold.ttf'),
-        });
-      } catch (e) {
-        // Font loading failed — fall back to system font
-        console.warn('Caveat-Bold font not found, using system font');
-      }
+      // We dropped the custom Caveat font in favor of editorial system
+      // sans/serif. Nothing to load — go straight to "ready".
       setFontsLoaded(true);
-      setLoading(false);
+      // Don't flip the global isLoading here — useAuth() owns that flag
+      // and will clear it once the Firebase auth listener resolves. Flipping
+      // it early caused NavigationContainer to mount under AuthNavigator
+      // before Firebase rehydrated the session, which made the saved
+      // navigation state get discarded on every reload.
     }
     loadFonts();
   }, []);
@@ -93,11 +103,13 @@ export default function App() {
   if (!fontsLoaded || isLoading) {
     return <LoadingScreen />;
   }
-
   return (
     <>
       <StatusBar style="dark" />
-      <NavigationContainer>
+      <NavigationContainer
+        linking={linking}
+        fallback={<LoadingScreen />}
+      >
         {!isAuthenticated
           ? <AuthNavigator />
           : needsProfile

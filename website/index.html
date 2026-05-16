@@ -56,15 +56,15 @@
 
   <div class="hero__inner">
     <div class="hero__copy">
-      <div class="hero__eyebrow" id="heroEyebrow"></div>
-      <h1 class="hero__h1">
+      <div class="hero__eyebrow" id="heroEyebrow" data-intro="1"></div>
+      <h1 class="hero__h1" data-intro="2">
         <span id="heroHeadline"></span>
         <em id="heroHeadlineItalic"></em>
       </h1>
-      <p class="hero__sub" id="heroSub"></p>
-      <div class="hero__ctas">
-        <a class="btn btn--forest btn--lg" id="heroCta1"></a>
-        <a class="btn btn--outline btn--lg" id="heroCta2"></a>
+      <p class="hero__sub" id="heroSub" data-intro="3"></p>
+      <div class="hero__ctas" data-intro="3">
+        <a class="btn btn--forest btn--lg btn-magnetic" id="heroCta1"></a>
+        <a class="btn btn--outline btn--lg btn-magnetic" id="heroCta2"></a>
       </div>
     </div>
     <div class="hero__media" id="heroMedia"></div>
@@ -76,32 +76,32 @@
 </section>
 
 <!-- ══════════════════════════ MISSION -->
-<section class="mission" id="mission">
+<section class="mission" id="mission" data-reveal>
   <div class="container">
     <div class="eyebrow" id="missionEyebrow"></div>
     <h2 class="mission__title" id="missionTitle"></h2>
     <p class="mission__body" id="missionBody"></p>
-    <div class="pillars" id="pillars"></div>
+    <div class="pillars" id="pillars" data-reveal-stagger></div>
   </div>
 </section>
 
 <!-- ══════════════════════════ IMPACT -->
-<section class="impact" id="impact">
+<section class="impact" id="impact" data-reveal>
   <div class="container">
     <div class="eyebrow eyebrow--light" id="impactEyebrow"></div>
     <h2 class="impact__title" id="impactTitle"></h2>
-    <div class="impact__grid" id="impactGrid"></div>
+    <div class="impact__grid" id="impactGrid" data-reveal-stagger></div>
   </div>
 </section>
 
 <!-- ══════════════════════════ PROGRAMS -->
-<section class="programs" id="programs">
+<section class="programs" id="programs" data-reveal>
   <div class="container">
     <div class="programs__head">
       <div class="eyebrow" id="programsEyebrow"></div>
       <h2 class="programs__title" id="programsTitle"></h2>
     </div>
-    <div class="programs__list" id="programsList"></div>
+    <div class="programs__list" id="programsList" data-reveal-stagger></div>
   </div>
 </section>
 
@@ -325,6 +325,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="content.js"></script>
+<script defer src="animate.js"></script>
 <script src="impact-map-data.js"></script>
 <script src="app.js"></script>
 <script type="module" src="live-stats.js"></script>

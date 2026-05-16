@@ -11,5 +11,9 @@ export {
   getProfile,
   updateProfile,
   uploadIdDocument,
+  changePassword,
+  sendResetEmail,
+  signInWithGoogle,
+  signInWithApple,
   onAuthStateChange,
 } from './authFirebase';

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, Image, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, Image, ScrollView, StyleSheet, Alert, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signUp, uploadIdDocument } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
 
@@ -60,8 +61,15 @@ export default function SignupStep3({ route }) {
         zip: userData.zip,
       });
 
+      // Upload is best-effort — never block account creation. If storage
+      // fails (rules, network, file size) we log it and let the user retry
+      // later from Settings → Verify ID instead of stranding them here.
       if (imageUri && authData.user) {
-        await uploadIdDocument(authData.user.id, imageUri);
+        try {
+          await uploadIdDocument(authData.user.id, imageUri);
+        } catch (upErr) {
+          console.warn('ID upload failed during signup:', upErr);
+        }
       }
 
       // Flip auth state so the root navigator switches to Main.
@@ -69,7 +77,16 @@ export default function SignupStep3({ route }) {
         setUser(authData.user);
       }
     } catch (e) {
-      Alert.alert('Sign Up Failed', e.message || 'Something went wrong');
+      // react-native-web's Alert.alert can silently drop multi-button alerts,
+      // which made signup failures look like "the button does nothing".
+      // Use window.alert on web so the error is always visible.
+      console.error('Sign up failed:', e);
+      const msg = e?.message || 'Something went wrong';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(`Sign Up Failed\n\n${msg}`);
+      } else {
+        Alert.alert('Sign Up Failed', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -77,6 +94,7 @@ export default function SignupStep3({ route }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+     <ResponsiveContainer maxWidth={560}>
       <BrushText variant="screenTitle" style={styles.title}>
         Verify Your Identity
       </BrushText>
@@ -123,6 +141,7 @@ export default function SignupStep3({ route }) {
       <Text style={styles.note}>
         Your ID is stored securely and only visible to BetterNature executives for verification.
       </Text>
+     </ResponsiveContainer>
     </ScrollView>
   );
 }

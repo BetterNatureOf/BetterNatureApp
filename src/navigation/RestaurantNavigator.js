@@ -5,6 +5,9 @@ import ScheduleDonation from '../screens/restaurant/ScheduleDonation';
 import DonationHistory from '../screens/restaurant/DonationHistory';
 import TaxReceiptsScreen from '../screens/restaurant/TaxReceiptsScreen';
 import SettingsScreen from '../screens/other/SettingsScreen';
+import EditProfile from '../screens/other/EditProfile';
+import ChangePassword from '../screens/other/ChangePassword';
+import VerifyIdScreen from '../screens/other/VerifyIdScreen';
 import NotificationsScreen from '../screens/other/NotificationsScreen';
 
 const Stack = createStackNavigator();
@@ -17,6 +20,9 @@ export default function RestaurantNavigator() {
       <Stack.Screen name="DonationHistory" component={DonationHistory} />
       <Stack.Screen name="TaxReceipts" component={TaxReceiptsScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfile} />
+      <Stack.Screen name="ChangePassword" component={ChangePassword} />
+      <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
     </Stack.Navigator>
   );

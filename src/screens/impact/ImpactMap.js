@@ -4,20 +4,19 @@
 //  on a single filterable list. The "gap" (high-need, no-chapter cities) is
 //  the headline: every gap card is a recruiting call to start a chapter.
 // ═══════════════════════════════════════════════════════════════════════════
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking,
 } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
-import { LAYERS, COPY, POINTS, aggregate } from '../../data/impactMap';
+import { LAYERS, COPY, POINTS, aggregate, loadLiveFridges } from '../../data/impactMap';
+import { openInMaps } from '../../services/maps';
 
 const FILTERS = [
-  { key: 'all',      label: 'All' },
-  { key: 'gap',      label: 'The Gap' },
-  { key: 'chapter',  label: 'Chapters' },
-  { key: 'partner',  label: 'Partners' },
-  { key: 'planting', label: 'Plantings' },
-  { key: 'cleanup',  label: 'Cleanups' },
+  { key: 'all',     label: 'All' },
+  { key: 'chapter', label: 'Chapters' },
+  { key: 'fridge',  label: 'Fridges' },
+  { key: 'gap',     label: 'The Gap' },
 ];
 
 const fmt = (n) => {
@@ -31,13 +30,18 @@ const colorFor = (kind) => LAYERS.find(l => l.key === kind)?.color || Colors.gre
 
 export default function ImpactMap({ navigation }) {
   const [filter, setFilter] = useState('all');
+  // Fridges live in Firestore; merge them into the static chapter+gap data
+  // once on mount so the map matches the website's live fridge layer.
+  const [liveFridges, setLiveFridges] = useState([]);
+  useEffect(() => { loadLiveFridges().then(setLiveFridges); }, []);
 
+  const allPoints = useMemo(() => [...POINTS, ...liveFridges], [liveFridges]);
   const visible = useMemo(
-    () => (filter === 'all' ? POINTS : POINTS.filter(p => p.kind === filter)),
-    [filter]
+    () => (filter === 'all' ? allPoints : allPoints.filter((p) => p.kind === filter)),
+    [filter, allPoints]
   );
-  const agg = useMemo(() => aggregate(visible), [visible]);
-  const gaps = POINTS.filter(p => p.kind === 'gap');
+  const agg = useMemo(() => aggregate(allPoints), [allPoints]);
+  const gaps = useMemo(() => allPoints.filter((p) => p.kind === 'gap'), [allPoints]);
 
   const startChapter = (p) => {
     const subject = encodeURIComponent(`Start a chapter in ${p.city}, ${p.state}`);
@@ -76,10 +80,9 @@ export default function ImpactMap({ navigation }) {
 
       {/* Live stats rail */}
       <View style={styles.statsRow}>
-        <Stat label="Chapters"  value={agg.chapters} />
-        <Stat label="Meals"     value={fmt(agg.meals)} />
-        <Stat label="Trees"     value={fmt(agg.trees)} />
-        <Stat label="Gallons"   value={fmt(agg.gallons)} />
+        <Stat label="Chapters" value={agg.chapters} />
+        <Stat label="Fridges"  value={agg.fridges} />
+        <Stat label="Gap"      value={agg.gaps} />
       </View>
 
       {/* Filter pills */}
@@ -128,47 +131,35 @@ function PointCard({ p, onStartChapter }) {
     <View style={[styles.card, { borderLeftColor: accent }]}>
       <Text style={[styles.cardKind, { color: accent }]}>{kindLabel}</Text>
       <Text style={styles.cardTitle}>
-        {p.kind === 'partner' ? p.name
-         : p.kind === 'planting' || p.kind === 'cleanup' ? p.site
-         : `${p.city}, ${p.state}`}
+        {p.kind === 'fridge' ? p.name : `${p.city}, ${p.state}`}
       </Text>
-      {(p.kind === 'partner' || p.kind === 'planting' || p.kind === 'cleanup') && (
-        <Text style={styles.cardSub}>{p.city}, {p.state}{p.date ? ` · ${p.date}` : ''}</Text>
-      )}
-
-      {p.kind === 'chapter' && (
-        <View style={styles.cardStats}>
-          <Mini v={p.members}           l="members" />
-          <Mini v={fmt(p.meals)}        l="meals" />
-          <Mini v={fmt(p.trees)}        l="trees" />
-          <Mini v={fmt(p.gallons)}      l="gal cleaned" />
-        </View>
+      {p.kind === 'fridge' && (
+        <Text style={styles.cardSub}>
+          {p.address || `${p.city || ''}${p.state ? ', ' + p.state : ''}`}
+        </Text>
       )}
 
       {p.kind === 'gap' && (
         <>
           <View style={styles.cardStats}>
             <Mini v={`${p.insecurity}%`} l="food insecure" />
-            <Mini v={fmt(p.population)}  l="people" />
             <Mini v="0" l="chapters" warn />
           </View>
-          <TouchableOpacity
-            style={styles.cardCta}
-            onPress={() => onStartChapter(p)}
-          >
+          <TouchableOpacity style={styles.cardCta} onPress={() => onStartChapter(p)}>
             <Text style={styles.cardCtaText}>Start a chapter in {p.city} →</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {p.kind === 'partner' && (
-        <Text style={styles.cardFact}>{fmt(p.meals)} meals rescued to date</Text>
-      )}
-      {p.kind === 'planting' && (
-        <Text style={styles.cardFact}>{fmt(p.trees)} native trees planted</Text>
-      )}
-      {p.kind === 'cleanup' && (
-        <Text style={styles.cardFact}>{fmt(p.gallons)} gallons protected</Text>
+      {p.kind === 'fridge' && (
+        <TouchableOpacity
+          style={styles.cardCta}
+          onPress={() => openInMaps({
+            address: p.address, lat: p.lat, lng: p.lng, label: p.name,
+          })}
+        >
+          <Text style={styles.cardCtaText}>Open in Maps →</Text>
+        </TouchableOpacity>
       )}
     </View>
   );

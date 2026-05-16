@@ -9,14 +9,15 @@ import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { fetchEvents, fetchPickups, fetchChapterById } from '../../services/database';
 import { signOut } from '../../services/auth';
+import Icon from '../../components/ui/Icon';
 
 const ACTIONS = [
-  { key: 'events', label: 'Manage Events', emoji: '\u{1F4C5}', desc: 'Create and edit chapter events', screen: 'PresEvents', color: Colors.green },
-  { key: 'members', label: 'Chapter Members', emoji: '\u{1F465}', desc: 'View and manage your members', screen: 'PresMembers', color: Colors.sage },
-  { key: 'checklist', label: 'Chapter Checklist', emoji: '\u2705', desc: 'Track your chapter setup progress', screen: 'ChapterChecklist', color: Colors.sky },
-  { key: 'broadcast', label: 'Send Announcement', emoji: '\u{1F4E2}', desc: 'Notify your chapter members', screen: 'PresBroadcast', color: Colors.pink },
-  { key: 'reports', label: 'Chapter Reports', emoji: '\u{1F4CA}', desc: 'Hours, meals, donations this month', screen: 'PresReports', color: Colors.amber },
-  { key: 'metrics', label: 'Edit Metrics', emoji: '\u{1F4C8}', desc: 'Adjust auto-tracked totals or add manual ones', screen: 'PresMetrics', color: Colors.green },
+  { key: 'events', label: 'Manage Events', icon: 'calendar', desc: 'Create and edit chapter events', screen: 'PresEvents', color: Colors.green },
+  { key: 'members', label: 'Chapter Members', icon: 'users', desc: 'View and manage your members', screen: 'PresMembers', color: Colors.sage },
+  { key: 'checklist', label: 'Chapter Checklist', icon: 'check-circle', desc: 'Track your chapter setup progress', screen: 'ChapterChecklist', color: Colors.sky },
+  { key: 'broadcast', label: 'Send Announcement', icon: 'bell', desc: 'Notify your chapter members', screen: 'PresBroadcast', color: Colors.pink },
+  { key: 'reports', label: 'Chapter Reports', icon: 'trending', desc: 'Hours, meals, donations this month', screen: 'PresReports', color: Colors.amber },
+  { key: 'metrics', label: 'Edit Metrics', icon: 'sparkles', desc: 'Adjust auto-tracked totals or add manual ones', screen: 'PresMetrics', color: Colors.green },
 ];
 
 export default function PresidentDashboard({ navigation }) {
@@ -103,7 +104,7 @@ export default function PresidentDashboard({ navigation }) {
               onPress={() => navigation.navigate(item.screen)}
             >
               <View style={[styles.emojiWrap, { backgroundColor: item.color + '15' }]}>
-                <Text style={styles.emoji}>{item.emoji}</Text>
+                <Icon name={item.icon} size={22} color={item.color} strokeWidth={2.25} />
               </View>
               <Text style={styles.label}>{item.label}</Text>
               <Text style={styles.desc}>{item.desc}</Text>

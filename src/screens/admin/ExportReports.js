@@ -2,14 +2,15 @@ import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import Icon from '../../components/ui/Icon';
 
 const REPORTS = [
-  { key: 'members', label: 'Member Report', desc: 'All members with roles, chapters, and stats', emoji: '👥' },
-  { key: 'events', label: 'Event Report', desc: 'All events with attendance data', emoji: '📅' },
-  { key: 'pickups', label: 'Pickup Report', desc: 'Food rescue history and metrics', emoji: '🍽️' },
-  { key: 'donations', label: 'Donation Report', desc: 'Monetary donations via Zeffy', emoji: '💰' },
-  { key: 'chapters', label: 'Chapter Report', desc: 'Chapter stats and progress', emoji: '📍' },
-  { key: 'restaurants', label: 'Restaurant Report', desc: 'Partner restaurants and donation history', emoji: '🏪' },
+  { key: 'members', label: 'Member Report', desc: 'All members with roles, chapters, and stats', icon: 'users' },
+  { key: 'events', label: 'Event Report', desc: 'All events with attendance data', icon: 'calendar' },
+  { key: 'pickups', label: 'Pickup Report', desc: 'Food rescue history and metrics', icon: 'truck' },
+  { key: 'donations', label: 'Donation Report', desc: 'Monetary donations via Zeffy', icon: 'award' },
+  { key: 'chapters', label: 'Chapter Report', desc: 'Chapter stats and progress', icon: 'pin' },
+  { key: 'restaurants', label: 'Restaurant Report', desc: 'Partner restaurants and donation history', icon: 'store' },
 ];
 
 export default function ExportReports({ navigation }) {
@@ -40,12 +41,14 @@ export default function ExportReports({ navigation }) {
           onPress={() => handleExport(report)}
           activeOpacity={0.7}
         >
-          <Text style={styles.emoji}>{report.emoji}</Text>
+          <View style={styles.iconWrap}>
+            <Icon name={report.icon} size={20} color={Colors.green} strokeWidth={2.25} />
+          </View>
           <View style={styles.textWrap}>
             <Text style={styles.label}>{report.label}</Text>
             <Text style={styles.desc}>{report.desc}</Text>
           </View>
-          <Text style={styles.arrow}>↓</Text>
+          <Icon name="download" size={18} color={Colors.grayMid} />
         </TouchableOpacity>
       ))}
     </ScrollView>
@@ -67,7 +70,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     ...Shadows.card,
   },
-  emoji: { fontSize: 28, marginRight: 14 },
+  iconWrap: {
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 12,
+  },
   textWrap: { flex: 1 },
   label: { fontSize: 15, fontWeight: '700', color: Colors.dark },
   desc: { ...Type.caption, marginTop: 2 },

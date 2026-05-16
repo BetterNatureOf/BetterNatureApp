@@ -11,6 +11,7 @@ import MemberOfMonth from '../../components/sections/MemberOfMonth';
 import MyPickups from '../../components/sections/MyPickups';
 import BrushDivider from '../../components/ui/BrushDivider';
 import StatCard from '../../components/ui/StatCard';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useEvents from '../../hooks/useEvents';
 import usePickups from '../../hooks/usePickups';
 
@@ -47,6 +48,7 @@ export default function DashboardScreen({ navigation }) {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+       <ResponsiveContainer maxWidth={1000}>
         {/* Quick Stats */}
         <View style={styles.statsRow}>
           <StatCard
@@ -95,6 +97,7 @@ export default function DashboardScreen({ navigation }) {
         <MemberOfMonth member={null} />
 
         <DonateCard onPress={() => navigation.navigate('Donate')} />
+       </ResponsiveContainer>
       </ScrollView>
     </View>
   );

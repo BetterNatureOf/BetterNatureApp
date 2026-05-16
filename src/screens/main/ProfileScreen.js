@@ -13,15 +13,19 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import StatCard from '../../components/ui/StatCard';
 import BrushDivider from '../../components/ui/BrushDivider';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
+import Icon from '../../components/ui/Icon';
+import AnimatedPressable from '../../components/ui/AnimatedPressable';
+import FadeInView from '../../components/ui/FadeInView';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 
 const MENU_ITEMS = [
-  { key: 'refer', label: 'Bring a friend', emoji: '\u{1F381}', screen: 'Refer' },
-  { key: 'settings', label: 'Settings', emoji: '\u2699\uFE0F', screen: 'Settings' },
-  { key: 'about', label: 'About BetterNature', emoji: '\u{1F33F}', screen: 'About' },
-  { key: 'slack', label: 'Open Slack', emoji: '\u{1F4AC}', action: 'slack' },
-  { key: 'chapter', label: 'Chapter Info', emoji: '\u{1F4CD}', screen: 'ChapterChecklist' },
+  { key: 'refer', label: 'Bring a friend', icon: 'gift', screen: 'Refer' },
+  { key: 'settings', label: 'Settings', icon: 'settings', screen: 'Settings' },
+  { key: 'about', label: 'About BetterNature', icon: 'leaf', screen: 'About' },
+  { key: 'slack', label: 'Open Slack', icon: 'message', action: 'slack' },
+  { key: 'chapter', label: 'Chapter Info', icon: 'pin', screen: 'ChapterChecklist' },
 ];
 
 export default function ProfileScreen({ navigation }) {
@@ -55,6 +59,7 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+     <ResponsiveContainer maxWidth={780}>
       {/* Profile Header */}
       <LinearGradient
         colors={Colors.gradient.green}
@@ -115,17 +120,19 @@ export default function ProfileScreen({ navigation }) {
       <View style={styles.menuCard}>
         {MENU_ITEMS.map((item, i) => (
           <React.Fragment key={item.key}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => handleMenuPress(item)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuIconWrap}>
-                <Text style={styles.menuEmoji}>{item.emoji}</Text>
-              </View>
-              <Text style={styles.menuLabel}>{item.label}</Text>
-              <Text style={styles.menuArrow}>{'\u203A'}</Text>
-            </TouchableOpacity>
+            <FadeInView delay={120 + i * 50}>
+              <AnimatedPressable
+                style={styles.menuItem}
+                onPress={() => handleMenuPress(item)}
+                scaleTo={0.985}
+              >
+                <View style={styles.menuIconWrap}>
+                  <Icon name={item.icon} size={18} color={Colors.green} />
+                </View>
+                <Text style={styles.menuLabel}>{item.label}</Text>
+                <Icon name="chevron" size={18} color={Colors.grayMid} />
+              </AnimatedPressable>
+            </FadeInView>
             {i < MENU_ITEMS.length - 1 && <View style={styles.menuDivider} />}
           </React.Fragment>
         ))}
@@ -134,6 +141,7 @@ export default function ProfileScreen({ navigation }) {
       <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
+     </ResponsiveContainer>
     </ScrollView>
   );
 }

@@ -15,6 +15,11 @@ import Input from '../../components/ui/Input';
 import useAuthStore from '../../store/authStore';
 import { createPickup } from '../../services/database';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
+import { requireVerifiedId } from '../../services/idGate';
+import DatePicker from '../../components/ui/DatePicker';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
+import Icon from '../../components/ui/Icon';
+import FridgePicker from '../../components/ui/FridgePicker';
 
 const WEIGHT_CHIPS = [5, 10, 20, 50, 100];
 
@@ -34,8 +39,15 @@ export default function ScheduleDonation({ navigation }) {
   const [photoUri, setPhotoUri] = useState(null);
   const [weight, setWeight] = useState(20);
   const [windowKey, setWindowKey] = useState('3h');
+  // Optional: schedule a pickup for a future date instead of using the
+  // "within X hours" chips. When set, this overrides the window chip.
+  const [scheduledFor, setScheduledFor] = useState(null);
   const [notes, setNotes] = useState('');
   const [posting, setPosting] = useState(false);
+  // Volunteer-friendly drop-off destination. The restaurant can pre-pick
+  // a fridge, and if they don't, the volunteer chooses when claiming.
+  const [fridgeId, setFridgeId] = useState(null);
+  const [fridgeName, setFridgeName] = useState('');
 
   async function snapPhoto() {
     // Camera-first; fall back to library if user denies camera.
@@ -61,6 +73,7 @@ export default function ScheduleDonation({ navigation }) {
   }
 
   async function handlePost() {
+    if (!requireVerifiedId(user, navigation)) return;
     if (!photoUri) {
       Alert.alert('Need a photo', 'A quick photo helps volunteers know what to expect.');
       return;
@@ -70,6 +83,12 @@ export default function ScheduleDonation({ navigation }) {
       const restaurantId = user?.restaurant_id || user?.id;
       const photoUrl = await uploadPickupPhoto(restaurantId, photoUri).catch(() => null);
       const w = WINDOW_CHIPS.find(x => x.key === windowKey) || WINDOW_CHIPS[1];
+      // If the restaurant picked a future date, use that as the deadline
+      // instead of the chip-based "within X hours" window.
+      const until = scheduledFor ? scheduledFor.toISOString() : inHours(w.hours);
+      const hoursOut = scheduledFor
+        ? Math.max(1, Math.round((scheduledFor.getTime() - Date.now()) / 3600000))
+        : w.hours;
       await createPickup({
         restaurant_id: restaurantId,
         restaurant_name: user?.name || user?.business_name || 'Restaurant',
@@ -78,8 +97,11 @@ export default function ScheduleDonation({ navigation }) {
         photo_url: photoUrl || null,
         estimated_weight_lbs: weight,
         meals_estimate: Math.round(weight * 1.2),
-        pickup_window_hours: w.hours,
-        pickup_window_until: inHours(w.hours),
+        pickup_window_hours: hoursOut,
+        pickup_window_until: until,
+        scheduled_for: scheduledFor ? scheduledFor.toISOString() : null,
+        fridge_id: fridgeId || null,
+        fridge_name: fridgeName || '',
         notes: notes.trim(),
       });
       Alert.alert(
@@ -97,6 +119,7 @@ export default function ScheduleDonation({ navigation }) {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+       <ResponsiveContainer maxWidth={760}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>{'\u2039 Back'}</Text>
         </TouchableOpacity>
@@ -115,8 +138,8 @@ export default function ScheduleDonation({ navigation }) {
             <Image source={{ uri: photoUri }} style={styles.photo} />
           ) : (
             <View style={styles.photoEmpty}>
-              <Text style={styles.photoEmoji}>📸</Text>
-              <Text style={styles.photoCta}>Tap to snap surplus</Text>
+              <Icon name="camera" size={48} color={Colors.green} strokeWidth={1.75} />
+              <Text style={[styles.photoCta, { marginTop: 12 }]}>Tap to snap surplus</Text>
               <Text style={styles.photoHelp}>One photo. Doesn't have to be pretty.</Text>
             </View>
           )}
@@ -162,6 +185,34 @@ export default function ScheduleDonation({ navigation }) {
           ))}
         </View>
 
+        {/* Specific date (optional, overrides window) */}
+        <Text style={styles.sectionLabel}>
+          Or pick a specific date <Text style={styles.optional}>(optional)</Text>
+        </Text>
+        <DatePicker
+          value={scheduledFor}
+          onChange={setScheduledFor}
+          mode="datetime"
+          minDate={new Date()}
+          placeholder="Tap to choose date & time"
+        />
+        {scheduledFor && (
+          <TouchableOpacity onPress={() => setScheduledFor(null)} style={styles.retake}>
+            <Text style={styles.retakeText}>Clear date</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Drop-off destination — community fridge network */}
+        <Text style={styles.sectionLabel}>
+          Drop off at <Text style={styles.optional}>(optional — volunteer can also choose)</Text>
+        </Text>
+        <FridgePicker
+          value={fridgeId}
+          onChange={(id, f) => { setFridgeId(id); setFridgeName(f?.name || ''); }}
+          chapterId={user?.chapter_id}
+          emptyHint="No community fridges in your chapter yet. The volunteer who claims this pickup will choose where to drop off."
+        />
+
         {/* Notes (optional) */}
         <Text style={styles.sectionLabel}>Notes <Text style={styles.optional}>(optional)</Text></Text>
         <Input
@@ -184,6 +235,7 @@ export default function ScheduleDonation({ navigation }) {
             <Text style={styles.uploadingText}>Uploading photo…</Text>
           </View>
         )}
+       </ResponsiveContainer>
       </ScrollView>
     </KeyboardAvoidingView>
   );

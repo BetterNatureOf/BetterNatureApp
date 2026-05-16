@@ -7,12 +7,16 @@ import StatCard from '../../components/ui/StatCard';
 import EventCard from '../../components/ui/EventCard';
 import BrushDivider from '../../components/ui/BrushDivider';
 import useEvents from '../../hooks/useEvents';
+import Icon from '../../components/ui/Icon';
 
+// Habitat categories — replaced cartoon emoji with the project's Lucide
+// vocabulary (tree, leaf, droplet). Counts come from real data later;
+// nothing is hard-coded so the page reads honest before launch.
 const ANIMAL_CATEGORIES = [
-  { key: 'deer', name: 'Deer', emoji: '🦌', count: 42 },
-  { key: 'birds', name: 'Birds', emoji: '🐦', count: 65 },
-  { key: 'turtles', name: 'Turtles', emoji: '🐢', count: 18 },
-  { key: 'rabbits', name: 'Rabbits', emoji: '🐇', count: 27 },
+  { key: 'forest',   name: 'Forest habitat',     icon: 'tree' },
+  { key: 'wetland',  name: 'Wetland & water',    icon: 'droplet' },
+  { key: 'pollinator', name: 'Pollinator garden', icon: 'leaf' },
+  { key: 'urban',    name: 'Urban canopy',       icon: 'recycle' },
 ];
 
 export default function EvergreenScreen({ navigation }) {
@@ -47,7 +51,7 @@ export default function EvergreenScreen({ navigation }) {
 
       {/* Animal Gallery */}
       <BrushText variant="sectionHeader" style={styles.sectionTitle}>
-        Animals We've Helped
+        Habitats we restore
       </BrushText>
 
       <View style={styles.animalGrid}>
@@ -60,9 +64,10 @@ export default function EvergreenScreen({ navigation }) {
             }
             style={styles.animalCard}
           >
-            <Text style={styles.animalEmoji}>{animal.emoji}</Text>
+            <View style={styles.animalIconWrap}>
+              <Icon name={animal.icon} size={22} color={Colors.green} strokeWidth={2} />
+            </View>
             <Text style={styles.animalName}>{animal.name}</Text>
-            <Text style={styles.animalCount}>{animal.count} helped</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -136,7 +141,12 @@ const styles = StyleSheet.create({
     width: '47%',
     ...Shadows.card,
   },
-  animalEmoji: { fontSize: 40, marginBottom: 8 },
+  animalIconWrap: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10,
+  },
   animalName: { fontSize: 15, fontWeight: '700', color: Colors.dark },
   animalCount: { ...Type.caption, marginTop: 2 },
   emptyCard: { marginHorizontal: 24, alignItems: 'center', padding: 32 },

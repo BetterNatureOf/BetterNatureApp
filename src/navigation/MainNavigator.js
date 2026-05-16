@@ -24,6 +24,10 @@ import EventDetailScreen from '../screens/events/EventDetailScreen';
 import NotificationsScreen from '../screens/other/NotificationsScreen';
 import AboutScreen from '../screens/other/AboutScreen';
 import SettingsScreen from '../screens/other/SettingsScreen';
+import EditProfile from '../screens/other/EditProfile';
+import ChangePassword from '../screens/other/ChangePassword';
+import VerifyIdScreen from '../screens/other/VerifyIdScreen';
+import PickupDetail from '../screens/projects/PickupDetail';
 
 import ChapterChecklist from '../screens/chapter/ChapterChecklist';
 
@@ -35,6 +39,7 @@ import AdminPanel from '../screens/admin/AdminPanel';
 import ManageChapters from '../screens/admin/ManageChapters';
 import ManageMembers from '../screens/admin/ManageMembers';
 import ManageRestaurants from '../screens/admin/ManageRestaurants';
+import ManageFridges from '../screens/admin/ManageFridges';
 import GlobalHistory from '../screens/admin/GlobalHistory';
 import BroadcastScreen from '../screens/admin/BroadcastScreen';
 import ExportReports from '../screens/admin/ExportReports';
@@ -207,6 +212,10 @@ export default function MainNavigator() {
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfile} />
+      <Stack.Screen name="ChangePassword" component={ChangePassword} />
+      <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
+      <Stack.Screen name="PickupDetail" component={PickupDetail} />
       <Stack.Screen name="ChapterChecklist" component={ChapterChecklist} />
       <Stack.Screen name="Refer" component={ReferScreen} />
       <Stack.Screen name="RestDashboard" component={RestDashboard} />
@@ -219,6 +228,7 @@ export default function MainNavigator() {
       <Stack.Screen name="ManageChapters" component={ManageChapters} />
       <Stack.Screen name="ManageMembers" component={ManageMembers} />
       <Stack.Screen name="ManageRestaurants" component={ManageRestaurants} />
+      <Stack.Screen name="ManageFridges" component={ManageFridges} />
       <Stack.Screen name="GlobalHistory" component={GlobalHistory} />
       <Stack.Screen name="Broadcast" component={BroadcastScreen} />
       <Stack.Screen name="ExportReports" component={ExportReports} />

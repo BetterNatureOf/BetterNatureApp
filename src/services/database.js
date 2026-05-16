@@ -339,12 +339,61 @@ export async function createPickup(pickup) {
     return newPk;
   }
 
-  const ref = await addDoc(collection(db, 'pickups'), {
+  // Enrich the pickup with the restaurant's address + coordinates so the
+  // volunteer's PickupCard can render "Open in Maps" without a second
+  // Firestore fetch per pickup. We snapshot at create time, which means
+  // address edits to the restaurant doc later won't retro-rewrite old
+  // pickups (intended — historical pickups should keep the address they
+  // were actually picked up from).
+  let address = pickup.restaurant_address || pickup.address || '';
+  let restLat = pickup.restaurant_lat;
+  let restLng = pickup.restaurant_lng;
+  if (pickup.restaurant_id && !address) {
+    try {
+      const rSnap = await getDoc(doc(db, 'restaurants', pickup.restaurant_id));
+      if (rSnap.exists()) {
+        const r = rSnap.data();
+        const line1 = r.address || r.street || '';
+        const tail = [r.city, r.state].filter(Boolean).join(', ') + (r.zip ? ' ' + r.zip : '');
+        address = [line1, tail].filter(Boolean).join(', ').trim();
+        if (r.lat != null) restLat = r.lat;
+        if (r.lng != null) restLng = r.lng;
+      }
+    } catch (e) { console.warn('pickup enrich (restaurant)', e); }
+  }
+  // Same for the fridge — copy address/coords so the drop-off row in the
+  // PickupCard can launch Maps too.
+  let fridgeAddr = pickup.fridge_address || '';
+  let fridgeLat = pickup.fridge_lat;
+  let fridgeLng = pickup.fridge_lng;
+  let fridgeName = pickup.fridge_name || '';
+  if (pickup.fridge_id && !fridgeAddr) {
+    try {
+      const fSnap = await getDoc(doc(db, 'fridges', pickup.fridge_id));
+      if (fSnap.exists()) {
+        const f = fSnap.data();
+        fridgeAddr = f.address || [f.city, f.state].filter(Boolean).join(', ');
+        if (f.lat != null) fridgeLat = f.lat;
+        if (f.lng != null) fridgeLng = f.lng;
+        if (!fridgeName) fridgeName = f.name || '';
+      }
+    } catch (e) { console.warn('pickup enrich (fridge)', e); }
+  }
+
+  const enriched = {
     status: 'available',
     ...pickup,
+    restaurant_address: address,
+    restaurant_lat: restLat ?? null,
+    restaurant_lng: restLng ?? null,
+    fridge_address: fridgeAddr,
+    fridge_lat: fridgeLat ?? null,
+    fridge_lng: fridgeLng ?? null,
+    fridge_name: fridgeName,
     created_at: serverTimestamp(),
-  });
-  const newPk = { id: ref.id, status: 'available', ...pickup };
+  };
+  const ref = await addDoc(collection(db, 'pickups'), enriched);
+  const newPk = { id: ref.id, ...enriched };
 
   // Notify chapter members
   if (pickup.chapter_id) {
@@ -398,6 +447,69 @@ export async function claimPickup(pickupId, userId) {
   });
   const snap = await getDoc(ref);
   return snapToOne(snap);
+}
+
+// Volunteer flips the pickup to "en route" once they have the food in
+// hand and are headed to the fridge. Used by the PickupDetail screen.
+// Also lets the volunteer pick a fridge if the restaurant didn't
+// pre-select one — we copy the fridge's address/coords onto the pickup
+// so the "Open in Maps" deep link works without an extra fetch.
+export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
+  if (useMock()) {
+    const pk = mockPickups.find((p) => p.id === pickupId);
+    if (pk) pk.status = 'enroute';
+    return pk;
+  }
+  const ref = doc(db, 'pickups', pickupId);
+  const updates = {
+    status: 'enroute',
+    enroute_at: new Date().toISOString(),
+  };
+  if (fridgeId) {
+    try {
+      const fSnap = await getDoc(doc(db, 'fridges', fridgeId));
+      if (fSnap.exists()) {
+        const f = fSnap.data();
+        updates.fridge_id = fridgeId;
+        updates.fridge_name = f.name || '';
+        updates.fridge_address = f.address ||
+          [f.city, f.state].filter(Boolean).join(', ');
+        updates.fridge_lat = f.lat ?? null;
+        updates.fridge_lng = f.lng ?? null;
+      }
+    } catch (e) { console.warn('enroute fridge enrich', e); }
+  }
+  await updateDoc(ref, updates);
+  const snap = await getDoc(ref);
+  const fresh = snapToOne(snap);
+
+  // Notify the restaurant that someone is on the way. Restaurants are user
+  // docs with role='restaurant', so we route the notification to
+  // pk.restaurant_id (which is also the restaurant user's uid in our schema).
+  // Best-effort — never blocks the status change.
+  try {
+    const pk = fresh || {};
+    if (pk.restaurant_id) {
+      let volunteerName = '';
+      if (pk.claimed_by) {
+        try {
+          const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
+          if (vSnap.exists()) volunteerName = vSnap.data().name || '';
+        } catch {}
+      }
+      const dropOff = pk.fridge_name ? ` and dropping at ${pk.fridge_name}` : '';
+      await addDoc(collection(db, 'notifications'), {
+        user_id: pk.restaurant_id,
+        title: 'Volunteer is on the way',
+        body: `${volunteerName || 'A volunteer'} is heading to your restaurant${dropOff}.`,
+        data: { type: 'pickup_enroute', pickupId },
+        read: false,
+        created_at: serverTimestamp(),
+      });
+    }
+  } catch (e) { console.warn('restaurant enroute notify', e); }
+
+  return fresh;
 }
 
 export async function completePickup(pickupId, actualWeightLbs) {
@@ -486,6 +598,23 @@ export async function completePickup(pickupId, actualWeightLbs) {
       read: false,
       created_at: serverTimestamp(),
     });
+
+    // Mirror the win to the restaurant so they see real-time proof their
+    // surplus made it to a fridge. Best-effort — never blocks completion
+    // (volunteer's activity log is already written by this point).
+    if (pk.restaurant_id) {
+      try {
+        const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
+        await addDoc(collection(db, 'notifications'), {
+          user_id: pk.restaurant_id,
+          title: 'Your surplus made it',
+          body: `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Your tax receipt is on the way.`,
+          data: { type: 'pickup_delivered_restaurant', pickupId, meals, lbs: weight },
+          read: false,
+          created_at: serverTimestamp(),
+        });
+      } catch (e) { console.warn('restaurant delivered notify', e); }
+    }
 
     // Mint the restaurant's tax receipt and email them the link.
     // Best-effort — never blocks completion.

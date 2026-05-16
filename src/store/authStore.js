@@ -32,7 +32,16 @@ const useAuthStore = create((set) => ({
       role,
       user: state.user ? { ...state.user, role } : state.user,
     })),
-  signOut: () => set({ user: null, session: null, isAuthenticated: false, role: null }),
+  signOut: () => {
+    // Wipe the persisted navigation state too — otherwise a freshly signed-out
+    // user would briefly try to restore a route that requires auth.
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem('BN_NAV_STATE_v1');
+      }
+    } catch {}
+    set({ user: null, session: null, isAuthenticated: false, role: null });
+  },
 }));
 
 export default useAuthStore;

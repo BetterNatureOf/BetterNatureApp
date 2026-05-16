@@ -12,3 +12,7 @@ web-build/
 .DS_Store
 google-service-account.json
 .claude/
+
+# Local skill installs (machine-specific)
+.agents/
+skills-lock.json

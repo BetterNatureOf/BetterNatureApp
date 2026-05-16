@@ -13,6 +13,10 @@ import {
   signInWithPopup,
   signInWithCredential,
   fetchSignInMethodsForEmail,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword as fbUpdatePassword,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   doc,
@@ -248,6 +252,39 @@ export async function uploadIdDocument(userId, fileUri) {
 
   await updateDoc(doc(db, 'users', userId), { id_document_url: url });
   return url;
+}
+
+// Re-authenticate with the current password (Firebase requires this before
+// any sensitive change like updating the password) and then set a new one.
+// Throws an Error with a friendly message on common failure modes.
+export async function changePassword(currentPassword, newPassword) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const user = auth.currentUser;
+  if (!user) throw new Error('You are signed out. Sign in again to continue.');
+  if (!user.email) throw new Error('Your account does not use a password (Google or Apple sign-in).');
+  if (!currentPassword) throw new Error('Enter your current password.');
+  if (!newPassword || newPassword.length < 6) throw new Error('New password must be at least 6 characters.');
+  try {
+    const cred = EmailAuthProvider.credential(user.email, currentPassword);
+    await reauthenticateWithCredential(user, cred);
+    await fbUpdatePassword(user, newPassword);
+  } catch (e) {
+    if (e?.code === 'auth/wrong-password' || e?.code === 'auth/invalid-credential')
+      throw new Error('Current password is incorrect.');
+    if (e?.code === 'auth/weak-password')
+      throw new Error('That password is too weak. Try at least 6 characters.');
+    if (e?.code === 'auth/requires-recent-login')
+      throw new Error('Please sign out and sign back in, then try again.');
+    throw new Error(e.message || 'Could not update password.');
+  }
+}
+
+// One-tap "send me a reset email" — used for OAuth users or when the user
+// forgot their current password.
+export async function sendResetEmail(email) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  if (!email) throw new Error('Enter your email.');
+  await sendPasswordResetEmail(auth, email);
 }
 
 // Mirrors Supabase's onAuthStateChange contract.

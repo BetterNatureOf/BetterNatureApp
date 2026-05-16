@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Colors, Type, Spacing } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 
@@ -47,6 +48,7 @@ export default function SignupStep1({ navigation }) {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+       <ResponsiveContainer maxWidth={520}>
         <BrushText variant="screenTitle" style={styles.title}>
           Join BetterNature
         </BrushText>
@@ -107,6 +109,7 @@ export default function SignupStep1({ navigation }) {
         <Text style={styles.loginLink} onPress={() => navigation.navigate('Login')}>
           Already have an account? <Text style={styles.loginBold}>Sign in</Text>
         </Text>
+       </ResponsiveContainer>
       </ScrollView>
     </KeyboardAvoidingView>
   );

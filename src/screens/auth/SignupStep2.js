@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import { fetchChapters } from '../../services/database';
 
@@ -50,6 +51,7 @@ export default function SignupStep2({ navigation, route }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+     <ResponsiveContainer maxWidth={560}>
       <BrushText variant="screenTitle" style={styles.title}>
         Choose Your Chapter
       </BrushText>
@@ -108,6 +110,7 @@ export default function SignupStep2({ navigation, route }) {
           Don't see your area? <Text style={styles.startBold}>Start a chapter</Text>
         </Text>
       </TouchableOpacity>
+     </ResponsiveContainer>
     </ScrollView>
   );
 }

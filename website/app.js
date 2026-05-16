@@ -191,12 +191,13 @@
     const layerByKey = Object.fromEntries(IM.layers.map(l => [l.key, L.layerGroup()]));
     const colorByKey = Object.fromEntries(IM.layers.map(l => [l.key, l.color]));
 
+    // Pin radius. Flat sizes for chapter + fridge (their importance is
+    // categorical, not "who has the biggest bar"). Gap pins still scale
+    // by insecurity rate because that's a real, sourced field.
     const radiusFor = (p) => {
-      if (p.kind === 'chapter') return 10 + Math.min(14, (p.members || 0) / 8);
-      if (p.kind === 'gap')     return 9 + Math.min(14, (p.insecurity || 15) - 14);
-      if (p.kind === 'partner') return 6;
-      if (p.kind === 'planting')return 7 + Math.min(6, (p.trees || 0) / 250);
-      if (p.kind === 'cleanup') return 7 + Math.min(6, (p.gallons || 0) / 2000);
+      if (p.kind === 'chapter') return 11;
+      if (p.kind === 'fridge')  return 8;
+      if (p.kind === 'gap')     return 9 + Math.min(8, Math.max(0, (p.insecurity || 15) - 14));
       return 7;
     };
 
@@ -205,53 +206,44 @@
       const el = $('#impactmapSelected');
       if (!p) { el.innerHTML = '<div class="impactmap__selectedHint">Click any pin on the map to see the story.</div>'; return; }
       if (p.kind === 'chapter') {
+        // Chapters: no fabricated stats. Show the city + a link to the
+        // real team. Live numbers belong on the org-wide impact rail
+        // (sourced from org_stats), not on each chapter pin.
         const ch = C.chapters.featured[p.chapterIndex];
         el.innerHTML = `
           <div class="imsel__kind" style="color:${colorByKey.chapter}">Chapter</div>
           <h4>${p.city}, ${p.state}</h4>
-          <div class="imsel__stats">
-            <span><strong>${p.members}</strong> members</span>
-            <span><strong>${fmtNum(p.meals)}</strong> meals</span>
-            <span><strong>${fmtNum(p.trees)}</strong> trees</span>
-            <span><strong>${fmtNum(p.gallons)}</strong> gal cleaned</span>
-          </div>
-          <button class="btn btn--forest" data-open-chapter="${p.chapterIndex}">See the team →</button>
+          ${ch ? `<p class="imsel__body">${ch.blurb || ''}</p>` : ''}
+          ${ch ? `<button class="btn btn--forest" data-open-chapter="${p.chapterIndex}">See the team →</button>` : ''}
           ${ch && ch.instagram ? `<a class="imsel__link" href="${ch.instagram}" target="_blank" rel="noreferrer">@chapter on Instagram ↗</a>` : ''}
         `;
         const btn = el.querySelector('[data-open-chapter]');
         if (btn) btn.addEventListener('click', () => openChapter(Number(btn.dataset.openChapter)));
+      } else if (p.kind === 'fridge') {
+        // Community fridge: name, address, optional hours, and a "Get
+        // directions" link that opens in the visitor's default map app.
+        const addr = p.address || [p.city, p.state].filter(Boolean).join(', ');
+        const mapsQ = encodeURIComponent(addr || (p.name + ' community fridge'));
+        el.innerHTML = `
+          <div class="imsel__kind" style="color:${colorByKey.fridge}">Community fridge</div>
+          <h4>${p.name}</h4>
+          <div class="imsel__sub">${addr}</div>
+          ${p.hours ? `<div class="imsel__stats"><span>${p.hours}</span></div>` : ''}
+          <a class="btn btn--forest" href="https://www.google.com/maps/search/?api=1&query=${mapsQ}" target="_blank" rel="noreferrer">Get directions →</a>
+        `;
       } else if (p.kind === 'gap') {
+        // Gap city: insecurity rate (real, sourced) + a recruiting CTA.
+        // No population figure — we removed those because they were not
+        // current and read as filler.
         el.innerHTML = `
           <div class="imsel__kind" style="color:${colorByKey.gap}">The gap</div>
           <h4>${p.city}, ${p.state}</h4>
           <div class="imsel__stats">
             <span><strong>${p.insecurity}%</strong> food insecure</span>
-            <span><strong>${fmtNum(p.population)}</strong> people</span>
             <span class="imsel__warn">No chapter yet</span>
           </div>
-          <p class="imsel__body">We have no chapter here — yet. If you're a student in ${p.city}, you can be the one that changes that. We give you the playbook, the insurance, the partner intros.</p>
+          <p class="imsel__body">No chapter here yet. If you're a student in ${p.city}, you can be the one to change that — we send the playbook, the insurance, and the partner intros.</p>
           <a class="btn btn--pink" href="#signup" data-prefill-city="${p.city}, ${p.state}">Start a chapter in ${p.city} →</a>
-        `;
-      } else if (p.kind === 'partner') {
-        el.innerHTML = `
-          <div class="imsel__kind" style="color:${colorByKey.partner}">Partner kitchen</div>
-          <h4>${p.name}</h4>
-          <div class="imsel__sub">${p.city}, ${p.state}</div>
-          <div class="imsel__stats"><span><strong>${fmtNum(p.meals)}</strong> meals rescued to date</span></div>
-        `;
-      } else if (p.kind === 'planting') {
-        el.innerHTML = `
-          <div class="imsel__kind" style="color:${colorByKey.planting}">Tree planting</div>
-          <h4>${p.site}</h4>
-          <div class="imsel__sub">${p.city}, ${p.state} · ${p.date}</div>
-          <div class="imsel__stats"><span><strong>${fmtNum(p.trees)}</strong> native trees planted</span></div>
-        `;
-      } else if (p.kind === 'cleanup') {
-        el.innerHTML = `
-          <div class="imsel__kind" style="color:${colorByKey.cleanup}">Water cleanup</div>
-          <h4>${p.site}</h4>
-          <div class="imsel__sub">${p.city}, ${p.state} · ${p.date}</div>
-          <div class="imsel__stats"><span><strong>${fmtNum(p.gallons)}</strong> gallons protected</span></div>
         `;
       }
       // Prefill city into signup if user clicks "Start a chapter"
@@ -268,18 +260,40 @@
       });
     };
 
-    // Plot points
-    IM.points.forEach(p => {
+    // Plot a single point onto its layer. Factored out so we can also
+    // call it for fridges that arrive asynchronously from Firestore.
+    function plotPoint(p) {
+      if (!layerByKey[p.kind]) return;
       const m = L.circleMarker([p.lat, p.lng], {
         radius: radiusFor(p), color: colorByKey[p.kind], weight: 2,
         fillColor: colorByKey[p.kind], fillOpacity: 0.55,
       });
-      const label = p.kind === 'partner' ? p.name : `${p.city}, ${p.state}`;
+      const label = p.kind === 'fridge' ? p.name : (p.kind === 'partner' ? p.name : `${p.city}, ${p.state}`);
       m.bindTooltip(label, { direction: 'top', offset: [0, -6] });
       m.on('click', () => renderSelected(p));
       m.addTo(layerByKey[p.kind]);
-    });
+    }
+
+    IM.points.forEach(plotPoint);
     IM.layers.forEach(l => { if (l.defaultOn) layerByKey[l.key].addTo(map); });
+
+    // Pull live community fridges from Firestore and add them to the map
+    // + the data array so the legend + live counters pick them up.
+    (async () => {
+      try {
+        const { listFridges } = await import('./firebase-fridges.js');
+        const fridges = await listFridges();
+        fridges.forEach((f) => {
+          if (f.lat == null || f.lng == null) return;
+          const point = { kind: 'fridge', ...f };
+          IM.points.push(point);
+          plotPoint(point);
+        });
+        if (typeof updateLive === 'function') updateLive();
+      } catch (e) {
+        console.warn('Live fridges unavailable:', e);
+      }
+    })();
 
     // Legend toggle
     document.querySelectorAll('.imlegend').forEach(btn => {
@@ -291,18 +305,22 @@
       });
     });
 
-    // Live stat rail + gap counter
+    // Side rail — pure pin counts off the currently-visible layers.
+    // We deliberately stopped summing meals/trees/gallons here because
+    // those numbers came from hard-coded per-chapter stats that were
+    // placeholders. The org-wide totals belong on the homepage hero
+    // (powered by live-stats.js → org_stats/global), not next to a map
+    // that's already telling a where-not-how-much story.
     const updateLive = () => {
       const visible = IM.points.filter(p => active.has(p.kind));
-      const sum = (k) => visible.reduce((a, p) => a + (p[k] || 0), 0);
-      const gapCount = visible.filter(p => p.kind === 'gap').length;
-      const chapters = visible.filter(p => p.kind === 'chapter').length;
+      const gapCount   = visible.filter(p => p.kind === 'gap').length;
+      const chapters   = visible.filter(p => p.kind === 'chapter').length;
+      const fridges    = visible.filter(p => p.kind === 'fridge').length;
       $('#impactmapGapCount').textContent = gapCount;
       setHTML('#impactmapLive', `
         <div class="imlive__row"><span>Chapters</span><strong>${chapters}</strong></div>
-        <div class="imlive__row"><span>Meals rescued</span><strong>${fmtNum(sum('meals'))}</strong></div>
-        <div class="imlive__row"><span>Trees planted</span><strong>${fmtNum(sum('trees'))}</strong></div>
-        <div class="imlive__row"><span>Gallons cleaned</span><strong>${fmtNum(sum('gallons'))}</strong></div>
+        <div class="imlive__row"><span>Community fridges</span><strong>${fridges}</strong></div>
+        <div class="imlive__row"><span>Cities in the gap</span><strong>${gapCount}</strong></div>
       `);
     };
     updateLive();
