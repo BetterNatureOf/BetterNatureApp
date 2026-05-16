@@ -10,6 +10,7 @@ import { signOut } from '../../services/auth';
 import { payWithApplePay, isApplePayAvailable } from '../../services/payments';
 import { recordDonation, fetchDonationHistory, fetchPickups } from '../../services/database';
 import { requireVerifiedId } from '../../services/idGate';
+import { confirm } from '../../services/ui';
 import Icon from '../../components/ui/Icon';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import FadeInView from '../../components/ui/FadeInView';
@@ -34,18 +35,11 @@ export default function RestDashboard({ navigation }) {
       .catch(() => {});
   }, []);
 
-  function handleSignOut() {
-    Alert.alert('Sign Out', 'Sign out of the restaurant portal?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          clearAuth();
-        },
-      },
-    ]);
+  async function handleSignOut() {
+    const ok = await confirm('Sign Out', 'Sign out of the restaurant portal?');
+    if (!ok) return;
+    try { await signOut(); } catch {}
+    clearAuth();
   }
 
   async function handleSponsorDonation() {

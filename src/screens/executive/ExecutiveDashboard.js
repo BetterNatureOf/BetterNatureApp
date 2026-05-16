@@ -9,6 +9,7 @@ import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { fetchChapters, fetchAllMembers, fetchRestaurants, fetchAllDonations, fetchOrgMetrics } from '../../services/database';
 import { signOut } from '../../services/auth';
+import { confirm } from '../../services/ui';
 
 const TOOLS = [
   { key: 'chapters', label: 'Manage Chapters', emoji: '\u{1F4CD}', desc: 'Approve, edit, or close chapters', screen: 'ManageChapters', color: Colors.sage },
@@ -59,18 +60,11 @@ export default function ExecutiveDashboard({ navigation }) {
     load();
   }, []);
 
-  function handleSignOut() {
-    Alert.alert('Sign Out', 'Sign out of the executive portal?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          clearAuth();
-        },
-      },
-    ]);
+  async function handleSignOut() {
+    const ok = await confirm('Sign Out', 'Sign out of the executive portal?');
+    if (!ok) return;
+    try { await signOut(); } catch {}
+    clearAuth();
   }
 
   return (

@@ -10,6 +10,7 @@ import useAuthStore from '../../store/authStore';
 import { fetchEvents, fetchPickups, fetchChapterById } from '../../services/database';
 import { signOut } from '../../services/auth';
 import Icon from '../../components/ui/Icon';
+import { confirm } from '../../services/ui';
 
 const ACTIONS = [
   { key: 'events', label: 'Manage Events', icon: 'calendar', desc: 'Create and edit chapter events', screen: 'PresEvents', color: Colors.green },
@@ -42,18 +43,11 @@ export default function PresidentDashboard({ navigation }) {
     load();
   }, []);
 
-  function handleSignOut() {
-    Alert.alert('Sign Out', 'Sign out of the president portal?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          clearAuth();
-        },
-      },
-    ]);
+  async function handleSignOut() {
+    const ok = await confirm('Sign Out', 'Sign out of the president portal?');
+    if (!ok) return;
+    try { await signOut(); } catch {}
+    clearAuth();
   }
 
   return (

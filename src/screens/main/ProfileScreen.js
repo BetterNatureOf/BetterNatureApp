@@ -19,6 +19,7 @@ import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import FadeInView from '../../components/ui/FadeInView';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
+import { confirm } from '../../services/ui';
 
 const MENU_ITEMS = [
   { key: 'refer', label: 'Bring a friend', icon: 'gift', screen: 'Refer' },
@@ -33,19 +34,14 @@ export default function ProfileScreen({ navigation }) {
   const { signOut: clearAuth } = useAuthStore();
 
   async function handleSignOut() {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await signOut();
-          } catch {}
-          clearAuth();
-        },
-      },
-    ]);
+    // Alert.alert with array-of-buttons silently drops onPress callbacks
+    // in react-native-web — that's why the sign-out button "did nothing"
+    // on the web build. The confirm() helper uses window.confirm on web
+    // and Alert.alert on native, so the destructive action actually fires.
+    const ok = await confirm('Sign Out', 'Are you sure you want to sign out?');
+    if (!ok) return;
+    try { await signOut(); } catch {}
+    clearAuth();
   }
 
   function handleMenuPress(item) {
