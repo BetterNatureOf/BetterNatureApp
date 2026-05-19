@@ -14,6 +14,8 @@ import useAuthStore, { ROLES } from './src/store/authStore';
 import useAuth from './src/hooks/useAuth';
 import linking from './src/navigation/linking';
 import { injectWebFonts } from './src/config/webFonts';
+import ErrorBoundary from './src/components/ui/ErrorBoundary';
+import { registerForPushNotifications } from './src/services/push';
 import { fp } from './src/config/scale';
 
 // Lock font scaling across the whole app so layouts stay consistent
@@ -120,8 +122,17 @@ export default function App() {
   if (!fontsLoaded || isLoading) {
     return <LoadingScreen />;
   }
+  // Register for push notifications whenever an authed user lands. The
+  // service no-ops on web and gracefully exits if Expo's push module
+  // isn't installed yet, so this is safe to call unconditionally.
+  React.useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      registerForPushNotifications(user.id).catch(() => {});
+    }
+  }, [isAuthenticated, user?.id]);
+
   return (
-    <>
+    <ErrorBoundary>
       <StatusBar style="dark" />
       <NavigationContainer
         linking={linking}
@@ -133,6 +144,6 @@ export default function App() {
           ? <CompleteProfile />
           : rootForRole(role)}
       </NavigationContainer>
-    </>
+    </ErrorBoundary>
   );
 }

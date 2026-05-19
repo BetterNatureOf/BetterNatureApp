@@ -12,6 +12,7 @@ import {
   OAuthProvider,
   signInWithPopup,
   signInWithCredential,
+  linkWithCredential,
   fetchSignInMethodsForEmail,
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -219,31 +220,61 @@ async function bootstrapSocialUser(fbUser) {
   return data;
 }
 
-// Sign in (or sign up) with Google. Web-only popup flow today; native
-// will use expo-auth-session in a follow-up. `restrictDomain` rejects
-// accounts outside a Google Workspace (used on the admin login).
-// Friendly handler for "this email is already on a different provider".
-// We don't auto-link silently (Firebase requires re-auth with the original
-// method), but we tell the user *which* method to use so they don't end up
-// with two separate accounts under the same email.
-async function explainLinkingError(err) {
-  if (err?.code !== 'auth/account-exists-with-different-credential') return err;
+// When Firebase throws auth/account-exists-with-different-credential it
+// gives us both the existing-account email AND the unused new credential
+// (Google/Apple). To auto-link instead of stranding the user, we have to
+// (1) sign them in with the *original* provider, then (2) call
+// linkWithCredential to attach the new one.
+//
+// Because we can't re-auth silently, this helper resolves to a structured
+// object that the UI uses to prompt the user once and then complete the
+// link without making them remember "which button I clicked last time."
+async function describeLinkingError(err) {
+  if (err?.code !== 'auth/account-exists-with-different-credential') return null;
   try {
     const email = err.customData?.email;
-    if (email) {
-      const methods = await fetchSignInMethodsForEmail(auth, email);
-      const human = methods.map(m => (
+    if (!email) return null;
+    const methods = await fetchSignInMethodsForEmail(auth, email);
+    const pending =
+      err?.credential ||
+      GoogleAuthProvider.credentialFromError?.(err) ||
+      OAuthProvider.credentialFromError?.(err);
+    return {
+      email,
+      methods,        // e.g. ['password'] or ['google.com']
+      pending,        // credential to .link() onto the eventual current user
+      human: methods.map(m => (
         m === 'google.com' ? 'Google' :
         m === 'apple.com'  ? 'Apple' :
         m === 'password'   ? 'email + password' : m
-      )).join(' or ');
-      return new Error(
-        `This email already has an account using ${human}. ` +
-        `Sign in with ${human} first to keep everything in one account.`
-      );
-    }
+      )).join(' or '),
+    };
   } catch {}
-  return err;
+  return null;
+}
+
+// Back-compat: wraps describeLinkingError into the old "throw friendly
+// Error" shape so existing call sites that just rethrow still work.
+async function explainLinkingError(err) {
+  const info = await describeLinkingError(err);
+  if (!info) return err;
+  const e = new Error(
+    `This email already has an account using ${info.human}. ` +
+    `Sign in with ${info.human} first to link your accounts.`
+  );
+  e.linking = info;
+  e.code = 'auth/account-exists-with-different-credential';
+  return e;
+}
+
+// Public API: complete the link after the user has signed in with the
+// provider that already owned the email. Call from the UI after a
+// successful password / Google / Apple signin if you held onto the
+// `pending` credential from the original failure.
+export async function linkPendingCredential(pendingCredential) {
+  if (!auth.currentUser) throw new Error('Sign in first, then link.');
+  if (!pendingCredential) throw new Error('No pending credential to link.');
+  await linkWithCredential(auth.currentUser, pendingCredential);
 }
 
 export async function signInWithGoogle({ restrictDomain } = {}) {

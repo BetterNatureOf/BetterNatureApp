@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
+import useBreakpoint from '../../hooks/useBreakpoint';
 import { getOrgStats } from '../../services/orgStats';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
@@ -51,36 +53,49 @@ export default function ProjectsScreen({ navigation }) {
   const [stats, setStats] = useState({ meals: 0, water: 0 });
   useEffect(() => { getOrgStats().then(setStats).catch(() => {}); }, []);
   const PROJECTS = buildProjects(stats);
+  const { isDesktop, isTablet } = useBreakpoint();
+
+  // Desktop: 3-up grid. Tablet: 2-up. Phone: stack.
+  const cardStyle = [
+    styles.card,
+    isDesktop && styles.cardDesktop,
+    isTablet && styles.cardTablet,
+  ];
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Our Projects
-      </BrushText>
-      <Text style={styles.subtitle}>
-        Three initiatives, one mission: a better world.
-      </Text>
+      <ResponsiveContainer maxWidth={1200}>
+        <BrushText variant="screenTitle" style={styles.title}>
+          Our Projects
+        </BrushText>
+        <Text style={styles.subtitle}>
+          Three initiatives, one mission: a better world.
+        </Text>
 
-      {PROJECTS.map((project) => (
-        <TouchableOpacity
-          key={project.key}
-          activeOpacity={0.8}
-          onPress={() => navigation.navigate('ProjectDetail', { project: project.key })}
-          style={[styles.card, { borderLeftColor: project.color }]}
-        >
-          <View style={[styles.emojiCircle, { backgroundColor: project.lightColor }]}>
-            <Text style={styles.emoji}>{project.emoji}</Text>
-          </View>
-          <Text style={styles.cardTitle}>{project.name}</Text>
-          <Text style={styles.cardSubtitle}>{project.subtitle}</Text>
-          <Text style={styles.cardDesc}>{project.description}</Text>
-          <View style={styles.statRow}>
-            <BrushText variant="statNumber" style={{ color: project.color }}>
-              {project.stat}
-            </BrushText>
-            <Text style={styles.statLabel}>{project.statLabel}</Text>
-          </View>
-        </TouchableOpacity>
-      ))}
+        <View style={[styles.grid, (isDesktop || isTablet) && styles.gridWide]}>
+          {PROJECTS.map((project) => (
+            <TouchableOpacity
+              key={project.key}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('ProjectDetail', { project: project.key })}
+              style={[...cardStyle, { borderLeftColor: project.color }]}
+            >
+              <View style={[styles.emojiCircle, { backgroundColor: project.lightColor }]}>
+                <Text style={styles.emoji}>{project.emoji}</Text>
+              </View>
+              <Text style={styles.cardTitle}>{project.name}</Text>
+              <Text style={styles.cardSubtitle}>{project.subtitle}</Text>
+              <Text style={styles.cardDesc}>{project.description}</Text>
+              <View style={styles.statRow}>
+                <BrushText variant="statNumber" style={{ color: project.color }}>
+                  {project.stat}
+                </BrushText>
+                <Text style={styles.statLabel}>{project.statLabel}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ResponsiveContainer>
     </ScrollView>
   );
 }
@@ -90,6 +105,8 @@ const styles = StyleSheet.create({
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
+  grid: { flexDirection: 'column', gap: 16 },
+  gridWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 20 },
   card: {
     backgroundColor: Colors.white,
     borderRadius: Radius.xl,
@@ -98,6 +115,11 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     ...Shadows.card,
   },
+  // RN Web doesn't support calc() in style sheets, so we approximate with
+  // a percentage basis and let flex-wrap pack the cards. The trailing
+  // marginBottom: 0 lets `gap` on the grid handle the rhythm instead.
+  cardTablet: { flexGrow: 1, flexBasis: '46%', maxWidth: '49%', marginBottom: 0 },
+  cardDesktop: { flexGrow: 1, flexBasis: '30%', maxWidth: '32%', marginBottom: 0 },
   emojiCircle: {
     width: 56,
     height: 56,

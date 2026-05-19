@@ -136,6 +136,63 @@
       z-index: 100;
     }
     .toast.is-show { transform: translateY(0); opacity: 1; }
+
+    /* ─── Polish: friendlier admin UX ─────────────────────────────────
+       - Bigger save button that pulses while there are unsaved changes
+         so editors don't lose work.
+       - Card-style fields with proper labels, focus rings.
+       - Sticky help bar so a brand-new admin can always see what to do.
+    */
+    .admin-nav__actions .btn--pink {
+      box-shadow: 0 0 0 0 rgba(255,77,141,0.4);
+      transition: box-shadow .2s var(--ease);
+    }
+    .admin-nav__status.dirty ~ .btn--pink,
+    body.has-unsaved .admin-nav__actions .btn--pink {
+      animation: bn-pulse 2s ease-in-out infinite;
+    }
+    @keyframes bn-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(255,77,141,0.45); transform: translateY(0); }
+      50%     { box-shadow: 0 0 0 10px rgba(255,77,141,0);  transform: translateY(-1px); }
+    }
+    .admin-help {
+      max-width: 1200px; margin: -20px auto 24px; padding: 14px 18px;
+      background: rgba(46,125,50,.08);
+      border-left: 4px solid var(--forest);
+      border-radius: 0 10px 10px 0;
+      color: var(--forest);
+      font-size: 13.5px; line-height: 1.55;
+    }
+    .admin-help strong { color: var(--forest-ink); }
+    .admin .field {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+    }
+    .admin .field:focus-within {
+      border-color: var(--forest);
+      box-shadow: 0 0 0 3px rgba(27,58,45,.08);
+    }
+    .admin label, .admin .field > label {
+      display: block; font-size: 12px; font-weight: 700;
+      color: var(--ink-60); letter-spacing: 1px; text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .admin input[type="text"], .admin input[type="number"], .admin textarea {
+      width: 100%; border: none; outline: none; background: transparent;
+      font: inherit; color: var(--forest-ink); font-size: 15px;
+      resize: vertical;
+    }
+    .admin textarea { min-height: 70px; }
+    .admin-tab.is-active { color: var(--forest); border-bottom-color: var(--pink); font-weight: 700; }
+    .admin h2 {
+      font-family: var(--serif); font-size: 26px; color: var(--forest);
+      margin: 6px 0 14px;
+    }
+    .admin-section + .admin-section { margin-top: 36px; padding-top: 28px; border-top: 1px dashed var(--line); }
   </style>
 </head>
 <body>
@@ -156,6 +213,13 @@
 <div class="admin">
   <h1>Edit your site</h1>
   <p class="lede">Change any number, name, or quote below. Hit <strong>Save changes</strong> and your live site updates instantly. When you're ready to make it permanent, click <strong>Export content.js</strong> and replace the file on your server.</p>
+
+  <div class="admin-help">
+    <strong>How this works:</strong> Edits below save to Firestore the moment you tap
+    <em>Save changes</em>. Visitors see them on the next page load. Use <em>Export
+    content.js</em> to bake the same edits into the static file (recommended once a
+    week as a backup). Anything you don't see here? Reach me directly.
+  </div>
 
   <div class="admin-tabs" id="tabs">
     <button class="admin-tab is-active" data-panel="sections">Sections on/off</button>

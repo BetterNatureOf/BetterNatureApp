@@ -8,6 +8,7 @@ import SettingsScreen from '../screens/other/SettingsScreen';
 import EditProfile from '../screens/other/EditProfile';
 import ChangePassword from '../screens/other/ChangePassword';
 import VerifyIdScreen from '../screens/other/VerifyIdScreen';
+import RestaurantOnboarding from '../screens/restaurant/RestaurantOnboarding';
 import NotificationsScreen from '../screens/other/NotificationsScreen';
 
 const Stack = createStackNavigator();
@@ -23,6 +24,7 @@ export default function RestaurantNavigator() {
       <Stack.Screen name="EditProfile" component={EditProfile} />
       <Stack.Screen name="ChangePassword" component={ChangePassword} />
       <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
+      <Stack.Screen name="RestaurantOnboarding" component={RestaurantOnboarding} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
     </Stack.Navigator>
   );

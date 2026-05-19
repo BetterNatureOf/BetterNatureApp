@@ -16,3 +16,4 @@ google-service-account.json
 # Local skill installs (machine-specific)
 .agents/
 skills-lock.json
+scripts/serviceAccount.json

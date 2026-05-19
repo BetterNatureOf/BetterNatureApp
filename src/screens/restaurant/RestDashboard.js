@@ -73,8 +73,21 @@ export default function RestDashboard({ navigation }) {
       desc: 'Snap a photo, pick a weight, post it. Volunteers claim it.',
       onPress: () => {
         if (!requireVerifiedId(user, navigation)) return;
+        // Hard-gate posting on the onboarding form so every pickup that
+        // hits the volunteer feed has a real address attached.
+        if (!user?.restaurant_complete) {
+          navigation.navigate('RestaurantOnboarding');
+          return;
+        }
         navigation.navigate('ScheduleDonation');
       },
+    },
+    {
+      key: 'profile',
+      icon: 'building',
+      title: 'Restaurant profile',
+      desc: 'Business name, address, hours, contact',
+      onPress: () => navigation.navigate('RestaurantOnboarding'),
     },
     {
       key: 'history',

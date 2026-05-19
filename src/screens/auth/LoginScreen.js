@@ -15,7 +15,8 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signIn } from '../../services/auth';
-import { signInWithGoogle, signInWithApple } from '../../services/authFirebase';
+import { signInWithGoogle, signInWithApple, linkPendingCredential } from '../../services/authFirebase';
+import { notify, confirm } from '../../services/ui';
 import { isFirebaseConfigured } from '../../config/firebase';
 import useAuthStore, { ROLES } from '../../store/authStore';
 
@@ -33,40 +34,68 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       const result = await signIn({ email, password });
+      // If a Google/Apple credential is sitting in pendingLink (because
+      // OAuth landed on this same email earlier), link it now so future
+      // OAuth signins resolve to this same account.
+      if (pendingLink?.pending) {
+        try {
+          await linkPendingCredential(pendingLink.pending);
+          notify('Accounts linked', 'Your Google/Apple sign-in is now connected to this account.');
+        } catch (e) { console.warn('link pending after password signin', e); }
+        setPendingLink(null);
+      }
       const user = result?.user
         ? { ...result.user, role: result.user.role || ROLES.MEMBER }
         : null;
       if (user) setUser(user);
     } catch (e) {
-      Alert.alert('Login Failed', e.message || 'Invalid credentials');
+      notify('Login Failed', e?.message || 'Invalid credentials');
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleGoogle() {
+  // A pending OAuth credential we couldn't use immediately because the
+  // email already had an account with a different provider. We stash it
+  // here and surface a prompt — once the user signs in with the original
+  // provider, we link the pending credential onto their now-authed user.
+  const [pendingLink, setPendingLink] = useState(null);
+
+  async function handleOAuthResult(promise, label) {
     setLoading(true);
     try {
-      const { user } = await signInWithGoogle();
+      const { user } = await promise;
+      // If we had a pending credential from a previous attempt, complete
+      // the link now. After this, both providers point at one account.
+      if (pendingLink?.pending) {
+        try {
+          await linkPendingCredential(pendingLink.pending);
+          notify('Accounts linked', `Your ${label} sign-in is now connected to this account.`);
+        } catch (e) { console.warn('link pending failed', e); }
+        setPendingLink(null);
+      }
       if (user) setUser({ ...user, role: user.role || ROLES.MEMBER });
     } catch (e) {
-      Alert.alert('Google sign in failed', e.message || 'Try again.');
+      if (e?.linking) {
+        // Hold the pending credential and tell the user what to do.
+        setPendingLink(e.linking);
+        const ok = await confirm(
+          'Use your existing account?',
+          `This email is already signed up with ${e.linking.human}. ` +
+          `Sign in with ${e.linking.human}, and we’ll link ${label} to the same account so you only have one login.`
+        );
+        // The user confirms; the next signin attempt will do the link.
+        if (!ok) setPendingLink(null);
+      } else {
+        notify(`${label} sign in failed`, e?.message || 'Try again.');
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleApple() {
-    setLoading(true);
-    try {
-      const { user } = await signInWithApple();
-      if (user) setUser({ ...user, role: user.role || ROLES.MEMBER });
-    } catch (e) {
-      Alert.alert('Apple sign in failed', e.message || 'Try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
+  function handleGoogle() { return handleOAuthResult(signInWithGoogle(), 'Google'); }
+  function handleApple()  { return handleOAuthResult(signInWithApple(),  'Apple'); }
 
   // Popup auth only works on web. Native needs expo-auth-session
   // (a separate, larger setup) — surface the buttons only where they work.

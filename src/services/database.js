@@ -449,6 +449,83 @@ export async function claimPickup(pickupId, userId) {
   return snapToOne(snap);
 }
 
+// Volunteer changes their mind after claiming. Pickup goes back to
+// 'available' and clears the assignment so another volunteer can grab
+// it. Restaurant gets notified that they need someone else. We don't
+// allow cancel after 'enroute' — at that point the food is already
+// out of the kitchen and the restaurant needs a human conversation,
+// not a tap.
+export async function cancelClaim(pickupId, reason = '') {
+  if (useMock()) {
+    const pk = mockPickups.find((p) => p.id === pickupId);
+    if (pk) { pk.status = 'available'; delete pk.claimed_by; delete pk.claimed_at; }
+    return pk;
+  }
+  const ref = doc(db, 'pickups', pickupId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Pickup not found');
+  const pk = snap.data();
+  if (pk.status !== 'claimed') {
+    throw new Error('You can only release a pickup before you’ve hit the road.');
+  }
+  await updateDoc(ref, {
+    status: 'available',
+    claimed_by: null,
+    claimed_at: null,
+    cancel_reason: reason || null,
+    cancelled_at: new Date().toISOString(),
+  });
+  // Tell the restaurant — best-effort.
+  try {
+    if (pk.restaurant_id) {
+      await addDoc(collection(db, 'notifications'), {
+        user_id: pk.restaurant_id,
+        title: 'Pickup released',
+        body: `Your pickup is back on the board — looking for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
+        data: { type: 'pickup_released', pickupId },
+        read: false,
+        created_at: serverTimestamp(),
+      });
+    }
+  } catch (e) { console.warn('cancel-claim notify', e); }
+  return { ...pk, status: 'available' };
+}
+
+// Restaurant cancels a pickup they posted (e.g. surplus got eaten, no
+// longer available). Marks the pickup cancelled and tells anyone who
+// already claimed it.
+export async function cancelPickup(pickupId, reason = '') {
+  if (useMock()) {
+    const pk = mockPickups.find((p) => p.id === pickupId);
+    if (pk) pk.status = 'cancelled';
+    return pk;
+  }
+  const ref = doc(db, 'pickups', pickupId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Pickup not found');
+  const pk = snap.data();
+  if (pk.status === 'completed') throw new Error('That pickup is already delivered.');
+  await updateDoc(ref, {
+    status: 'cancelled',
+    cancel_reason: reason || null,
+    cancelled_at: new Date().toISOString(),
+  });
+  // If a volunteer had claimed it, let them know.
+  try {
+    if (pk.claimed_by) {
+      await addDoc(collection(db, 'notifications'), {
+        user_id: pk.claimed_by,
+        title: 'Pickup cancelled',
+        body: `${pk.restaurant_name || 'The restaurant'} cancelled their pickup.${reason ? ' Reason: ' + reason : ''}`,
+        data: { type: 'pickup_cancelled', pickupId },
+        read: false,
+        created_at: serverTimestamp(),
+      });
+    }
+  } catch (e) { console.warn('cancel-pickup notify', e); }
+  return { ...pk, status: 'cancelled' };
+}
+
 // Volunteer flips the pickup to "en route" once they have the food in
 // hand and are headed to the fridge. Used by the PickupDetail screen.
 // Also lets the volunteer pick a fridge if the restaurant didn't

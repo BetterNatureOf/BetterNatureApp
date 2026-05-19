@@ -21,8 +21,8 @@ import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { claimPickup, setPickupEnroute, completePickup } from '../../services/database';
-import { notify, notifyThen } from '../../services/ui';
+import { claimPickup, setPickupEnroute, completePickup, cancelClaim } from '../../services/database';
+import { notify, notifyThen, confirm } from '../../services/ui';
 
 export default function PickupDetail({ route, navigation }) {
   const pickupId = route?.params?.pickupId;
@@ -78,6 +78,21 @@ export default function PickupDetail({ route, navigation }) {
       await refresh();
     } catch (e) {
       notify('Could not update', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function handleCancelClaim() {
+    const ok = await confirm(
+      'Release this pickup?',
+      'It goes back on the board for another volunteer. Only do this if you can’t make the run.'
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await cancelClaim(pickup.id);
+      notifyThen('Released', 'Thanks for letting us know. The pickup is open again.', () => navigation.goBack());
+    } catch (e) {
+      notify('Could not release', e?.message || 'Try again.');
     } finally { setBusy(false); }
   }
 
@@ -152,6 +167,23 @@ export default function PickupDetail({ route, navigation }) {
             <Text style={styles.doneText}>This pickup is complete. Thank you.</Text>
           </View>
         ) : null}
+
+        {/* Secondary action: release a claim. Only shown when the
+            volunteer is currently the owner and hasn't started yet. */}
+        {pickup.status === 'claimed' && pickup.claimed_by === user?.id ? (
+          <AnimatedPressable onPress={handleCancelClaim} style={styles.releaseBtn} scaleTo={0.98}>
+            <Text style={styles.releaseText}>Can’t make it? Release this pickup</Text>
+          </AnimatedPressable>
+        ) : null}
+
+        {pickup.status === 'cancelled' ? (
+          <View style={[styles.section, styles.cancelCard]}>
+            <Icon name="alert" size={22} color={Colors.pink} />
+            <Text style={styles.cancelText}>
+              This pickup was cancelled{pickup.cancel_reason ? `: ${pickup.cancel_reason}` : ''}.
+            </Text>
+          </View>
+        ) : null}
       </ResponsiveContainer>
     </ScrollView>
   );
@@ -174,4 +206,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.greenLight, borderRadius: Radius.lg,
   },
   doneText: { fontSize: 14, fontWeight: '700', color: Colors.green },
+  releaseBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 8 },
+  releaseText: { fontSize: 13, fontWeight: '600', color: Colors.pink },
+  cancelCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 16, marginTop: 18,
+    backgroundColor: '#FFE5EE', borderRadius: Radius.lg,
+  },
+  cancelText: { fontSize: 14, fontWeight: '600', color: '#7A1838', flex: 1 },
 });
