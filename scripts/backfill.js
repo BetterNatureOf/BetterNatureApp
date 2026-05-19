@@ -9,28 +9,49 @@
  *      no `phone_normalized`. Required for the duplicate-phone check to
  *      match historical signups.
  *
- * How to run:
- *   1. Install firebase-admin (one-time):       npm i -D firebase-admin
- *   2. Get a service account key from
- *        Firebase Console → Project Settings → Service accounts
- *        → "Generate new private key"
- *      Save it as serviceAccount.json in this folder (gitignored).
- *   3. node scripts/backfill.js
+ * Two ways to authenticate, pick whichever your org allows:
  *
- * Safe to re-run: every step is idempotent.
+ *   A) Application Default Credentials (recommended — no key file needed,
+ *      works even when the org blocks service account key creation):
+ *        brew install --cask google-cloud-sdk   # one-time
+ *        gcloud auth application-default login
+ *        gcloud config set project better-nature-app
+ *        node scripts/backfill.js
+ *
+ *   B) Service account key:
+ *        Firebase Console → Project Settings → Service Accounts
+ *        → Generate new private key → save as scripts/serviceAccount.json
+ *        node scripts/backfill.js
+ *
+ * Safe to re-run — every step is idempotent.
  */
 const admin = require('firebase-admin');
 const path = require('path');
+const fs = require('fs');
 
+const PROJECT_ID = 'better-nature-app';
 const KEY_PATH = path.join(__dirname, 'serviceAccount.json');
-let key;
-try { key = require(KEY_PATH); }
-catch {
-  console.error('Missing serviceAccount.json. See header comment for setup.');
-  process.exit(1);
+
+// Try a service account file first; fall back to ADC. The fall-back makes
+// this script work even when org policy disables service-account keys —
+// `gcloud auth application-default login` is enough.
+if (fs.existsSync(KEY_PATH)) {
+  const key = require(KEY_PATH);
+  admin.initializeApp({
+    credential: admin.credential.cert(key),
+    projectId: key.project_id || PROJECT_ID,
+  });
+  console.log('Auth: service-account key');
+} else {
+  // applicationDefault() reads ADC from `gcloud auth application-default
+  // login` or the GOOGLE_APPLICATION_CREDENTIALS env var.
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+    projectId: PROJECT_ID,
+  });
+  console.log('Auth: Application Default Credentials');
 }
 
-admin.initializeApp({ credential: admin.credential.cert(key) });
 const db = admin.firestore();
 
 function normalizePhone(raw) {
@@ -40,7 +61,7 @@ function normalizePhone(raw) {
 }
 
 async function backfillVolunteerCounter() {
-  console.log('— Volunteer counter —');
+  console.log('\n— Volunteer counter —');
   const snap = await db.collection('users').where('role', '==', 'member').get();
   const count = snap.size;
   console.log(`  members in users: ${count}`);
@@ -52,10 +73,10 @@ async function backfillVolunteerCounter() {
 }
 
 async function backfillNormalizedPhones() {
-  console.log('— phone_normalized backfill —');
+  console.log('\n— phone_normalized backfill —');
   const snap = await db.collection('users').get();
   let updated = 0, skipped = 0;
-  const batch = db.batch();
+  let batch = db.batch();
   let inBatch = 0;
   for (const doc of snap.docs) {
     const d = doc.data();
@@ -65,7 +86,7 @@ async function backfillNormalizedPhones() {
     if (!normalized || d.phone_normalized === normalized) { skipped++; continue; }
     batch.update(doc.ref, { phone_normalized: normalized });
     updated++; inBatch++;
-    if (inBatch >= 400) { await batch.commit(); inBatch = 0; }
+    if (inBatch >= 400) { await batch.commit(); batch = db.batch(); inBatch = 0; }
   }
   if (inBatch > 0) await batch.commit();
   console.log(`  updated: ${updated},  skipped: ${skipped}  ✓`);
@@ -78,7 +99,12 @@ async function backfillNormalizedPhones() {
     console.log('\nDone.');
     process.exit(0);
   } catch (e) {
-    console.error('Backfill failed:', e);
+    console.error('\nBackfill failed:', e?.message || e);
+    if (e?.code === 7 || /PERMISSION_DENIED/.test(String(e))) {
+      console.error('\nThe credentials don’t have Firestore access. If you used ADC,');
+      console.error('make sure you ran: gcloud auth application-default login');
+      console.error('and that your account has the Firebase Admin / Firestore role.');
+    }
     process.exit(1);
   }
 })();
