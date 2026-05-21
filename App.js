@@ -119,17 +119,20 @@ export default function App() {
     loadFonts();
   }, []);
 
-  if (!fontsLoaded || isLoading) {
-    return <LoadingScreen />;
-  }
-  // Register for push notifications whenever an authed user lands. The
-  // service no-ops on web and gracefully exits if Expo's push module
-  // isn't installed yet, so this is safe to call unconditionally.
-  React.useEffect(() => {
+  // Register for push notifications whenever an authed user lands. MUST
+  // sit above any early returns — Rules of Hooks require the same
+  // sequence of useEffect calls on every render, and the LoadingScreen
+  // bail-out below would otherwise change the hook count and crash the
+  // tree to a blank screen on the first authenticated render.
+  useEffect(() => {
     if (isAuthenticated && user?.id) {
       registerForPushNotifications(user.id).catch(() => {});
     }
   }, [isAuthenticated, user?.id]);
+
+  if (!fontsLoaded || isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
     <ErrorBoundary>
