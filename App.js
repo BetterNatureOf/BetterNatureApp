@@ -27,16 +27,15 @@ if (TextInput.defaultProps == null) TextInput.defaultProps = {};
 TextInput.defaultProps.allowFontScaling = false;
 TextInput.defaultProps.maxFontSizeMultiplier = 1.2;
 
-// On web, react-native-web emits inline font-family on every <Text> that
-// overrides the html-level default. Stamp Inter as the baseline so any
-// component that hasn't opted into Type.* still reads in the right
-// family.
-if (Platform.OS === 'web') {
-  const interStack =
-    'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-  Text.defaultProps.style = [{ fontFamily: interStack }, Text.defaultProps.style].filter(Boolean);
-  TextInput.defaultProps.style = [{ fontFamily: interStack }, TextInput.defaultProps.style].filter(Boolean);
-}
+// (Removed) Previously we tried to inject a default fontFamily onto
+// Text.defaultProps.style on web. Doing so somehow collided with the
+// browser's global DOM Text constructor inside react-native-web's
+// minified render path and crashed the whole tree with
+//   "Failed to construct 'Text': Please use the 'new' operator…"
+//
+// The per-Type fontFamily entries in typography.js plus the body-level
+// CSS we inject from webFonts.js are sufficient to land Inter
+// everywhere it matters.
 
 // Responsive font scaling — monkey-patch Text.render so every <Text> in the
 // app automatically has its fontSize run through fp() based on device width.
