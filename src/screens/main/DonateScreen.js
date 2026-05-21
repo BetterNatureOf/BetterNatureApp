@@ -5,6 +5,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Toggle from '../../components/ui/Toggle';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { openDonationForm } from '../../services/zeffy';
 import { payWithApplePay, payWithCard, isApplePayAvailable } from '../../services/payments';
 import { recordDonation } from '../../services/database';
@@ -66,6 +67,7 @@ export default function DonateScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+     <ResponsiveContainer maxWidth={720}>
       <BrushText variant="screenTitle" style={styles.title}>
         Make a Donation
       </BrushText>
@@ -199,6 +201,7 @@ export default function DonateScreen() {
       <Text style={styles.powered}>
         Secured by Apple Pay {'\u00B7'} Tax-deductible receipt sent to your email
       </Text>
+     </ResponsiveContainer>
     </ScrollView>
   );
 }

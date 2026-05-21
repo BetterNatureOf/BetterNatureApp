@@ -5,6 +5,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import StatCard from '../../components/ui/StatCard';
 import BrushDivider from '../../components/ui/BrushDivider';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
 import { LeaderboardBody } from './LeaderboardScreen';
 import { getOrgStats } from '../../services/orgStats';
@@ -21,6 +22,7 @@ export default function ImpactScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+     <ResponsiveContainer maxWidth={1100}>
       <BrushText variant="screenTitle" style={styles.title}>
         Your Impact
       </BrushText>
@@ -128,6 +130,7 @@ export default function ImpactScreen() {
         by meals, hours, events, or dollars raised.
       </Text>
       <LeaderboardBody embedded />
+     </ResponsiveContainer>
     </ScrollView>
   );
 }

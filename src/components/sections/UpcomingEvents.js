@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Spacing, Radius, Shadows } from '../../config/theme';
 import BrushText from '../ui/BrushText';
 import EventCard from '../ui/EventCard';
+import Icon from '../ui/Icon';
 
 export default function UpcomingEvents({ events = [], onEventPress }) {
   if (!events.length) {
@@ -13,10 +14,10 @@ export default function UpcomingEvents({ events = [], onEventPress }) {
         </BrushText>
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
-            <Text style={styles.emptyIcon}>{'\u{1F331}'}</Text>
+            <Icon name="calendar" size={22} color={Colors.green} strokeWidth={2} />
           </View>
-          <Text style={styles.emptyText}>No upcoming events right now</Text>
-          <Text style={styles.emptySubtext}>Check back soon!</Text>
+          <Text style={styles.emptyText}>No upcoming events</Text>
+          <Text style={styles.emptySubtext}>Your chapter president will post events here once they’re scheduled.</Text>
         </View>
       </View>
     );

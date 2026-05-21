@@ -3,17 +3,36 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../ui/BrushText';
+import Icon from '../ui/Icon';
 
 /**
  * MyPickups — shows the volunteer's active/claimed pickups on their dashboard.
- * Only renders if there are pickups assigned to them.
+ *
+ * Renders an explicit empty state if there's nothing to act on — a brand-new
+ * member who lands on the home screen should never see a blank gap; they
+ * should see a useful hint about what to do next.
  */
 export default function MyPickups({ pickups = [], userId, onPickupPress, onClaimPress }) {
   // Show pickups the user has claimed, OR available ones they can grab
   const myPickups = pickups.filter((p) => p.claimed_by === userId && p.status === 'claimed');
   const available = pickups.filter((p) => p.status === 'available');
 
-  if (myPickups.length === 0 && available.length === 0) return null;
+  if (myPickups.length === 0 && available.length === 0) {
+    return (
+      <View style={styles.container}>
+        <BrushText variant="sectionHeader" style={styles.header}>Pickups</BrushText>
+        <View style={styles.emptyCard}>
+          <View style={styles.emptyIconWrap}>
+            <Icon name="clipboard" size={22} color={Colors.green} strokeWidth={2} />
+          </View>
+          <Text style={styles.emptyTitle}>No pickups available right now</Text>
+          <Text style={styles.emptyBody}>
+            When a partner restaurant posts surplus food in your chapter, it shows up here. We notify you the moment a new pickup goes live.
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -138,6 +157,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginTop: 24,
   },
+  emptyCard: {
+    backgroundColor: Colors.white,
+    borderRadius: Radius.xl,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    ...Shadows.soft,
+  },
+  emptyIconWrap: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 12,
+  },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: Colors.dark, marginBottom: 4 },
+  emptyBody: { ...Type.caption, lineHeight: 19 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',

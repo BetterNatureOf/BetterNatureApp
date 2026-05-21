@@ -53,6 +53,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
-    "babel-preset-expo": "~54.0.10"
+    "babel-preset-expo": "~54.0.10",
+    "firebase-admin": "^13.10.0"
   }
 }
