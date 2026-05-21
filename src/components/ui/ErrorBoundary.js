@@ -40,10 +40,20 @@ export default class ErrorBoundary extends React.Component {
             time that gets you back in. If it keeps happening, email us at
             support@betternatureofficial.org and we’ll fix it fast.
           </Text>
-          {__DEV__ && this.state.error?.message ? (
+          {/* Always show the error message for now — we're still
+              stabilizing the launch. Once the app is stable, gate this
+              behind __DEV__ again so end-users don't see stack traces. */}
+          {this.state.error?.message ? (
             <View style={styles.devBlock}>
-              <Text style={styles.devLabel}>Dev detail (not shown in prod):</Text>
-              <Text style={styles.devText}>{String(this.state.error.message)}</Text>
+              <Text style={styles.devLabel}>Technical detail (helpful when reporting):</Text>
+              <Text style={styles.devText} selectable>
+                {String(this.state.error.message)}
+              </Text>
+              {this.state.error?.stack ? (
+                <Text style={[styles.devText, { marginTop: 8, opacity: 0.7 }]} selectable>
+                  {String(this.state.error.stack).split('\n').slice(0, 5).join('\n')}
+                </Text>
+              ) : null}
             </View>
           ) : null}
           <Text style={styles.button} onPress={this.reset}>Reload the app</Text>
