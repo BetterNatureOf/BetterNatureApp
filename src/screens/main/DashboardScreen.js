@@ -13,7 +13,7 @@
 // whole laptop screen. Padding scales with breakpoint instead of layout
 // width so the content breathes without feeling like a stretched phone.
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View, Text } from 'react-native';
 import { Colors, Type } from '../../config/theme';
 import useAuthStore from '../../store/authStore';
 import useNotifStore from '../../store/notifStore';
