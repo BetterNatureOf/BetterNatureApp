@@ -16,6 +16,7 @@ import useAuthStore from '../../store/authStore';
 import { createPickup } from '../../services/database';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
 import { requireVerifiedId } from '../../services/idGate';
+import { notify, notifyThen } from '../../services/ui';
 import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
@@ -75,7 +76,22 @@ export default function ScheduleDonation({ navigation }) {
   async function handlePost() {
     if (!requireVerifiedId(user, navigation)) return;
     if (!photoUri) {
-      Alert.alert('Need a photo', 'A quick photo helps volunteers know what to expect.');
+      notify('Need a photo', 'A quick photo helps volunteers know what to expect.');
+      return;
+    }
+    // Hard-gate posting on a complete profile so we never push a pickup
+    // to the volunteer feed without an address attached.
+    const hasAddress = !!(user?.address && (user?.business_name || user?.name));
+    if (!user?.restaurant_complete && !hasAddress) {
+      notifyThen(
+        'Finish your profile first',
+        'Add your business name and address so the volunteer knows where to come.',
+        () => navigation.navigate('RestaurantOnboarding'),
+      );
+      return;
+    }
+    if (scheduledFor && scheduledFor.getTime() < Date.now() - 60000) {
+      notify('Pick a future time', 'The scheduled date you chose has already passed.');
       return;
     }
     setPosting(true);
@@ -91,7 +107,7 @@ export default function ScheduleDonation({ navigation }) {
         : w.hours;
       await createPickup({
         restaurant_id: restaurantId,
-        restaurant_name: user?.name || user?.business_name || 'Restaurant',
+        restaurant_name: user?.business_name || user?.name || 'Restaurant',
         chapter_id: user?.chapter_id || null,
         chapter_name: user?.chapter_name || '',
         photo_url: photoUrl || null,
@@ -104,13 +120,14 @@ export default function ScheduleDonation({ navigation }) {
         fridge_name: fridgeName || '',
         notes: notes.trim(),
       });
-      Alert.alert(
+      notifyThen(
         'Posted!',
-        `Volunteers in your area have been notified. ~${Math.round(weight * 1.2)} meals worth — pickup window ${w.label.toLowerCase()}.`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }],
+        `Volunteers nearby just got notified. ~${Math.round(weight * 1.2)} meals worth — pickup window ${w.label.toLowerCase()}.`,
+        () => navigation.goBack(),
       );
     } catch (e) {
-      Alert.alert('Could not post', e.message || 'Try again.');
+      console.error('createPickup failed:', e);
+      notify('Could not post', e?.message || 'Try again.');
     } finally {
       setPosting(false);
     }

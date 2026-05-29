@@ -434,6 +434,35 @@ export async function fetchPickups(chapterId) {
   return snapToList(snap);
 }
 
+// Pickups posted by a specific restaurant, newest first. Used by the
+// restaurant dashboard so partners see real-time status of their own
+// donations (available → claimed → enroute → completed) without having
+// to dig into a separate history screen.
+export async function fetchPickupsByRestaurant(restaurantId, max = 8) {
+  if (!restaurantId) return [];
+  if (useMock()) {
+    return mockPickups.filter((p) => p.restaurant_id === restaurantId).slice(0, max);
+  }
+  try {
+    // We index by restaurant_id alone (without orderBy) so this query
+    // works even without a composite index — sort client-side.
+    const snap = await getDocs(query(
+      collection(db, 'pickups'),
+      where('restaurant_id', '==', restaurantId),
+    ));
+    const list = snapToList(snap);
+    list.sort((a, b) => {
+      const tA = a.created_at?.toMillis?.() || new Date(a.created_at || 0).getTime();
+      const tB = b.created_at?.toMillis?.() || new Date(b.created_at || 0).getTime();
+      return tB - tA;
+    });
+    return list.slice(0, max);
+  } catch (e) {
+    console.warn('fetchPickupsByRestaurant failed', e);
+    return [];
+  }
+}
+
 export async function claimPickup(pickupId, userId) {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
