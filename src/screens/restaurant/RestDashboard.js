@@ -12,7 +12,7 @@
 //   4. Every dialog uses the cross-platform notify/confirm helpers so
 //      onPress callbacks fire on web too.
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import StatCard from '../../components/ui/StatCard';
@@ -55,7 +55,7 @@ function prettyTime(p) {
 export default function RestDashboard({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.signOut);
-  const { isWide } = useBreakpoint();
+  const { isWide, isPhone } = useBreakpoint();
   const [history, setHistory] = useState([]);
   const [pickups, setPickups] = useState([]);
   const [meals, setMeals] = useState(0);
@@ -171,7 +171,8 @@ export default function RestDashboard({ navigation }) {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}
+      showsVerticalScrollIndicator
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.green} />}
     >
       <ResponsiveContainer maxWidth={1100}>
@@ -315,8 +316,21 @@ export default function RestDashboard({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  // On web, react-native-web's ScrollView only scrolls when its outer
+  // element has a constrained height. `flex: 1` works inside another
+  // flex layout but the RestaurantNavigator stack screen renders us
+  // inside a plain div, so `flex: 1` collapses to `auto` and there's
+  // nothing to scroll. Pin the height to the viewport on web so
+  // scroll-wheel + trackpad actually engage.
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
+  // Phone padding — leaner so the green CTA + the recent-posts list
+  // both fit without horizontal squeeze.
+  contentPhone: { padding: 16, paddingTop: 48, paddingBottom: 80 },
   header: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 18 },
   eyebrow: { fontSize: 12, color: Colors.sage, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   title: { color: Colors.green, marginTop: 4 },
@@ -341,8 +355,11 @@ const styles = StyleSheet.create({
   bannerTitle: { fontWeight: '700', color: '#7A5400', fontSize: 14 },
   bannerBody: { ...Type.caption, color: '#7A5400', marginTop: 2 },
 
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  stat: { flex: 1 },
+  // Phone narrowness collapses the 3-up StatCard row — labels truncate
+  // to "Mea…". Allow wrap and let each card claim ~30% so they line up
+  // nicely without overflow.
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  stat: { flex: 1, minWidth: 100 },
 
   primaryCta: {
     flexDirection: 'row', alignItems: 'center', gap: 14,

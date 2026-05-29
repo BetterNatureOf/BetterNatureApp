@@ -84,6 +84,12 @@ function normalizePhone(raw) {
     lat: SPEC.lat,
     lng: SPEC.lng,
     profile_complete: true,
+    // Mark the restaurant onboarding as complete + skip the ID gate.
+    // Restaurants are exempt from the ID upload anyway (services/idGate.js
+    // returns true for role=restaurant), but we stamp these so the
+    // dashboard banner and any other "complete?" checks pass cleanly.
+    restaurant_complete: true,
+    id_document_url: 'test-skip',
     referral_code: 'BNTEST01',
     referrals_count: 0,
     referred_by: null,
