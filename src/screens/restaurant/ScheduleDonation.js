@@ -167,8 +167,25 @@ export default function ScheduleDonation({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* Weight chips */}
+        {/* Weight — quick chips + free-form input. Chips snap to common
+            values; the input lets a kitchen with a real scale type the
+            exact number. Either one keeps the meal/CO₂ preview live. */}
         <Text style={styles.sectionLabel}>About how many pounds?</Text>
+        <View style={styles.weightRow}>
+          <Input
+            value={String(weight || '')}
+            onChangeText={(v) => {
+              // Allow blank while typing, otherwise clamp to a number.
+              const cleaned = v.replace(/[^\d.]/g, '');
+              const n = cleaned === '' ? 0 : parseFloat(cleaned);
+              if (!isNaN(n)) setWeight(n);
+            }}
+            keyboardType="decimal-pad"
+            placeholder="20"
+            style={styles.weightInput}
+          />
+          <Text style={styles.weightUnit}>lb</Text>
+        </View>
         <View style={styles.chipsRow}>
           {WEIGHT_CHIPS.map(w => (
             <TouchableOpacity
@@ -177,7 +194,7 @@ export default function ScheduleDonation({ navigation }) {
               onPress={() => setWeight(w)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.chipText, weight === w && styles.chipTextOn]}>{w} lb</Text>
+              <Text style={[styles.chipText, weight === w && styles.chipTextOn]}>{w}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -292,6 +309,9 @@ const styles = StyleSheet.create({
     marginTop: 22, marginBottom: 10, letterSpacing: 0.2,
   },
   optional: { fontWeight: '500', color: Colors.gray },
+  weightRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  weightInput: { flex: 1, fontSize: 22, fontWeight: '700' },
+  weightUnit: { fontSize: 18, fontWeight: '700', color: Colors.gray },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chipsCol: { gap: 8 },
   chip: {

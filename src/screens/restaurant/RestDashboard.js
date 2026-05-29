@@ -20,9 +20,9 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
-import { payWithApplePay, isApplePayAvailable } from '../../services/payments';
+import { openDonationForm } from '../../services/zeffy';
 import {
-  recordDonation, fetchDonationHistory, fetchPickupsByRestaurant,
+  fetchDonationHistory, fetchPickupsByRestaurant,
 } from '../../services/database';
 import { requireVerifiedId } from '../../services/idGate';
 import { notify, notifyThen, confirm } from '../../services/ui';
@@ -97,24 +97,10 @@ export default function RestDashboard({ navigation }) {
     clearAuth();
   }
 
-  async function handleSponsorDonation() {
-    if (!isApplePayAvailable) {
-      notify('Apple Pay unavailable', 'Apple Pay is only supported in the iOS app.');
-      return;
-    }
-    const result = await payWithApplePay({ amount: 50, label: 'Restaurant Sponsorship' });
-    if (result.ok) {
-      await recordDonation({
-        user_id: user?.id,
-        amount: 50,
-        recurring: false,
-        method: 'apple_pay',
-        source: 'restaurant_sponsorship',
-        status: 'succeeded',
-        created_at: new Date().toISOString(),
-      });
-      notify('Thank you!', 'Your $50 sponsorship has been processed.');
-    }
+  function handleSponsorDonation() {
+    // Sponsorship → Zeffy. Pre-fills $50 but the donor can adjust on the
+    // Zeffy form. 0% platform fee, so the full amount lands at BetterNature.
+    openDonationForm({ amount: 50 });
   }
 
   function goPost() {
@@ -274,19 +260,18 @@ export default function RestDashboard({ navigation }) {
           </View>
         )}
 
-        {/* Sponsorship — wrapped in safe handlers now */}
-        <AnimatedPressable
-          style={styles.applePayCard}
-          onPress={handleSponsorDonation}
-        >
-          <View style={styles.applePayLeft}>
-            <Text style={styles.applePayGlyph}>Pay</Text>
-            <View>
-              <Text style={styles.applePayTitle}>Sponsor with Apple Pay</Text>
-              <Text style={styles.applePayDesc}>Contribute $50 to your local chapter</Text>
-            </View>
+        {/* Sponsor donation via Zeffy — 0% platform fee, the full
+            amount funds your local chapter. Opens the form in the
+            browser; donor controls the final amount + frequency. */}
+        <AnimatedPressable style={styles.zeffyCard} onPress={handleSponsorDonation}>
+          <View style={styles.zeffyIcon}>
+            <Icon name="heart" size={24} color={Colors.cream} strokeWidth={2.25} />
           </View>
-          <Text style={styles.applePayArrow}>›</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.zeffyTitle}>Sponsor your chapter</Text>
+            <Text style={styles.zeffyDesc}>Donate via Zeffy — 0% fees, 100% of your gift goes to us</Text>
+          </View>
+          <Icon name="external" size={20} color={Colors.cream} />
         </AnimatedPressable>
 
         {/* Secondary tools grid */}
@@ -409,21 +394,21 @@ const styles = StyleSheet.create({
   pickupSummary: { fontSize: 14, fontWeight: '600', color: Colors.dark },
   pickupMeta: { ...Type.caption, marginTop: 2 },
 
-  applePayCard: {
-    backgroundColor: '#000',
+  zeffyCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: Colors.pink,
     borderRadius: Radius.lg,
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    padding: 16,
     marginBottom: 28,
     ...Shadows.card,
   },
-  applePayLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  applePayGlyph: { fontSize: 22, fontWeight: '700', color: '#fff', fontStyle: 'italic', marginRight: 16, letterSpacing: -0.5 },
-  applePayTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  applePayDesc: { color: '#C8DDD4', fontSize: 13, marginTop: 2 },
-  applePayArrow: { color: '#fff', fontSize: 26 },
+  zeffyIcon: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  zeffyTitle: { color: Colors.cream, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  zeffyDesc: { color: 'rgba(247,244,240,0.9)', fontSize: 13, marginTop: 2 },
 
   toolGrid: { flexDirection: 'column', gap: 12 },
   toolGridWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
