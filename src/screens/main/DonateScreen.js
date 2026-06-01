@@ -1,15 +1,24 @@
+// Donate.
+//
+// The donation form is now Zeffy's own iframe (embedded inline on web,
+// external on native). That hands card / ACH / Apple Pay handling to
+// Zeffy — we don't need a separate "Credit / Debit Card" button or our
+// own PSP integration for ordinary card donations.
+//
+// We still show a Stripe-driven Apple Pay / Google Pay row at the top
+// (via <DonationCTA />) when Stripe is configured, because those one-tap
+// flows are dramatically faster than Zeffy's form for repeat donors.
+// Until Stripe is configured, DonationCTA collapses to the Zeffy CTA
+// and the embed below is the entire path.
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
-import Button from '../../components/ui/Button';
 import Toggle from '../../components/ui/Toggle';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import { openDonationForm } from '../../services/zeffy';
-import { payWithApplePay, payWithCard, isApplePayAvailable } from '../../services/payments';
-import { recordDonation } from '../../services/database';
-import useAuthStore from '../../store/authStore';
+import DonationCTA from '../../components/donate/DonationCTA';
+import ZeffyEmbed from '../../components/donate/ZeffyEmbed';
 
 const AMOUNTS = [5, 15, 25, 50];
 
@@ -18,8 +27,6 @@ export default function DonateScreen() {
   const [customAmount, setCustomAmount] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [isCustom, setIsCustom] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const user = useAuthStore((s) => s.user);
 
   function getAmount() {
     if (isCustom) {
@@ -29,194 +36,124 @@ export default function DonateScreen() {
     return selectedAmount;
   }
 
-  async function handlePay(method) {
-    const amount = getAmount();
-    if (!amount) {
-      Alert.alert('Pick an amount', 'Enter a donation amount to continue.');
-      return;
-    }
-    setPaying(true);
-    try {
-      const fn = method === 'apple' ? payWithApplePay : payWithCard;
-      const result = await fn({
-        amount,
-        label: 'BetterNature Donation',
-        recurring: isRecurring,
-      });
-      if (result.ok) {
-        await recordDonation({
-          user_id: user?.id,
-          amount,
-          recurring: isRecurring,
-          method: method === 'apple' ? 'apple_pay' : 'card',
-          status: 'succeeded',
-          created_at: new Date().toISOString(),
-        });
-        Alert.alert('Thank you!', `Your $${amount}${isRecurring ? '/month' : ''} donation supports food rescue, conservation, and clean water programs.`);
-      }
-    } catch (e) {
-      Alert.alert('Payment failed', e.message || 'Please try again');
-    } finally {
-      setPaying(false);
-    }
-  }
-
-  function handleZeffyFallback() {
-    openDonationForm({ amount: getAmount(), recurring: isRecurring });
-  }
+  const amount = getAmount();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-     <ResponsiveContainer maxWidth={720}>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Make a Donation
-      </BrushText>
-      <Text style={styles.subtitle}>
-        100% of your donation goes to BetterNature programs. Tax-deductible.
-      </Text>
+      <ResponsiveContainer maxWidth={720}>
+        <BrushText variant="screenTitle" style={styles.title}>
+          Make a donation
+        </BrushText>
+        <Text style={styles.subtitle}>
+          100% of your gift goes to BetterNature programs. Tax-deductible.
+        </Text>
 
-      {/* Amount Selection */}
-      <View style={styles.amountsRow}>
-        {AMOUNTS.map((amt) => {
-          const active = selectedAmount === amt && !isCustom;
-          return (
-            <TouchableOpacity
-              key={amt}
-              onPress={() => {
-                setSelectedAmount(amt);
-                setIsCustom(false);
-              }}
-              style={[styles.amountBtn, active && styles.amountSelected]}
-            >
-              {active ? (
-                <LinearGradient
-                  colors={Colors.gradient.green}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.amountGradient}
-                >
-                  <Text style={styles.amountTextSelected}>${amt}</Text>
-                </LinearGradient>
-              ) : (
-                <Text style={styles.amountText}>${amt}</Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-        <TouchableOpacity
-          onPress={() => setIsCustom(true)}
-          style={[styles.amountBtn, isCustom && styles.amountSelected]}
-        >
-          {isCustom ? (
-            <LinearGradient
-              colors={Colors.gradient.green}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.amountGradient}
-            >
-              <Text style={styles.amountTextSelected}>Custom</Text>
-            </LinearGradient>
-          ) : (
-            <Text style={styles.amountText}>Custom</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {isCustom && (
-        <View style={styles.customInput}>
-          <Text style={styles.dollar}>$</Text>
-          <TextInput
-            value={customAmount}
-            onChangeText={setCustomAmount}
-            keyboardType="number-pad"
-            placeholder="0"
-            placeholderTextColor={Colors.grayMid}
-            style={styles.customField}
-          />
+        {/* Quick-pick amount chips */}
+        <View style={styles.amountsRow}>
+          {AMOUNTS.map((amt) => {
+            const active = selectedAmount === amt && !isCustom;
+            return (
+              <TouchableOpacity
+                key={amt}
+                onPress={() => { setSelectedAmount(amt); setIsCustom(false); }}
+                style={[styles.amountBtn, active && styles.amountSelected]}
+              >
+                {active ? (
+                  <LinearGradient
+                    colors={Colors.gradient.green}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={styles.amountGradient}
+                  >
+                    <Text style={styles.amountTextSelected}>${amt}</Text>
+                  </LinearGradient>
+                ) : (
+                  <Text style={styles.amountText}>${amt}</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity
+            onPress={() => setIsCustom(true)}
+            style={[styles.amountBtn, isCustom && styles.amountSelected]}
+          >
+            {isCustom ? (
+              <LinearGradient
+                colors={Colors.gradient.green}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={styles.amountGradient}
+              >
+                <Text style={styles.amountTextSelected}>Custom</Text>
+              </LinearGradient>
+            ) : (
+              <Text style={styles.amountText}>Custom</Text>
+            )}
+          </TouchableOpacity>
         </View>
-      )}
 
-      {/* Monthly Toggle */}
-      <View style={styles.recurringRow}>
-        <View>
-          <Text style={styles.recurringLabel}>Monthly Donation</Text>
-          <Text style={styles.recurringDesc}>
-            Set up a recurring gift to sustain our mission
-          </Text>
+        {isCustom && (
+          <View style={styles.customInput}>
+            <Text style={styles.dollar}>$</Text>
+            <TextInput
+              value={customAmount}
+              onChangeText={setCustomAmount}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={Colors.grayMid}
+              style={styles.customField}
+            />
+          </View>
+        )}
+
+        {/* Monthly toggle */}
+        <View style={styles.recurringRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.recurringLabel}>Monthly donation</Text>
+            <Text style={styles.recurringDesc}>
+              Set up a recurring gift so the work doesn’t stop between paychecks.
+            </Text>
+          </View>
+          <Toggle value={isRecurring} onToggle={() => setIsRecurring(!isRecurring)} />
         </View>
-        <Toggle value={isRecurring} onToggle={() => setIsRecurring(!isRecurring)} />
-      </View>
 
-      {/* Payment Methods */}
-      <BrushText variant="sectionHeader" style={styles.sectionTitle}>
-        Payment Methods
-      </BrushText>
+        {/* One-tap PSP row (Apple Pay / Google Pay) — only renders when
+            Stripe is configured AND the device supports the brand.
+            Falls back internally to a Zeffy link if no PSP is available. */}
+        <DonationCTA
+          amount={amount}
+          label={`Donate $${amount || '—'}${isRecurring ? '/mo' : ''}`}
+          description={`Secured, tax-deductible, receipt by email`}
+          showZeffy={false}
+        />
 
-      {isApplePayAvailable && (
-        <TouchableOpacity
-          style={[styles.paymentOption, styles.applePayBtn]}
-          onPress={() => handlePay('apple')}
-          disabled={paying}
-        >
-          <Text style={styles.paymentEmoji}>{'\uF8FF'}</Text>
-          <Text style={styles.applePayText}>Pay</Text>
-        </TouchableOpacity>
-      )}
+        {/* Inline Zeffy form — handles card, ACH, every donation method
+            Zeffy supports. No separate "Credit / Debit" button needed. */}
+        <BrushText variant="sectionHeader" style={styles.sectionTitle}>
+          Donate by card or bank
+        </BrushText>
+        <Text style={styles.embedHint}>
+          Zeffy is the only truly 0% donation platform — we receive every cent.
+        </Text>
+        <ZeffyEmbed amount={amount} recurring={isRecurring} height={Platform.OS === 'web' ? 920 : 0} />
 
-      <TouchableOpacity
-        style={styles.paymentOption}
-        onPress={() => handlePay('card')}
-        disabled={paying}
-      >
-        <View style={[styles.paymentIconWrap, { backgroundColor: Colors.greenLight }]}>
-          <Text style={styles.paymentEmoji}>{'\u{1F4B3}'}</Text>
-        </View>
-        <Text style={styles.paymentText}>Credit / Debit Card</Text>
-        <Text style={styles.arrow}>{'\u203A'}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.paymentOption}
-        onPress={handleZeffyFallback}
-        disabled={paying}
-      >
-        <View style={[styles.paymentIconWrap, { backgroundColor: Colors.skyLight }]}>
-          <Text style={styles.paymentEmoji}>{'\u{1F310}'}</Text>
-        </View>
-        <Text style={styles.paymentText}>Donate via Zeffy (web)</Text>
-        <Text style={styles.arrow}>{'\u203A'}</Text>
-      </TouchableOpacity>
-
-      <Button
-        title={
-          paying
-            ? 'Processing\u2026'
-            : `Donate $${getAmount() || (isCustom ? '...' : selectedAmount)}${isRecurring ? '/month' : ''}`
-        }
-        onPress={() => handlePay(isApplePayAvailable ? 'apple' : 'card')}
-        loading={paying}
-        style={styles.donateBtn}
-      />
-
-      <Text style={styles.powered}>
-        Secured by Apple Pay {'\u00B7'} Tax-deductible receipt sent to your email
-      </Text>
-     </ResponsiveContainer>
+        <Text style={styles.powered}>
+          Powered by Zeffy · Tax-deductible receipt emailed automatically
+        </Text>
+      </ResponsiveContainer>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
+  content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 28 },
-  amountsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
-  },
+
+  amountsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   amountBtn: {
     borderRadius: Radius.md,
     backgroundColor: Colors.white,
@@ -225,29 +162,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...Shadows.soft,
   },
-  amountSelected: {
-    borderColor: Colors.green,
-    borderWidth: 0,
-  },
-  amountGradient: {
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-  },
-  amountText: {
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.dark,
-  },
-  amountTextSelected: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.white,
-  },
+  amountSelected: { borderColor: Colors.green, borderWidth: 0 },
+  amountGradient: { paddingHorizontal: 22, paddingVertical: 14 },
+  amountText: { paddingHorizontal: 22, paddingVertical: 14, fontSize: 16, fontWeight: '700', color: Colors.dark },
+  amountTextSelected: { fontSize: 16, fontWeight: '700', color: Colors.white },
+
   customInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.white,
     borderRadius: Radius.md,
     padding: 14,
@@ -257,50 +178,21 @@ const styles = StyleSheet.create({
   },
   dollar: { fontSize: 20, fontWeight: '700', color: Colors.dark, marginRight: 8 },
   customField: { flex: 1, fontSize: 18, fontWeight: '600', color: Colors.dark, paddingVertical: 0 },
+
   recurringRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: 18,
-    marginBottom: 28,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: Colors.glassBorder,
     ...Shadows.card,
   },
-  recurringLabel: { fontSize: 15, fontWeight: '600', color: Colors.dark },
+  recurringLabel: { fontSize: 15, fontWeight: '700', color: Colors.dark },
   recurringDesc: { ...Type.caption, marginTop: 2 },
-  sectionTitle: { color: Colors.green, marginBottom: 14 },
-  paymentOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    padding: 16,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-    ...Shadows.soft,
-  },
-  paymentIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  paymentEmoji: { fontSize: 20 },
-  paymentText: { flex: 1, fontSize: 15, fontWeight: '500', color: Colors.dark },
-  arrow: { fontSize: 24, color: Colors.grayMid },
-  applePayBtn: {
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    borderColor: '#000',
-  },
-  applePayText: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  donateBtn: { marginTop: 24 },
-  powered: { ...Type.caption, textAlign: 'center', marginTop: 16 },
+
+  sectionTitle: { color: Colors.green, marginTop: 12, marginBottom: 6 },
+  embedHint: { ...Type.caption, marginBottom: 14 },
+  powered: { ...Type.caption, textAlign: 'center', marginTop: 4 },
 });

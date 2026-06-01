@@ -18,10 +18,18 @@ import { openDonationForm } from '../../services/zeffy';
 import { buildPaymentRequest, isStripeConfigured } from '../../services/stripe';
 import { notify } from '../../services/ui';
 
+// Props:
+//   amount       — dollar amount the user picked
+//   label/desc   — copy on the cards
+//   showZeffy    — set false when the caller is already rendering a
+//                  ZeffyEmbed (e.g. DonateScreen) so we don't duplicate
+//                  the row. Defaults true so quick-CTA surfaces still
+//                  always offer a path even when no PSP is configured.
 export default function DonationCTA({
   amount = 50,
   label = 'Sponsor your chapter',
   description = '0% platform fee — 100% of your gift funds the work',
+  showZeffy = true,
 }) {
   const [pspMode, setPspMode] = useState(null); // 'apple' | 'google' | null
 
@@ -91,8 +99,9 @@ export default function DonationCTA({
         </AnimatedPressable>
       ) : null}
 
-      {/* Zeffy always present — primary CTA when PSP isn't available,
-          secondary "or" option when it is. */}
+      {/* Zeffy fallback. Hidden when the parent screen already mounts
+          a <ZeffyEmbed /> below so we don't show two pink rows. */}
+      {showZeffy ? (
       <AnimatedPressable style={[styles.card, styles.zeffy]} onPress={handleZeffy} scaleTo={0.98}>
         <View style={[styles.iconBlock, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
           <Icon name="heart" size={22} color={Colors.cream} strokeWidth={2.25} />
@@ -107,6 +116,7 @@ export default function DonationCTA({
         </View>
         <Icon name="external" size={18} color={Colors.cream} />
       </AnimatedPressable>
+      ) : null}
     </View>
   );
 }
