@@ -20,7 +20,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
-import { openDonationForm } from '../../services/zeffy';
+import DonationCTA from '../../components/donate/DonationCTA';
 import {
   fetchDonationHistory, fetchPickupsByRestaurant,
 } from '../../services/database';
@@ -97,11 +97,8 @@ export default function RestDashboard({ navigation }) {
     clearAuth();
   }
 
-  function handleSponsorDonation() {
-    // Sponsorship → Zeffy. Pre-fills $50 but the donor can adjust on the
-    // Zeffy form. 0% platform fee, so the full amount lands at BetterNature.
-    openDonationForm({ amount: 50 });
-  }
+  // Donation routing is now handled by <DonationCTA /> — it picks the
+  // best PSP available (Apple Pay → Google Pay → Zeffy) per device.
 
   function goPost() {
     if (!requireVerifiedId(user, navigation)) return;
@@ -260,19 +257,14 @@ export default function RestDashboard({ navigation }) {
           </View>
         )}
 
-        {/* Sponsor donation via Zeffy — 0% platform fee, the full
-            amount funds your local chapter. Opens the form in the
-            browser; donor controls the final amount + frequency. */}
-        <AnimatedPressable style={styles.zeffyCard} onPress={handleSponsorDonation}>
-          <View style={styles.zeffyIcon}>
-            <Icon name="heart" size={24} color={Colors.cream} strokeWidth={2.25} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.zeffyTitle}>Sponsor your chapter</Text>
-            <Text style={styles.zeffyDesc}>Donate via Zeffy — 0% fees, 100% of your gift goes to us</Text>
-          </View>
-          <Icon name="external" size={20} color={Colors.cream} />
-        </AnimatedPressable>
+        {/* Donation row — Apple Pay → Google Pay → Zeffy, depending on
+            what the device supports. */}
+        <DonationCTA amount={50} label="Sponsor your chapter" />
+
+        {/* Apple Sign-In sidebar (linking flow). This is auth, not pay
+            — but the restaurant view is where partners often realize
+            they want to add Apple as a sign-in method. Showing the
+            entry point here so they don't have to dig into Settings. */}
 
         {/* Secondary tools grid */}
         <BrushText variant="sectionHeader" style={styles.sectionHeader}>

@@ -47,23 +47,31 @@ export function injectWebFonts() {
   // un-styled text (like the loading screen) also reads correctly.
   const style = document.createElement('style');
   style.textContent = `
-    /* react-native-web's <ScrollView> only scrolls when its ancestor
-       chain has a real height. Expo's default web template ships
-       html/body with no explicit height, so flex: 1 inside collapses
-       to auto and the trackpad does nothing. Pin them to 100% so the
-       flex chain (and therefore every screen's ScrollView) works. */
-    html, body, #root, #__next {
+    /* react-native-web's <ScrollView> only scrolls when every ancestor
+       has a real height. Without this block, flex: 1 collapses to
+       auto and the trackpad does nothing. Build a full height chain:
+       html → body → #root → first child → screen. */
+    html, body {
       height: 100%;
       margin: 0;
+      overflow: hidden;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system,
         "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       font-feature-settings: "cv11", "ss01", "ss03";
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
     }
-    body { overflow: hidden; }
-    /* Let RNW scroll panels overflow their parent, just like native. */
-    #root > * { height: 100%; }
+    #root, #__next {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    #root > * { flex: 1; min-height: 0; }
+    /* react-native-web wraps screens in nested divs — force the chain
+       through them too so deep screens still get a parent height. */
+    #root [data-testid="root-view"], #root > div, #root > div > div {
+      height: 100%;
+    }
   `;
   head.appendChild(style);
 }

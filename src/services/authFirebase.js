@@ -297,6 +297,38 @@ export async function signInWithGoogle({ restrictDomain } = {}) {
 // enrollment, a Services ID configured for Sign in with Apple, and the
 // Apple provider enabled in Firebase → Authentication → Sign-in method.
 // Returns the same shape as signInWithGoogle so callers don't branch.
+// Map Apple-specific failure codes to messages that tell us (or the
+// user) exactly what to do. The most common ones at launch:
+//   - operation-not-allowed     → Apple provider isn't enabled in Firebase
+//                                 Console → Authentication → Sign-in method
+//   - popup-blocked            → browser blocked the OAuth popup
+//   - popup-closed-by-user     → user dismissed the sheet
+//   - unauthorized-domain      → app.betternatureofficial.org isn't in
+//                                 Firebase auth's Authorized domains list
+function explainAppleError(err) {
+  const code = err?.code || '';
+  if (code === 'auth/operation-not-allowed') {
+    return new Error(
+      'Apple sign-in isn’t enabled yet. Admin: turn it on in Firebase Console → ' +
+      'Authentication → Sign-in method → Apple. Requires an Apple Developer ' +
+      'Services ID (Apple Developer Program, $99/yr).'
+    );
+  }
+  if (code === 'auth/popup-blocked') {
+    return new Error('Browser blocked the Apple sign-in popup. Allow popups for this site and try again.');
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return new Error('Sign-in window closed before you finished.');
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return new Error(
+      'This domain isn’t authorized for Apple sign-in. Admin: add it under Firebase Console → ' +
+      'Authentication → Settings → Authorized domains.'
+    );
+  }
+  return err;
+}
+
 export async function signInWithApple() {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   const provider = new OAuthProvider('apple.com');
@@ -304,7 +336,15 @@ export async function signInWithApple() {
   provider.addScope('name');
   let cred;
   try { cred = await signInWithPopup(auth, provider); }
-  catch (e) { throw await explainLinkingError(e); }
+  catch (e) {
+    // Cross-provider linking still wins if Firebase says the email is
+    // already on a different sign-in method; otherwise fall through to
+    // our Apple-specific explainer so the admin sees a clear next step.
+    if (e?.code === 'auth/account-exists-with-different-credential') {
+      throw await explainLinkingError(e);
+    }
+    throw explainAppleError(e);
+  }
   // Apple only sends the displayName on first sign-in. Capture it here
   // so the CompleteProfile screen can pre-split it into first/last.
   if (cred.user && !cred.user.displayName) {
