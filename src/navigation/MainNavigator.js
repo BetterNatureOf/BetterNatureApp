@@ -26,6 +26,7 @@ import AboutScreen from '../screens/other/AboutScreen';
 import SettingsScreen from '../screens/other/SettingsScreen';
 import EditProfile from '../screens/other/EditProfile';
 import ChangePassword from '../screens/other/ChangePassword';
+import ConnectedAccounts from '../screens/other/ConnectedAccounts';
 import VerifyIdScreen from '../screens/other/VerifyIdScreen';
 import PickupDetail from '../screens/projects/PickupDetail';
 
@@ -214,6 +215,7 @@ export default function MainNavigator() {
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfile} />
       <Stack.Screen name="ChangePassword" component={ChangePassword} />
+      <Stack.Screen name="ConnectedAccounts" component={ConnectedAccounts} />
       <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
       <Stack.Screen name="PickupDetail" component={PickupDetail} />
       <Stack.Screen name="ChapterChecklist" component={ChapterChecklist} />

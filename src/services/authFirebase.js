@@ -13,6 +13,8 @@ import {
   signInWithPopup,
   signInWithCredential,
   linkWithCredential,
+  linkWithPopup,
+  unlink,
   fetchSignInMethodsForEmail,
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -416,6 +418,123 @@ export async function sendResetEmail(email) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   if (!email) throw new Error('Enter your email.');
   await sendPasswordResetEmail(auth, email);
+}
+
+// ── Proactive account linking ───────────────────────────────────────
+//
+// These power the Settings → Connected accounts panel. Users can
+// connect Google to an existing email/password account (so they can
+// sign in either way) or set a password on a Google-only account.
+//
+// Distinct from the reactive flow in linkPendingCredential() above,
+// which only fires when a user tries to OAuth into an email that
+// already exists with another provider.
+
+// Returns the providerIds currently linked to the signed-in user.
+// e.g. ['password', 'google.com', 'apple.com']
+export function getLinkedProviders() {
+  if (!isFirebaseConfigured) return [];
+  const fb = auth.currentUser;
+  if (!fb) return [];
+  return (fb.providerData || []).map((p) => p.providerId);
+}
+
+// Link Google to the current user via popup. The current user keeps
+// the same uid + Firestore doc; we just add Google as an additional
+// sign-in method. Surfaces a friendly error if the Google account is
+// already attached to a different BetterNature account.
+export async function linkGoogleToCurrentUser() {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Sign in first.');
+  if ((fb.providerData || []).some((p) => p.providerId === 'google.com')) {
+    throw new Error('Google is already connected to this account.');
+  }
+  try {
+    await linkWithPopup(fb, new GoogleAuthProvider());
+  } catch (e) {
+    if (e?.code === 'auth/credential-already-in-use') {
+      throw new Error('That Google account is already used by another BetterNature user.');
+    }
+    if (e?.code === 'auth/popup-blocked') {
+      throw new Error('Browser blocked the popup. Allow popups for this site and try again.');
+    }
+    if (e?.code === 'auth/popup-closed-by-user') {
+      throw new Error('Sign-in window closed before you finished.');
+    }
+    throw e;
+  }
+}
+
+// Same for Apple — disabled until FEATURES.APPLE_SIGNIN is true and
+// the Apple provider is enabled in Firebase Console.
+export async function linkAppleToCurrentUser() {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Sign in first.');
+  if ((fb.providerData || []).some((p) => p.providerId === 'apple.com')) {
+    throw new Error('Apple is already connected to this account.');
+  }
+  const provider = new OAuthProvider('apple.com');
+  provider.addScope('email');
+  provider.addScope('name');
+  try { await linkWithPopup(fb, provider); }
+  catch (e) {
+    if (e?.code === 'auth/operation-not-allowed') {
+      throw new Error('Apple sign-in isn’t enabled yet. Ask an admin to turn it on.');
+    }
+    if (e?.code === 'auth/credential-already-in-use') {
+      throw new Error('That Apple ID is already used by another BetterNature user.');
+    }
+    throw e;
+  }
+}
+
+// Drop a provider from the current user's sign-in methods. Refuses to
+// remove the last method (you'd lock yourself out otherwise).
+export async function unlinkProvider(providerId) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Sign in first.');
+  const current = (fb.providerData || []).map((p) => p.providerId);
+  if (current.length <= 1) {
+    throw new Error('Can’t disconnect your only sign-in method.');
+  }
+  if (!current.includes(providerId)) {
+    throw new Error('That provider isn’t connected.');
+  }
+  await unlink(fb, providerId);
+}
+
+// Set a password on an account that was created via OAuth. Useful when
+// a user originally signed in with Google but wants an email/password
+// fallback. Mirrors changePassword() but for the case where there's no
+// existing password to re-auth against.
+export async function setPasswordOnCurrentUser(newPassword) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Sign in first.');
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('Password must be at least 6 characters.');
+  }
+  if ((fb.providerData || []).some((p) => p.providerId === 'password')) {
+    throw new Error('You already have a password — use Change Password instead.');
+  }
+  if (!fb.email) {
+    throw new Error('Your account doesn’t have an email on file. Contact support.');
+  }
+  // Build a password credential and link it.
+  const cred = EmailAuthProvider.credential(fb.email, newPassword);
+  try { await linkWithCredential(fb, cred); }
+  catch (e) {
+    if (e?.code === 'auth/weak-password') {
+      throw new Error('Pick a stronger password (at least 6 characters).');
+    }
+    if (e?.code === 'auth/requires-recent-login') {
+      throw new Error('For security, sign out and back in, then try again.');
+    }
+    throw e;
+  }
 }
 
 // Mirrors Supabase's onAuthStateChange contract.

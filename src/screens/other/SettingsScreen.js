@@ -92,6 +92,9 @@ export default function SettingsScreen({ navigation }) {
       <TouchableOpacity onPress={() => navigation.navigate('ChangePassword')}>
         <Text style={styles.linkItem}>Change Password</Text>
       </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate('ConnectedAccounts')}>
+        <Text style={styles.linkItem}>Connected accounts (Google, Apple, email)</Text>
+      </TouchableOpacity>
       <TouchableOpacity onPress={() => openUrl('https://betternatureofficial.org/privacy')}>
         <Text style={styles.linkItem}>Privacy Policy</Text>
       </TouchableOpacity>

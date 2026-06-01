@@ -16,5 +16,10 @@ export {
   emailAlreadyRegistered,
   signInWithGoogle,
   signInWithApple,
+  getLinkedProviders,
+  linkGoogleToCurrentUser,
+  linkAppleToCurrentUser,
+  unlinkProvider,
+  setPasswordOnCurrentUser,
   onAuthStateChange,
 } from './authFirebase';

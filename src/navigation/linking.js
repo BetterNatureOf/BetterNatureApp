@@ -37,6 +37,7 @@ const screens = {
   Settings: 'settings',
   EditProfile: 'profile/edit',
   ChangePassword: 'profile/password',
+  ConnectedAccounts: 'profile/connected-accounts',
   VerifyId: 'profile/verify',
   PickupDetail: 'pickups/:pickupId',
   ChapterChecklist: 'chapter',
