@@ -16,6 +16,7 @@ import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signIn } from '../../services/auth';
 import { signInWithGoogle, signInWithApple, linkPendingCredential } from '../../services/authFirebase';
+import { FEATURES } from '../../config/features';
 import { notify, confirm } from '../../services/ui';
 import { isFirebaseConfigured } from '../../config/firebase';
 import useAuthStore, { ROLES } from '../../store/authStore';
@@ -156,15 +157,24 @@ export default function LoginScreen({ navigation }) {
                 <Text style={styles.googleG}>G</Text>
                 <Text style={styles.googleText}>Continue with Google</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.appleBtn}
-                onPress={handleApple}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.appleLogo}></Text>
-                <Text style={styles.appleText}>Continue with Apple</Text>
-              </TouchableOpacity>
+              {/* Apple sign-in is gated on FEATURES.APPLE_SIGNIN.
+                  Until you (a) join the Apple Developer Program,
+                  (b) create a Services ID, (c) enable Apple in Firebase
+                  Console → Authentication → Sign-in method, and
+                  (d) set EXPO_PUBLIC_APPLE_SIGNIN_ENABLED=true in your
+                  Cloudflare env, the button stays hidden. Exposing a
+                  broken auth path is worse than not exposing one. */}
+              {FEATURES.APPLE_SIGNIN ? (
+                <TouchableOpacity
+                  style={styles.appleBtn}
+                  onPress={handleApple}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.appleLogo}></Text>
+                  <Text style={styles.appleText}>Continue with Apple</Text>
+                </TouchableOpacity>
+              ) : null}
             </>
           )}
 
