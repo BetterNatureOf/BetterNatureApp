@@ -8,6 +8,7 @@ import EventCard from '../../components/ui/EventCard';
 import BrushDivider from '../../components/ui/BrushDivider';
 import useEvents from '../../hooks/useEvents';
 import Icon from '../../components/ui/Icon';
+import ProjectLogo from '../../components/ui/ProjectLogo';
 
 // Habitat categories — replaced cartoon emoji with the project's Lucide
 // vocabulary (tree, leaf, droplet). Counts come from real data later;
@@ -30,10 +31,13 @@ export default function EvergreenScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
         </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>
+        <View style={{ alignItems: 'center', marginTop: 6, marginBottom: 8 }}>
+          <ProjectLogo project="evergreen" size={108} />
+        </View>
+        <BrushText variant="screenTitle" style={[styles.title, { textAlign: 'center', color: Colors.green }]}>
           Evergreen
         </BrushText>
-        <Text style={styles.subtitle}>Wildlife & Conservation</Text>
+        <Text style={[styles.subtitle, { textAlign: 'center' }]}>Wildlife & Conservation</Text>
         <Text style={styles.desc}>
           Protect endangered species and restore natural habitats. From tree
           planting to animal rescue, every action counts.

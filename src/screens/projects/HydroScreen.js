@@ -8,6 +8,7 @@ import StatCard from '../../components/ui/StatCard';
 import BrushDivider from '../../components/ui/BrushDivider';
 import Input from '../../components/ui/Input';
 import { openDonationForm } from '../../services/zeffy';
+import ProjectLogo from '../../components/ui/ProjectLogo';
 
 const MILESTONES = [
   { label: 'Research Phase', status: 'complete' },
@@ -25,10 +26,13 @@ export default function HydroScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
         </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>
+        <View style={{ alignItems: 'center', marginTop: 6, marginBottom: 8 }}>
+          <ProjectLogo project="hydro" size={108} />
+        </View>
+        <BrushText variant="screenTitle" style={[styles.title, { textAlign: 'center', color: Colors.sky }]}>
           Hydro
         </BrushText>
-        <Text style={styles.subtitle}>Clean Water Access</Text>
+        <Text style={[styles.subtitle, { textAlign: 'center' }]}>Clean Water Access</Text>
         <Text style={styles.desc}>
           1 in 10 people lack access to clean water. Help us change that by
           funding wells and filtration systems in underserved communities.

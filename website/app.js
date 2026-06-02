@@ -124,7 +124,15 @@
         <a href="${p.cta.href}" class="btn btn--forest">${p.cta.text}</a>
       </div>
       <div class="program__visual program__visual--${p.key}">
-        ${icons[p.key] || ''}
+        <!-- Real project logo. Falls back gracefully to the SVG icon
+             beneath it if the PNG isn't deployed yet. -->
+        <img
+          src="projects/${p.key}.png"
+          alt="${p.title}"
+          class="program__logo"
+          onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='block');"
+        />
+        <div class="program__logoFallback" style="display:none">${icons[p.key] || ''}</div>
       </div>
     </div>
   `).join(''));

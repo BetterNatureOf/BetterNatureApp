@@ -1,36 +1,45 @@
+// Project cards — IRIS / EVERGREEN / HYDRO.
+//
+// Each card pairs the real project logo (left) with the program copy
+// and a colored chevron. The logo is rendered via <ProjectLogo /> which
+// silently falls back to a tinted initial circle if the bundled image
+// isn't in place yet — drop the PNG into src/assets/projects/ and the
+// real logo appears on next reload.
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Type, Spacing, Radius, Shadows } from '../../config/theme';
+import { View, Text, StyleSheet } from 'react-native';
+import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../ui/BrushText';
+import ProjectLogo from '../ui/ProjectLogo';
+import AnimatedPressable from '../ui/AnimatedPressable';
+import Icon from '../ui/Icon';
 
 const PROJECTS = [
   {
     key: 'IRIS',
+    logo: 'iris',
     name: 'IRIS',
-    subtitle: 'Food Rescue',
-    description: 'Rescue surplus food from restaurants and deliver it to those in need.',
-    color: Colors.sage,
-    lightColor: Colors.sageLight,
-    icon: '\u{1F37D}',
+    subtitle: 'Food rescue',
+    description: 'Rescue surplus from restaurants. Deliver to fridges and families.',
+    color: Colors.pink,
+    bg: '#FFE5EE',
   },
   {
     key: 'Evergreen',
+    logo: 'evergreen',
     name: 'Evergreen',
     subtitle: 'Conservation',
-    description: 'Protect wildlife and restore natural habitats in your community.',
+    description: 'Plant native trees, restore habitats, protect what’s left.',
     color: Colors.green,
-    lightColor: Colors.greenLight,
-    icon: '\u{1F332}',
+    bg: '#DFF1E2',
   },
   {
     key: 'Hydro',
+    logo: 'hydro',
     name: 'Hydro',
-    subtitle: 'Clean Water',
-    description: 'Provide clean drinking water to communities around the world.',
+    subtitle: 'Water access',
+    description: 'Cleanups, water testing, clean drinking water everywhere.',
     color: Colors.sky,
-    lightColor: Colors.skyLight,
-    icon: '\u{1F4A7}',
+    bg: '#E1EDFA',
   },
 ];
 
@@ -38,109 +47,63 @@ export default function ProjectCards({ onPress }) {
   return (
     <View style={styles.container}>
       <BrushText variant="sectionHeader" style={styles.header}>
-        Our Projects
+        Our programs
       </BrushText>
-      {PROJECTS.map((project) => (
-        <TouchableOpacity
-          key={project.key}
-          activeOpacity={0.75}
-          onPress={() => onPress(project.key)}
+      {PROJECTS.map((p) => (
+        <AnimatedPressable
+          key={p.key}
+          onPress={() => onPress(p.key)}
           style={styles.card}
+          scaleTo={0.985}
         >
-          <View style={[styles.iconWrap, { backgroundColor: project.lightColor }]}>
-            <Text style={styles.iconText}>{project.icon}</Text>
+          <View style={[styles.logoBubble, { backgroundColor: p.bg }]}>
+            <ProjectLogo project={p.logo} size={58} />
           </View>
           <View style={styles.textWrap}>
             <View style={styles.nameRow}>
-              <Text style={styles.projectName}>{project.name}</Text>
-              <View style={[styles.accentLine, { backgroundColor: project.color }]} />
+              <Text style={[styles.projectName, { color: p.color }]}>{p.name}</Text>
+              <View style={[styles.accentLine, { backgroundColor: p.color }]} />
             </View>
-            <Text style={styles.subtitle}>{project.subtitle}</Text>
-            <Text style={styles.desc} numberOfLines={2}>
-              {project.description}
-            </Text>
+            <Text style={styles.subtitle}>{p.subtitle}</Text>
+            <Text style={styles.desc} numberOfLines={2}>{p.description}</Text>
           </View>
-          <View style={[styles.arrowCircle, { backgroundColor: project.lightColor }]}>
-            <Text style={[styles.arrow, { color: project.color }]}>{'\u203A'}</Text>
+          <View style={[styles.arrowCircle, { backgroundColor: p.bg }]}>
+            <Icon name="chevron" size={18} color={p.color} />
           </View>
-        </TouchableOpacity>
+        </AnimatedPressable>
       ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 24,
-    marginTop: 24,
-  },
-  header: {
-    color: Colors.green,
-    marginBottom: 14,
-  },
+  container: { paddingHorizontal: 24, marginTop: 24 },
+  header: { color: Colors.green, marginBottom: 14 },
   card: {
     backgroundColor: Colors.white,
     borderRadius: Radius.xl,
-    padding: 16,
+    padding: 14,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 14,
     borderWidth: 1,
     borderColor: Colors.glassBorder,
     ...Shadows.card,
   },
-  iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
+  logoBubble: {
+    width: 78, height: 78, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    padding: 6,
   },
-  iconText: {
-    fontSize: 22,
-  },
-  textWrap: {
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  projectName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.dark,
-    letterSpacing: -0.2,
-  },
-  accentLine: {
-    height: 2,
-    width: 16,
-    borderRadius: 1,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: Colors.grayMid,
-    marginTop: 1,
-    marginBottom: 3,
-    fontWeight: '500',
-  },
-  desc: {
-    ...Type.caption,
-    fontSize: 13,
-  },
+  textWrap: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  projectName: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  accentLine: { height: 2, width: 20, borderRadius: 1 },
+  subtitle: { fontSize: 12, color: Colors.grayMid, marginTop: 1, marginBottom: 4, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },
+  desc: { ...Type.caption, fontSize: 13 },
   arrowCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  arrow: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginTop: -1,
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
   },
 });

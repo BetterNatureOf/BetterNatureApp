@@ -24,6 +24,7 @@ import { requireVerifiedId } from '../../services/idGate';
 import PickupCard from '../../components/pickup/PickupCard';
 import Icon from '../../components/ui/Icon';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
+import ProjectLogo from '../../components/ui/ProjectLogo';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -83,10 +84,13 @@ export default function IrisScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
         </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>
+        <View style={{ alignItems: 'center', marginTop: 6, marginBottom: 8 }}>
+          <ProjectLogo project="iris" size={108} />
+        </View>
+        <BrushText variant="screenTitle" style={[styles.title, { textAlign: 'center', color: Colors.pink }]}>
           IRIS
         </BrushText>
-        <Text style={styles.subtitle}>Food Rescue Initiative</Text>
+        <Text style={[styles.subtitle, { textAlign: 'center' }]}>Food Rescue Initiative</Text>
         <Text style={styles.desc}>
           Rescue surplus food from local restaurants and deliver it to communities
           in need. Every meal counts.
