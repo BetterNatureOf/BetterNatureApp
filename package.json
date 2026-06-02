@@ -18,8 +18,8 @@
     "publish:ios": "npm run build:ios && npm run submit:ios",
     "publish:android": "npm run build:android && npm run submit:android",
     "update": "eas update --auto",
-    "web:build": "expo export -p web",
-    "web:deploy": "expo export -p web && echo 'Upload the dist/ folder to Vercel or Cloudflare Pages'"
+    "web:build": "node scripts/stamp-version.js && expo export -p web",
+    "web:deploy": "npm run web:build && echo 'Upload the dist/ folder to Vercel or Cloudflare Pages'"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

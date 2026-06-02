@@ -12,6 +12,7 @@ import LoadingScreen from './src/screens/auth/LoadingScreen';
 import CompleteProfile from './src/screens/auth/CompleteProfile';
 import useAuthStore, { ROLES } from './src/store/authStore';
 import useAuth from './src/hooks/useAuth';
+import useFreshAppVersion from './src/hooks/useFreshAppVersion';
 import linking from './src/navigation/linking';
 import { injectWebFonts } from './src/config/webFonts';
 import ErrorBoundary from './src/components/ui/ErrorBoundary';
@@ -99,6 +100,9 @@ export default function App() {
   // reload. Without this, refreshing the page always boots back to the
   // login screen even though Firebase still has a valid session.
   useAuth();
+  // On web: poll /version.json + auto-reload when the build behind the
+  // CDN has changed. Native is a no-op (handled by OTA elsewhere).
+  useFreshAppVersion();
   const { isAuthenticated, isLoading, setLoading, role, user } = useAuthStore();
   // Google / Apple sign-in lands here without ever filling out the email
   // signup form, so we route them through CompleteProfile first.

@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────
+# Cloudflare Pages cache headers for the Expo web build.
+#
+# Goal: every reload must serve the LATEST bundle, but we still want
+# to cache the heavy hashed assets long-term (they're content-hashed,
+# so their URL changes whenever they change — safe to cache forever).
+#
+# Layout:
+#   /                  →  HTML entry point; revalidate every time
+#   /_expo/static/...  →  hashed JS / CSS / images; cache forever
+#   /static/...        →  same story
+#   /assets/...        →  same
+#
+# The `must-revalidate` on the HTML makes the browser send a
+# conditional request on every reload — Cloudflare returns 304 if
+# nothing changed, or the fresh HTML if a new deploy is live.
+# ─────────────────────────────────────────────────────────────────────
+
+# HTML entry: ALWAYS check for a new version on reload.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Top-level JSON manifests (version.json, asset-manifest.json, etc.)
+# — also revalidate so the app can poll for updates.
+/*.json
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Service-worker file: never cache. If we ever stop using one, the
+# previous worker still expires fast and unregisters cleanly.
+/sw.js
+  Cache-Control: no-store
+/service-worker.js
+  Cache-Control: no-store
+
+# Content-hashed bundles: lifetime cache. Safe because Expo's metro
+# bundler embeds a hash in the filename — when the file changes, the
+# URL changes, so the browser fetches the new one.
+/_expo/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
