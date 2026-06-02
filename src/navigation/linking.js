@@ -53,6 +53,8 @@ const screens = {
   ManageMembers: 'admin/members',
   ManageRestaurants: 'admin/restaurants',
   ManageFridges: 'admin/fridges',
+  ManageVerifications: 'admin/verifications',
+  LiabilityWaiver: 'sign-waiver',
   GlobalHistory: 'admin/history',
   Broadcast: 'admin/broadcast',
   ExportReports: 'admin/reports',

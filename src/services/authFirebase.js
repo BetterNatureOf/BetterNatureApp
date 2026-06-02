@@ -383,7 +383,13 @@ export async function uploadIdDocument(userId, fileUri) {
   await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
   const url = await getDownloadURL(storageRef);
 
-  await updateDoc(doc(db, 'users', userId), { id_document_url: url });
+  // Stamp pending status so the upload immediately shows up in
+  // Admin → Verify IDs for review. Also wipe any prior reviewer notes.
+  await updateDoc(doc(db, 'users', userId), {
+    id_document_url: url,
+    verification_status: 'pending',
+    verification_reviewed_at: null,
+  });
   return url;
 }
 

@@ -41,6 +41,8 @@ import ManageChapters from '../screens/admin/ManageChapters';
 import ManageMembers from '../screens/admin/ManageMembers';
 import ManageRestaurants from '../screens/admin/ManageRestaurants';
 import ManageFridges from '../screens/admin/ManageFridges';
+import ManageVerifications from '../screens/admin/ManageVerifications';
+import LiabilityWaiver from '../screens/auth/LiabilityWaiver';
 import GlobalHistory from '../screens/admin/GlobalHistory';
 import BroadcastScreen from '../screens/admin/BroadcastScreen';
 import ExportReports from '../screens/admin/ExportReports';
@@ -231,6 +233,8 @@ export default function MainNavigator() {
       <Stack.Screen name="ManageMembers" component={ManageMembers} />
       <Stack.Screen name="ManageRestaurants" component={ManageRestaurants} />
       <Stack.Screen name="ManageFridges" component={ManageFridges} />
+      <Stack.Screen name="ManageVerifications" component={ManageVerifications} />
+      <Stack.Screen name="LiabilityWaiver" component={LiabilityWaiver} />
       <Stack.Screen name="GlobalHistory" component={GlobalHistory} />
       <Stack.Screen name="Broadcast" component={BroadcastScreen} />
       <Stack.Screen name="ExportReports" component={ExportReports} />

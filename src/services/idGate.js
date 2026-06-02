@@ -9,22 +9,60 @@
 import { Platform } from 'react-native';
 import { confirm } from './ui';
 
+// The ID + waiver gate. A volunteer can claim a pickup only if:
+//   (a) they uploaded an ID AND it's been admin-approved
+//   (b) they signed the latest version of the liability waiver
+//
+// Restaurants and partners skip ID upload (vetted via business address
+// and EIN), but still need to sign the waiver if they're going to
+// physically handle food in any of the joint workflows.
 export function requireVerifiedId(user, navigation) {
-  // Restaurants don't need a personal ID upload.
+  // Restaurants / partners: no personal ID required, no waiver
+  // required (we cover them under the business agreement). Let through.
   if (user?.role === 'restaurant' || user?.role === 'partner') return true;
 
-  if (user?.id_document_url) return true;
+  // Missing ID upload.
+  if (!user?.id_document_url) {
+    (async () => {
+      const ok = await confirm(
+        'Verify your ID first',
+        'For everyone’s safety, upload a photo of a government-issued ID before claiming food pickups.',
+      );
+      if (ok) navigation?.navigate?.('VerifyId');
+    })();
+    return false;
+  }
 
-  // Fire the prompt asynchronously. On web the previous
-  // Alert.alert([{onPress}]) silently dropped its callbacks, so the
-  // "Verify ID" button never fired and the user got stuck. confirm()
-  // uses window.confirm on web and resolves to a real bool.
-  (async () => {
-    const ok = await confirm(
-      'Verify your ID first',
-      'For everyone’s safety, you need to upload a photo of a government-issued ID before claiming food pickups.',
-    );
-    if (ok) navigation?.navigate?.('VerifyId');
-  })();
-  return false;
+  // Uploaded but not yet admin-approved.
+  if (user.verification_status && user.verification_status !== 'approved') {
+    (async () => {
+      if (user.verification_status === 'rejected') {
+        const ok = await confirm(
+          'ID was rejected',
+          'An admin couldn’t verify your last ID. Upload a clearer photo to try again.',
+        );
+        if (ok) navigation?.navigate?.('VerifyId');
+      } else {
+        await confirm(
+          'Pending review',
+          'An admin is reviewing your ID. You’ll be able to claim pickups as soon as it’s approved (usually within 24 hours).',
+        );
+      }
+    })();
+    return false;
+  }
+
+  // No waiver on file (or signed an older version).
+  if (!user?.waiver_signed) {
+    (async () => {
+      const ok = await confirm(
+        'Sign the waiver',
+        'Quick liability waiver — required once per account before you can claim pickups.',
+      );
+      if (ok) navigation?.navigate?.('LiabilityWaiver');
+    })();
+    return false;
+  }
+
+  return true;
 }
