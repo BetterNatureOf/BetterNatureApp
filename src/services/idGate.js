@@ -52,14 +52,14 @@ export function requireVerifiedId(user, navigation) {
     return false;
   }
 
-  // No waiver on file (or signed an older version).
-  if (!user?.waiver_signed) {
+  // Volunteer contract not signed (or out of date).
+  if (!user?.contract_volunteer_signed) {
     (async () => {
       const ok = await confirm(
-        'Sign the waiver',
-        'Quick liability waiver — required once per account before you can claim pickups.',
+        'Sign the Member Volunteer Agreement',
+        'Required once per account before you can claim pickups. A copy is emailed to BetterNature.',
       );
-      if (ok) navigation?.navigate?.('LiabilityWaiver');
+      if (ok) navigation?.navigate?.('SignContract', { kind: 'volunteer' });
     })();
     return false;
   }

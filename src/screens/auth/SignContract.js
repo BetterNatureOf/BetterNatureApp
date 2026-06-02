@@ -1,11 +1,15 @@
-// Reusable contract signing screen.
+// Reusable contract-signing screen.
 //
-// Navigation:  navigate('SignContract', { kind: 'restaurant' | 'executive' | 'president' })
+//   navigate('SignContract', { kind: 'executive' | 'restaurant' | 'volunteer' | 'president' })
 //
-// Reads the contract spec (clauses + extra fields + intent line + version)
-// from services/contracts.js. Captures every extra field, runs the
-// agreement-checkbox + typed-signature, then calls saveContract() with
-// the structured payload.
+// Renders the contract spec from services/contracts.js verbatim,
+// captures inline form fields, then on submit:
+//   1) saveContract() — writes users/{uid}.contract_{kind} = {...}
+//   2) emailContractSummary() — POSTs a structured summary +
+//      raw field values + typed signature to FormSubmit, which
+//      relays it to info@betternatureofficial.org. Subject line
+//      includes the signer's name (or business name + type) +
+//      role per the latest spec.
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Platform, KeyboardAvoidingView,
@@ -18,12 +22,14 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
-import { CONTRACTS, saveContract } from '../../services/contracts';
+import {
+  CONTRACTS, saveContract, emailContractSummary, roleForKind,
+} from '../../services/contracts';
 import { getProfile } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
 
 export default function SignContract({ route, navigation }) {
-  const kind = route?.params?.kind || 'executive';
+  const kind = route?.params?.kind || 'volunteer';
   const spec = CONTRACTS[kind];
   if (!spec) {
     return (
@@ -36,30 +42,38 @@ export default function SignContract({ route, navigation }) {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
 
-  // Field values for spec.extraFields, keyed by field.key.
+  // Pre-fill anything we already know about the signer so they're not
+  // retyping their name + email on every contract.
   const [values, setValues] = useState(() => {
     const init = {};
-    (spec.extraFields || []).forEach((f) => { init[f.key] = ''; });
+    (spec.fields || []).forEach((f) => {
+      init[f.key] = (
+        f.key === 'legal_name'   ? (user?.name  || '') :
+        f.key === 'contact_name' ? (user?.name  || '') :
+        f.key === 'phone'        ? (user?.phone || '') :
+        f.key === 'contact_phone'? (user?.phone || '') :
+        f.key === 'email'        ? (user?.email || '') :
+        f.key === 'contact_email'? (user?.email || '') :
+        ''
+      );
+    });
     return init;
   });
+
   const [agreed, setAgreed] = useState(false);
   const [signedName, setSignedName] = useState(user?.name || '');
   const [saving, setSaving] = useState(false);
 
   const missing = useMemo(() => {
-    return (spec.extraFields || []).filter((f) => f.required && !values[f.key]?.trim());
-  }, [spec.extraFields, values]);
+    return (spec.fields || []).filter((f) => f.required && !values[f.key]?.trim());
+  }, [spec.fields, values]);
 
   async function handleSign() {
     if (missing.length) {
       return notify('Fill the form', `Missing: ${missing.map((f) => f.label).join(', ')}.`);
     }
-    if (!agreed) {
-      return notify('Check the box', 'You need to mark agreement to continue.');
-    }
-    if (!signedName.trim()) {
-      return notify('Type your name', 'Your typed name acts as your signature.');
-    }
+    if (!agreed) return notify('Check the box', 'You need to mark agreement to continue.');
+    if (!signedName.trim()) return notify('Type your name', 'Your typed name acts as your signature.');
     if (!user?.id) return notify('Not signed in');
     setSaving(true);
     try {
@@ -68,9 +82,15 @@ export default function SignContract({ route, navigation }) {
         version: spec.version,
         extras: values,
       });
+      // Email is best-effort — never blocks the in-app save. We try
+      // even if Firebase write failed because the user typed something
+      // and we want a backup record.
+      emailContractSummary({ kind, values, signedName, user })
+        .catch((e) => console.warn('contract email failed', e));
+
       const fresh = await getProfile(user.id);
       if (fresh && setUser) setUser(fresh);
-      notifyThen('Signed', 'On file. You’re cleared for this role.', () => {
+      notifyThen('Signed', 'Your contract is on file. A copy has been emailed to BetterNature.', () => {
         if (navigation?.canGoBack?.()) navigation.goBack();
       });
     } catch (e) {
@@ -80,19 +100,29 @@ export default function SignContract({ route, navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <ResponsiveContainer maxWidth={720}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ResponsiveContainer maxWidth={760}>
           <View style={styles.badge}>
-            <Icon name="file" size={16} color={Colors.green} />
-            <Text style={styles.badgeText}>{spec.eyebrow} · v{spec.version}</Text>
+            <Icon name="file" size={14} color={Colors.green} />
+            <Text style={styles.badgeText}>{roleForKind(kind, user)} · v{spec.version}</Text>
           </View>
           <BrushText variant="screenTitle" style={styles.title}>{spec.title}</BrushText>
+          <Text style={styles.subtitle}>{spec.subtitle}</Text>
 
-          {/* Extra structured fields (legal name, EIN, contact, etc.) */}
-          {(spec.extraFields || []).length > 0 ? (
-            <View style={styles.fieldsCard}>
-              {spec.extraFields.map((f) => (
-                <View key={f.key} style={{ marginBottom: 12 }}>
+          {/* Fields (collected at top so the user knows what they'll
+              be filling in before reading the legal text) */}
+          {(spec.fields || []).length ? (
+            <View style={styles.card}>
+              <Text style={styles.cardLabel}>Your details</Text>
+              <Text style={styles.cardHelp}>
+                These get attached to the agreement and emailed to BetterNature with your signature.
+              </Text>
+              {spec.fields.map((f) => (
+                <View key={f.key} style={{ marginTop: 14 }}>
                   <Text style={styles.fieldLabel}>
                     {f.label}{f.required ? '' : <Text style={styles.optional}> (optional)</Text>}
                   </Text>
@@ -112,17 +142,31 @@ export default function SignContract({ route, navigation }) {
             </View>
           ) : null}
 
-          {/* Legal text */}
+          {/* Recitals */}
           <View style={styles.legalCard}>
-            {spec.clauses.map((p, i) => (
-              <Text key={i} style={[styles.para, i === spec.clauses.length - 1 && { marginBottom: 0 }]}>
-                {p}
-              </Text>
+            <Text style={styles.legalHeading}>RECITALS</Text>
+            {spec.recitals.map((p, i) => (
+              <Text key={'r' + i} style={styles.para}>{p}</Text>
+            ))}
+
+            {spec.sections.map((sec) => (
+              <View key={sec.heading} style={{ marginTop: 14 }}>
+                <Text style={styles.legalHeading}>{sec.heading}</Text>
+                {sec.body.map((p, i) => (
+                  <Text
+                    key={sec.heading + i}
+                    style={[styles.para, p.startsWith('•') && styles.bullet]}
+                  >
+                    {p}
+                  </Text>
+                ))}
+              </View>
             ))}
           </View>
 
-          {/* Intent line + checkbox */}
+          {/* Intent + agreement checkbox */}
           <Text style={styles.intent}>{spec.intentLine}</Text>
+
           <AnimatedPressable
             onPress={() => setAgreed(!agreed)}
             style={[styles.agreeRow, agreed && styles.agreeRowOn]}
@@ -136,8 +180,7 @@ export default function SignContract({ route, navigation }) {
             </Text>
           </AnimatedPressable>
 
-          {/* Typed signature */}
-          <Text style={styles.signLabel}>Type your full legal name</Text>
+          <Text style={styles.signLabel}>{spec.signatureLabel || 'Type your full legal name'}</Text>
           <Input
             value={signedName}
             onChangeText={setSignedName}
@@ -145,15 +188,19 @@ export default function SignContract({ route, navigation }) {
             autoCapitalize="words"
           />
           <Text style={styles.signHint}>
-            This serves as your electronic signature under the E-SIGN Act (15 U.S.C. § 7001).
+            This serves as your electronic signature under the E-SIGN Act (15 U.S.C. § 7001). A copy of this agreement and your details will be emailed to info@betternatureofficial.org.
           </Text>
 
           <Button
-            title={saving ? 'Saving…' : `Sign ${spec.title.split(' ').slice(0, 1)[0]} agreement`}
+            title={saving ? 'Signing…' : 'Sign & submit'}
             onPress={handleSign}
             loading={saving}
             style={{ marginTop: 22 }}
           />
+
+          <Text style={styles.footer}>
+            BetterNature  ·  EIN 99-4028399  ·  624 Cypress Knoll Dr, Collierville, TN 38017
+          </Text>
         </ResponsiveContainer>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -178,9 +225,10 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontSize: 11, fontWeight: '800', color: Colors.green, letterSpacing: 0.3 },
 
-  title: { color: Colors.green, marginBottom: 18 },
+  title: { color: Colors.green },
+  subtitle: { ...Type.caption, color: Colors.gray, marginTop: 4, marginBottom: 18 },
 
-  fieldsCard: {
+  card: {
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: 16,
@@ -188,6 +236,8 @@ const styles = StyleSheet.create({
     ...Shadows.soft,
     marginBottom: 18,
   },
+  cardLabel: { fontSize: 13, fontWeight: '800', color: Colors.dark, letterSpacing: 0.3, textTransform: 'uppercase' },
+  cardHelp: { ...Type.caption, marginTop: 4 },
   fieldLabel: { fontSize: 12, fontWeight: '800', color: Colors.dark, marginBottom: 6, letterSpacing: 0.3, textTransform: 'uppercase' },
   optional: { fontWeight: '500', color: Colors.gray, textTransform: 'none' },
 
@@ -199,7 +249,13 @@ const styles = StyleSheet.create({
     ...Shadows.soft,
     marginBottom: 18,
   },
-  para: { ...Type.body, color: Colors.dark, marginBottom: 14, lineHeight: 22 },
+  legalHeading: {
+    fontSize: 13, fontWeight: '800', color: Colors.green,
+    letterSpacing: 0.5, textTransform: 'uppercase',
+    marginBottom: 8, marginTop: 4,
+  },
+  para: { ...Type.body, color: Colors.dark, marginBottom: 10, lineHeight: 22 },
+  bullet: { paddingLeft: 12 },
 
   intent: { ...Type.body, color: Colors.dark, lineHeight: 22, marginBottom: 12, fontStyle: 'italic' },
 
@@ -221,4 +277,6 @@ const styles = StyleSheet.create({
 
   signLabel: { fontSize: 12, fontWeight: '800', color: Colors.dark, marginTop: 18, marginBottom: 8, letterSpacing: 0.3, textTransform: 'uppercase' },
   signHint: { ...Type.caption, marginTop: 6 },
+
+  footer: { ...Type.caption, color: Colors.gray, textAlign: 'center', marginTop: 24 },
 });
