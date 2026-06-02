@@ -56,6 +56,7 @@ const screens = {
   ManageVerifications: 'admin/verifications',
   LiabilityWaiver: 'sign-waiver',
   DriverSetup: 'driver-setup',
+  SignContract: 'contracts/:kind',
   GlobalHistory: 'admin/history',
   Broadcast: 'admin/broadcast',
   ExportReports: 'admin/reports',

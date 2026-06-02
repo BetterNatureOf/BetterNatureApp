@@ -21,6 +21,7 @@ import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 import DonationCTA from '../../components/donate/DonationCTA';
+import ContractGate from '../../components/ui/ContractGate';
 import {
   fetchDonationHistory, fetchPickupsByRestaurant,
 } from '../../services/database';
@@ -152,6 +153,7 @@ export default function RestDashboard({ navigation }) {
   ];
 
   return (
+    <ContractGate kind="restaurant">
     <ScrollView
       style={styles.container}
       contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}
@@ -300,6 +302,7 @@ export default function RestDashboard({ navigation }) {
         </View>
       </ResponsiveContainer>
     </ScrollView>
+    </ContractGate>
   );
 }
 

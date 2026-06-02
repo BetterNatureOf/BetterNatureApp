@@ -11,6 +11,7 @@ import ConnectedAccounts from '../screens/other/ConnectedAccounts';
 import VerifyIdScreen from '../screens/other/VerifyIdScreen';
 import RestaurantOnboarding from '../screens/restaurant/RestaurantOnboarding';
 import NotificationsScreen from '../screens/other/NotificationsScreen';
+import SignContract from '../screens/auth/SignContract';
 
 const Stack = createStackNavigator();
 
@@ -28,6 +29,7 @@ export default function RestaurantNavigator() {
       <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
       <Stack.Screen name="RestaurantOnboarding" component={RestaurantOnboarding} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="SignContract" component={SignContract} />
     </Stack.Navigator>
   );
 }
