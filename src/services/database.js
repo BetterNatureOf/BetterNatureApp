@@ -407,17 +407,30 @@ export async function createPickup(pickup) {
       const targets = snapToList(memSnap).filter((m) =>
         ['member', 'chapter_president', 'volunteer'].includes(m.role)
       );
+      const { enqueueSMS } = await import('./sms');
       await Promise.all(
-        targets.map((m) =>
-          addDoc(collection(db, 'notifications'), {
+        targets.map(async (m) => {
+          // 1. In-app bell.
+          await addDoc(collection(db, 'notifications'), {
             user_id: m.id,
             title: 'New pickup available!',
-            body: `${pickup.restaurant_name} has food ready for rescue at ${pickup.address || 'their location'}.`,
+            body: `${pickup.restaurant_name} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
             data: { type: 'new_pickup', pickupId: ref.id },
             read: false,
             created_at: serverTimestamp(),
-          })
-        )
+          });
+          // 2. SMS (queued in sms_outbox; server function relays via
+          //    Twilio when configured). Skip if the volunteer didn't
+          //    give us a phone or opted out of SMS.
+          if (m.phone && m.notification_prefs?.sms !== false) {
+            await enqueueSMS({
+              to: m.phone,
+              body: `BetterNature: new pickup ready at ${pickup.restaurant_name || 'a partner restaurant'}. Open the app to claim. Reply STOP to opt out.`,
+              kind: 'new_pickup',
+              refId: ref.id,
+            });
+          }
+        }),
       );
     } catch (e) { console.warn('pickup notify failed', e); }
   }
@@ -469,13 +482,41 @@ export async function claimPickup(pickupId, userId) {
     return pk ? { ...pk, status: 'claimed', claimed_by: userId } : null;
   }
   const ref = doc(db, 'pickups', pickupId);
+  const claimedAt = new Date().toISOString();
   await updateDoc(ref, {
     status: 'claimed',
     claimed_by: userId,
-    claimed_at: new Date().toISOString(),
+    claimed_at: claimedAt,
   });
   const snap = await getDoc(ref);
-  return snapToOne(snap);
+  const pk = snapToOne(snap);
+
+  // Smart reminder: enqueue a scheduled SMS so the volunteer doesn't
+  // forget. computeReminderTime() decides whether to send at all
+  // (skips if window <2h away) and when (24h or 2h ahead depending
+  // on lead time). Best-effort — never blocks the claim.
+  try {
+    const { enqueueSMS, computeReminderTime } = await import('./sms');
+    const remindAt = computeReminderTime({
+      claimedAt,
+      pickupWindowUntil: pk?.pickup_window_until,
+    });
+    if (remindAt) {
+      const vSnap = await getDoc(doc(db, 'users', userId));
+      const vol = vSnap.exists() ? vSnap.data() : null;
+      if (vol?.phone && vol.notification_prefs?.sms !== false) {
+        await enqueueSMS({
+          to: vol.phone,
+          body: `BetterNature reminder: your pickup at ${pk.restaurant_name || 'the restaurant'} is coming up. Address: ${pk.restaurant_address || 'see app'}. Open the app for the route.`,
+          sendAt: remindAt,
+          kind: 'pickup_reminder',
+          refId: pickupId,
+        });
+      }
+    }
+  } catch (e) { console.warn('reminder enqueue', e); }
+
+  return pk;
 }
 
 // Volunteer changes their mind after claiming. Pickup goes back to
@@ -719,6 +760,18 @@ export async function completePickup(pickupId, actualWeightLbs) {
           read: false,
           created_at: serverTimestamp(),
         });
+        // SMS the restaurant too (best-effort).
+        const { enqueueSMS } = await import('./sms');
+        const rSnap = await getDoc(doc(db, 'users', pk.restaurant_id));
+        const rest = rSnap.exists() ? rSnap.data() : null;
+        if (rest?.phone && rest.notification_prefs?.sms !== false) {
+          await enqueueSMS({
+            to: rest.phone,
+            body: `BetterNature: your donation just landed${dropOff}. ~${meals} meals rescued. Tax receipt incoming via email.`,
+            kind: 'restaurant_delivered',
+            refId: pickupId,
+          });
+        }
       } catch (e) { console.warn('restaurant delivered notify', e); }
     }
 

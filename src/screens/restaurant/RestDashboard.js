@@ -21,7 +21,6 @@ import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 import DonationCTA from '../../components/donate/DonationCTA';
-import ZeffyEmbed from '../../components/donate/ZeffyEmbed';
 import {
   fetchDonationHistory, fetchPickupsByRestaurant,
 } from '../../services/database';
@@ -265,8 +264,13 @@ export default function RestDashboard({ navigation }) {
         <BrushText variant="sectionHeader" style={styles.sectionHeader}>
           Sponsor your chapter
         </BrushText>
-        <DonationCTA amount={50} label="Sponsor your chapter" showZeffy={false} />
-        <ZeffyEmbed amount={50} height={780} />
+        {/* DonationCTA renders the Apple/Google Pay row (when Stripe
+            is configured) AND the Zeffy fallback link. We DON'T embed
+            the Zeffy iframe inline on the restaurant dashboard — the
+            iframe captures wheel events and prevents the page from
+            scrolling past it. Partners who want to donate land on the
+            full Zeffy form via the link in DonationCTA. */}
+        <DonationCTA amount={50} label="Sponsor your chapter" />
 
         {/* Apple Sign-In sidebar (linking flow). This is auth, not pay
             — but the restaurant view is where partners often realize

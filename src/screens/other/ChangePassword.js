@@ -21,7 +21,7 @@ export default function ChangePassword({ navigation }) {
 
   async function handleSave() {
     if (next !== confirm) {
-      notify('Passwords don\u2019t match', 'Confirm the new password matches.');
+      notify('Passwords don’t match', 'Confirm the new password matches.');
       return;
     }
     setSaving(true);
@@ -55,7 +55,7 @@ export default function ChangePassword({ navigation }) {
           <Text style={styles.back}>‹ Back</Text>
         </TouchableOpacity>
         <BrushText variant="screenTitle" style={styles.title}>Change Password</BrushText>
-        <Text style={styles.subtitle}>You\u2019ll stay signed in on this device.</Text>
+        <Text style={styles.subtitle}>You’ll stay signed in on this device.</Text>
 
         <Text style={styles.label}>Current password</Text>
         <Input value={current} onChangeText={setCurrent} placeholder="Current password" secureTextEntry />
@@ -66,13 +66,13 @@ export default function ChangePassword({ navigation }) {
         <Text style={styles.label}>Confirm new password</Text>
         <Input value={confirm} onChangeText={setConfirm} placeholder="Type it again" secureTextEntry />
 
-        <Button title={saving ? 'Saving\u2026' : 'Update password'} onPress={handleSave} loading={saving} style={{ marginTop: 24 }} />
+        <Button title={saving ? 'Saving…' : 'Update password'} onPress={handleSave} loading={saving} style={{ marginTop: 24 }} />
 
         <View style={styles.divider} />
 
         <Text style={styles.helperTitle}>Forgot your current password?</Text>
         <Text style={styles.helper}>
-          We\u2019ll email you a reset link. Use this if you signed up with Google or Apple too.
+          We’ll email you a reset link. Use this if you signed up with Google or Apple too.
         </Text>
         <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
           <Text style={styles.resetText}>Send password reset email</Text>

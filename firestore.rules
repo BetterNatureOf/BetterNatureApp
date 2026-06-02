@@ -139,6 +139,17 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── sms_outbox ──
+    // Queue read/written by the Cloud Function dispatcher. Signed-in
+    // users can enqueue (they're already authenticated to post a pickup,
+    // claim, or complete — that's when we add to this queue). Nobody
+    // reads or edits except the server function via admin SDK.
+    match /sms_outbox/{id} {
+      allow read: if false;
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
     // ── fridges (community fridge network) ──
     // Public read so the marketing site can render fridge pins on the map
     // without auth. Only admins manage the network (add/edit/deactivate
