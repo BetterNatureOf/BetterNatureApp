@@ -43,6 +43,7 @@ import ManageRestaurants from '../screens/admin/ManageRestaurants';
 import ManageFridges from '../screens/admin/ManageFridges';
 import ManageVerifications from '../screens/admin/ManageVerifications';
 import LiabilityWaiver from '../screens/auth/LiabilityWaiver';
+import DriverSetup from '../screens/auth/DriverSetup';
 import GlobalHistory from '../screens/admin/GlobalHistory';
 import BroadcastScreen from '../screens/admin/BroadcastScreen';
 import ExportReports from '../screens/admin/ExportReports';
@@ -235,6 +236,7 @@ export default function MainNavigator() {
       <Stack.Screen name="ManageFridges" component={ManageFridges} />
       <Stack.Screen name="ManageVerifications" component={ManageVerifications} />
       <Stack.Screen name="LiabilityWaiver" component={LiabilityWaiver} />
+      <Stack.Screen name="DriverSetup" component={DriverSetup} />
       <Stack.Screen name="GlobalHistory" component={GlobalHistory} />
       <Stack.Screen name="Broadcast" component={BroadcastScreen} />
       <Stack.Screen name="ExportReports" component={ExportReports} />

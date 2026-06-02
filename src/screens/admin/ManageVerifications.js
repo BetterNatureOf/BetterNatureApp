@@ -161,6 +161,26 @@ export default function ManageVerifications({ navigation }) {
                   ) : (
                     <Text style={[styles.meta, { color: Colors.pink, fontWeight: '700' }]}>No waiver on file</Text>
                   )}
+
+                  {/* Driver setup. Either a green pill saying who drives + their
+                      license URL, or pink "missing" copy. The license image is
+                      tappable too so admins can compare to the personal ID
+                      side-by-side. */}
+                  {u.driver?.license_url ? (
+                    <View style={[styles.waiverPill, { backgroundColor: Colors.cream }]}>
+                      <Icon name="id-card" size={12} color={Colors.green} />
+                      <TouchableOpacity onPress={() => setLightbox(u.driver.license_url)}>
+                        <Text style={styles.waiverText}>
+                          {u.driver.type === 'self'
+                            ? `Driver: self`
+                            : `Driver: ${u.driver.holder_name} (${u.driver.holder_relationship})${u.driver.consent_signed_name ? ' · signed' : ''}`
+                          } · view license
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Text style={[styles.meta, { color: Colors.pink, fontWeight: '700' }]}>No driver’s license on file</Text>
+                  )}
                 </View>
 
                 <View style={styles.actions}>

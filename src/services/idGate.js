@@ -64,5 +64,33 @@ export function requireVerifiedId(user, navigation) {
     return false;
   }
 
+  // Driver setup — IRIS specifically requires a valid driver's license
+  // on file (either the volunteer's own, or someone else who's agreed
+  // to drive them). The generic gate enforces it because IRIS is the
+  // dominant pickup workflow; Evergreen / Hydro callers that want to
+  // skip the driver check should call requireWaiverOnly() instead.
+  if (!user?.driver_setup_complete) {
+    (async () => {
+      const ok = await confirm(
+        'Driver setup needed',
+        'IRIS pickups require a valid driver’s license on file. Set up who’s driving you (yourself or someone else) before claiming.',
+      );
+      if (ok) navigation?.navigate?.('DriverSetup');
+    })();
+    return false;
+  }
+
+  return true;
+}
+
+// Same gate minus the driver check — for screens where the volunteer
+// won't be driving (e.g. Evergreen tree-planting events at a single
+// site). Currently unused but exposed so callers can opt out cleanly
+// instead of duplicating the logic.
+export function requireWaiverOnly(user, navigation) {
+  if (user?.role === 'restaurant' || user?.role === 'partner') return true;
+  if (!user?.id_document_url) return requireVerifiedId(user, navigation);
+  if (user.verification_status && user.verification_status !== 'approved') return requireVerifiedId(user, navigation);
+  if (!user?.waiver_signed) return requireVerifiedId(user, navigation);
   return true;
 }

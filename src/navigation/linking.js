@@ -55,6 +55,7 @@ const screens = {
   ManageFridges: 'admin/fridges',
   ManageVerifications: 'admin/verifications',
   LiabilityWaiver: 'sign-waiver',
+  DriverSetup: 'driver-setup',
   GlobalHistory: 'admin/history',
   Broadcast: 'admin/broadcast',
   ExportReports: 'admin/reports',

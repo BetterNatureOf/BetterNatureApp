@@ -19,6 +19,34 @@ export async function setVerificationStatus(uid, status) {
   await updateDoc(doc(db, 'users', uid), updates);
 }
 
+// Save the structured driver setup block. Lives at users/{uid}.driver
+// so the gate (and admin verification screen) can read it without
+// touching unrelated profile fields.
+export async function saveDriverSetup(uid, {
+  type,
+  licenseUrl,
+  holderName,
+  holderRelationship,
+  holderPhone,
+  consentSignedName,
+}) {
+  if (!isFirebaseConfigured || !uid) return;
+  await updateDoc(doc(db, 'users', uid), {
+    driver: {
+      type,                                                  // 'self' | 'other'
+      license_url: licenseUrl,
+      holder_name: holderName || '',
+      holder_relationship: holderRelationship || '',
+      holder_phone: holderPhone || '',
+      consent_signed: type === 'other' ? !!consentSignedName : null,
+      consent_signed_name: type === 'other' ? consentSignedName : null,
+      consent_signed_at: type === 'other' ? new Date().toISOString() : null,
+      reviewed_status: 'pending',                            // admin flips later
+    },
+    driver_setup_complete: true,
+  });
+}
+
 // Save the signed waiver record onto the user doc. `signedName` is
 // what the volunteer typed in as their legal signature.
 export async function saveSignedWaiver(uid, { signedName, version = 1 }) {
