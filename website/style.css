@@ -1718,12 +1718,8 @@ a { color: inherit; text-decoration: none; }
 .program__visual--hydro:hover     { box-shadow: 0 22px 56px rgba(30,136,229,0.26); }
 .program__visual:hover .program__logo { transform: scale(1.04) rotate(-1.5deg); }
 
-/* Make the white pixels of the PNG blend into the colored fill.
-   Multiply is the right blend mode here: any pixel multiplied by
-   1.0 (white) keeps the underlying color exactly; any darker
-   color stays dark. So the rest of the logo reads normally and
-   the white plate behind it visually disappears. */
-.program__logo { mix-blend-mode: multiply; }
+/* PNGs are pre-processed to have true transparency (see
+   scripts/strip-white-bg.py), so no blend-mode workaround needed. */
 
 .program__logo {
   width: 100%;

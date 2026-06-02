@@ -55,21 +55,14 @@ export default function ProjectLogo({
   const innerSize = size - inset * 2;
   const radius = shape === 'square' ? Math.round(size * 0.26) : size / 2;
 
-  // mixBlendMode is a web-only CSS prop. react-native-web understands
-  // it as an inline style; on native it's silently ignored, which is
-  // fine because the iOS / Android bundles won't hit this until we
-  // ship the native app.
+  // The bundled PNGs now have real transparent backgrounds (cleaned
+  // by scripts/strip-white-bg.py at build time), so no blend-mode hack
+  // is needed — the logo sits cleanly on whatever color is behind it.
   const Logo = src ? (
     <Image
       source={src}
       resizeMode="contain"
-      style={[
-        { width: innerSize, height: innerSize },
-        // 'multiply' makes white pixels in the PNG take on the
-        // background color → white background of the source logo
-        // visually disappears.
-        { mixBlendMode: 'multiply' },
-      ]}
+      style={{ width: innerSize, height: innerSize }}
       accessibilityLabel={`${key} project logo`}
     />
   ) : (
