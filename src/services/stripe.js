@@ -43,23 +43,42 @@ export function isStripeConfigured() {
   return !!PUBLISHABLE_KEY;
 }
 
-// Lazy-load stripe.js so the bundle isn't dragged in when Stripe isn't
-// configured. Web only — native gets a different SDK if we ever ship it.
+// Lazy-load stripe.js. We append a <script> tag at runtime instead of
+// using `import 'https://js.stripe.com/v3/'` — Metro (Expo's bundler)
+// can't resolve URL imports at bundle time, only at runtime, and trying
+// to use a URL import broke the production build. The tag-inject path
+// works in every browser and is what Stripe officially recommends for
+// CSP-friendly integration.
 let stripePromise = null;
+function injectStripeScript() {
+  return new Promise((resolve, reject) => {
+    if (typeof document === 'undefined') return resolve(null);
+    if (window.Stripe) return resolve(window.Stripe);
+    const existing = document.querySelector('script[src^="https://js.stripe.com/v3"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window.Stripe || null));
+      existing.addEventListener('error', () => reject(new Error('stripe.js failed to load')));
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://js.stripe.com/v3/';
+    s.async = true;
+    s.onload = () => resolve(window.Stripe || null);
+    s.onerror = () => reject(new Error('stripe.js failed to load'));
+    document.head.appendChild(s);
+  });
+}
+
 async function getStripe() {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
   if (!PUBLISHABLE_KEY) return null;
   if (stripePromise) return stripePromise;
-  stripePromise = (async () => {
-    const mod = await import(/* @vite-ignore */ 'https://js.stripe.com/v3/');
-    // Stripe injects window.Stripe; the import is purely to load the
-    // script tag. Could also tag-inject if this fails in bundlers.
-    if (!window.Stripe) return null;
-    return window.Stripe(PUBLISHABLE_KEY);
-  })().catch((e) => {
-    console.warn('Stripe load failed', e);
-    return null;
-  });
+  stripePromise = injectStripeScript()
+    .then((Stripe) => (Stripe ? Stripe(PUBLISHABLE_KEY) : null))
+    .catch((e) => {
+      console.warn('Stripe load failed', e);
+      return null;
+    });
   return stripePromise;
 }
 
