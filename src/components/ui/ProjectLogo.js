@@ -28,13 +28,14 @@ const SOURCES = {
   evergreen: tryRequire(() => require('../../assets/projects/evergreen.png')),
 };
 
-// Brand tones used by the frame. The fill stays transparent so the logo
-// reads on its own — the only color we add is a brand-tinted ring + a
-// soft glow that blends into the page rather than sitting on a card.
+// Brand tones used by the frame. Tinted fill + same-color ring. The
+// logo image is layered with mix-blend-mode: multiply so any white in
+// the PNG dissolves into the tinted background — no need to re-export
+// the source files to add transparency.
 const TONE = {
-  iris:      { color: Colors.pink,  ring: 'rgba(255,77,141,0.55)',  glow: 'rgba(255,77,141,0.22)',  initial: 'I' },
-  hydro:     { color: Colors.sky,   ring: 'rgba(30,136,229,0.50)',  glow: 'rgba(30,136,229,0.20)',  initial: 'H' },
-  evergreen: { color: Colors.green, ring: 'rgba(46,125,50,0.55)',   glow: 'rgba(46,125,50,0.22)',   initial: 'E' },
+  iris:      { color: Colors.pink,  bg: '#FFE5EE', ring: 'rgba(255,77,141,0.55)', initial: 'I' },
+  hydro:     { color: Colors.sky,   bg: '#E1EDFA', ring: 'rgba(30,136,229,0.50)', initial: 'H' },
+  evergreen: { color: Colors.green, bg: '#DFF1E2', ring: 'rgba(46,125,50,0.55)',  initial: 'E' },
 };
 
 export default function ProjectLogo({
@@ -54,11 +55,21 @@ export default function ProjectLogo({
   const innerSize = size - inset * 2;
   const radius = shape === 'square' ? Math.round(size * 0.26) : size / 2;
 
+  // mixBlendMode is a web-only CSS prop. react-native-web understands
+  // it as an inline style; on native it's silently ignored, which is
+  // fine because the iOS / Android bundles won't hit this until we
+  // ship the native app.
   const Logo = src ? (
     <Image
       source={src}
       resizeMode="contain"
-      style={{ width: innerSize, height: innerSize }}
+      style={[
+        { width: innerSize, height: innerSize },
+        // 'multiply' makes white pixels in the PNG take on the
+        // background color → white background of the source logo
+        // visually disappears.
+        { mixBlendMode: 'multiply' },
+      ]}
       accessibilityLabel={`${key} project logo`}
     />
   ) : (
@@ -71,10 +82,8 @@ export default function ProjectLogo({
     return <View style={[styles.center, { width: size, height: size }, style]}>{Logo}</View>;
   }
 
-  // Two stacked rings: an outer translucent glow + an inner solid ring.
-  // The double-layer reads as a soft halo rather than a hard border,
-  // and the fully transparent fill lets the page color bleed through
-  // so the logo never feels "stuck on a card".
+  // Solid brand-tinted fill + matching ring. The multiply-blended logo
+  // sits on top so the PNG's white background dissolves into the fill.
   return (
     <View
       style={[
@@ -83,7 +92,7 @@ export default function ProjectLogo({
           width: size,
           height: size,
           borderRadius: radius,
-          backgroundColor: tone.glow,         // soft tinted glow, no white card
+          backgroundColor: tone.bg,
           borderWidth: Math.max(2, size * 0.035),
           borderColor: tone.ring,
         },
