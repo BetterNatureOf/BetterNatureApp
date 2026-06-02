@@ -28,11 +28,13 @@ const SOURCES = {
   evergreen: tryRequire(() => require('../../assets/projects/evergreen.png')),
 };
 
-// Brand tones used by the frame.
+// Brand tones used by the frame. The fill stays transparent so the logo
+// reads on its own — the only color we add is a brand-tinted ring + a
+// soft glow that blends into the page rather than sitting on a card.
 const TONE = {
-  iris:      { color: Colors.pink,  bg: '#FFE5EE', border: 'rgba(255,77,141,0.35)', initial: 'I' },
-  hydro:     { color: Colors.sky,   bg: '#E1EDFA', border: 'rgba(30,136,229,0.30)', initial: 'H' },
-  evergreen: { color: Colors.green, bg: '#DFF1E2', border: 'rgba(46,125,50,0.30)',  initial: 'E' },
+  iris:      { color: Colors.pink,  ring: 'rgba(255,77,141,0.55)',  glow: 'rgba(255,77,141,0.22)',  initial: 'I' },
+  hydro:     { color: Colors.sky,   ring: 'rgba(30,136,229,0.50)',  glow: 'rgba(30,136,229,0.20)',  initial: 'H' },
+  evergreen: { color: Colors.green, ring: 'rgba(46,125,50,0.55)',   glow: 'rgba(46,125,50,0.22)',   initial: 'E' },
 };
 
 export default function ProjectLogo({
@@ -46,10 +48,9 @@ export default function ProjectLogo({
   const tone = TONE[key] || TONE.iris;
   const src  = SOURCES[key];
 
-  // The frame: same size as `size`. The image inside is inset 18% so
-  // logos with their own padding (IRIS) and logos that fill the bounding
-  // box (HYDRO, EVERGREEN) both feel centered and roomy.
-  const inset = Math.round(size * 0.18);
+  // Inner image fills ~92% of the frame so the logo dominates and the
+  // ring reads as a glow around it, not a chunky border with a tile.
+  const inset = Math.round(size * 0.04);
   const innerSize = size - inset * 2;
   const radius = shape === 'square' ? Math.round(size * 0.26) : size / 2;
 
@@ -70,6 +71,10 @@ export default function ProjectLogo({
     return <View style={[styles.center, { width: size, height: size }, style]}>{Logo}</View>;
   }
 
+  // Two stacked rings: an outer translucent glow + an inner solid ring.
+  // The double-layer reads as a soft halo rather than a hard border,
+  // and the fully transparent fill lets the page color bleed through
+  // so the logo never feels "stuck on a card".
   return (
     <View
       style={[
@@ -78,9 +83,9 @@ export default function ProjectLogo({
           width: size,
           height: size,
           borderRadius: radius,
-          backgroundColor: tone.bg,
-          borderWidth: 1.5,
-          borderColor: tone.border,
+          backgroundColor: tone.glow,         // soft tinted glow, no white card
+          borderWidth: Math.max(2, size * 0.035),
+          borderColor: tone.ring,
         },
         style,
       ]}

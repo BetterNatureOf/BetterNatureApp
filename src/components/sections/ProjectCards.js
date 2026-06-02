@@ -56,9 +56,9 @@ export default function ProjectCards({ onPress }) {
           style={styles.card}
           scaleTo={0.985}
         >
-          {/* The logo component renders its own circle frame now — no
-              outer bubble needed. */}
-          <ProjectLogo project={p.logo} size={72} />
+          {/* The logo component renders its own halo frame now — no
+              outer bubble. Sized larger so the logo dominates the row. */}
+          <ProjectLogo project={p.logo} size={84} />
           <View style={styles.textWrap}>
             <View style={styles.nameRow}>
               <Text style={[styles.projectName, { color: p.color }]}>{p.name}</Text>
