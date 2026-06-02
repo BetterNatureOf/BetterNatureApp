@@ -1,21 +1,23 @@
-// Project logo registry. One file resolves every project image so
-// renaming an asset or adding a project is a single-line change.
+// Project logo registry + framed container.
 //
 // Usage:
-//   <ProjectLogo project="iris" size={56} />
-//   <ProjectLogo project="hydro" size={32} />
+//   <ProjectLogo project="iris" size={64} />                ← default: circle frame
+//   <ProjectLogo project="hydro" size={108} shape="square"/> ← rounded square
+//   <ProjectLogo project="evergreen" size={48} bare />       ← no frame
 //
-// Behavior:
-//   • Renders the bundled PNG when the file exists at /src/assets/projects/{key}.png
-//   • If the require() fails at bundle time (because the asset isn't
-//     dropped in yet), falls back to a tinted-circle initial so the UI
-//     keeps shipping. Drop the file in → next reload, the real logo appears.
+// The frame:
+//   • Soft project-tinted background so the logo stands on its own
+//   • Thin 1.5px outline in the project's brand color so it reads as
+//     a deliberate badge rather than a flat tile
+//   • Inner padding so the logo "breathes" instead of touching the edge
+//   • Optional shape: 'circle' (default) or 'square' (rounded-square)
+//
+// Falls back to a tinted-initial badge when the bundled PNG hasn't been
+// dropped in yet, so missing assets never break the bundle.
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { Colors } from '../../config/theme';
 
-// We resolve each require() inside a try/catch wrapper at module load so
-// a missing file doesn't crash the whole bundle.
 function tryRequire(loader) {
   try { return loader(); } catch { return null; }
 }
@@ -26,42 +28,69 @@ const SOURCES = {
   evergreen: tryRequire(() => require('../../assets/projects/evergreen.png')),
 };
 
-const FALLBACK = {
-  iris:      { color: Colors.pink,  bg: '#FFE5EE', initial: 'I' },
-  hydro:     { color: Colors.sky,   bg: '#E1EDFA', initial: 'H' },
-  evergreen: { color: Colors.green, bg: '#DFF1E2', initial: 'E' },
+// Brand tones used by the frame.
+const TONE = {
+  iris:      { color: Colors.pink,  bg: '#FFE5EE', border: 'rgba(255,77,141,0.35)', initial: 'I' },
+  hydro:     { color: Colors.sky,   bg: '#E1EDFA', border: 'rgba(30,136,229,0.30)', initial: 'H' },
+  evergreen: { color: Colors.green, bg: '#DFF1E2', border: 'rgba(46,125,50,0.30)',  initial: 'E' },
 };
 
-export default function ProjectLogo({ project, size = 48, style }) {
+export default function ProjectLogo({
+  project,
+  size = 56,
+  shape = 'circle',
+  bare = false,
+  style,
+}) {
   const key = String(project || '').toLowerCase();
-  const src = SOURCES[key];
-  const fb  = FALLBACK[key] || FALLBACK.iris;
+  const tone = TONE[key] || TONE.iris;
+  const src  = SOURCES[key];
 
-  if (src) {
-    return (
-      <Image
-        source={src}
-        resizeMode="contain"
-        style={[{ width: size, height: size }, style]}
-        accessibilityLabel={`${key} project logo`}
-      />
-    );
+  // The frame: same size as `size`. The image inside is inset 18% so
+  // logos with their own padding (IRIS) and logos that fill the bounding
+  // box (HYDRO, EVERGREEN) both feel centered and roomy.
+  const inset = Math.round(size * 0.18);
+  const innerSize = size - inset * 2;
+  const radius = shape === 'square' ? Math.round(size * 0.26) : size / 2;
+
+  const Logo = src ? (
+    <Image
+      source={src}
+      resizeMode="contain"
+      style={{ width: innerSize, height: innerSize }}
+      accessibilityLabel={`${key} project logo`}
+    />
+  ) : (
+    <Text style={[styles.initial, { color: tone.color, fontSize: innerSize * 0.55 }]}>
+      {tone.initial}
+    </Text>
+  );
+
+  if (bare) {
+    return <View style={[styles.center, { width: size, height: size }, style]}>{Logo}</View>;
   }
-  // Initial-circle fallback so a missing asset never blocks ship.
+
   return (
     <View
       style={[
-        styles.fallback,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: fb.bg },
+        styles.center,
+        {
+          width: size,
+          height: size,
+          borderRadius: radius,
+          backgroundColor: tone.bg,
+          borderWidth: 1.5,
+          borderColor: tone.border,
+        },
         style,
       ]}
     >
-      <Text style={[styles.initial, { color: fb.color, fontSize: size * 0.46 }]}>{fb.initial}</Text>
+      {Logo}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fallback: { alignItems: 'center', justifyContent: 'center' },
+  center: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   initial: { fontWeight: '800', letterSpacing: -0.5 },
 });

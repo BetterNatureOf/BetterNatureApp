@@ -56,9 +56,9 @@ export default function ProjectCards({ onPress }) {
           style={styles.card}
           scaleTo={0.985}
         >
-          <View style={[styles.logoBubble, { backgroundColor: p.bg }]}>
-            <ProjectLogo project={p.logo} size={58} />
-          </View>
+          {/* The logo component renders its own circle frame now — no
+              outer bubble needed. */}
+          <ProjectLogo project={p.logo} size={72} />
           <View style={styles.textWrap}>
             <View style={styles.nameRow}>
               <Text style={[styles.projectName, { color: p.color }]}>{p.name}</Text>
@@ -90,11 +90,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.glassBorder,
     ...Shadows.card,
-  },
-  logoBubble: {
-    width: 78, height: 78, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center',
-    padding: 6,
   },
   textWrap: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

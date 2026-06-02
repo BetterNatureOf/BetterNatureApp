@@ -1672,18 +1672,48 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
-/* ═══════════ PROGRAM LOGOS ═══════════ */
+/* ═══════════ PROGRAM LOGOS ═══════════
+   Frame: tinted circle with a soft project-tinted outline.
+   Inside it, the logo image is inset ~18% so it has room to breathe
+   and the IRIS logo (which has its own circle) doesn't sit flush
+   against the outer ring. */
+.program__visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.program__visual--iris,
+.program__visual--evergreen,
+.program__visual--hydro {
+  width: min(360px, 80%);
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  border: 2px solid;
+  margin: 0 auto;
+  padding: 14%;
+  box-shadow: 0 12px 36px rgba(27, 58, 45, 0.10);
+  transition: transform 0.4s var(--ease), box-shadow 0.4s var(--ease);
+}
+.program__visual--iris      { background: #FFE5EE; border-color: rgba(255,77,141,0.35); }
+.program__visual--evergreen { background: #DFF1E2; border-color: rgba(46,125,50,0.30); }
+.program__visual--hydro     { background: #E1EDFA; border-color: rgba(30,136,229,0.30); }
+
+.program__visual:hover { transform: translateY(-4px); box-shadow: 0 18px 48px rgba(27,58,45,0.14); }
+.program__visual:hover .program__logo { transform: scale(1.05) rotate(-1.5deg); }
+
 .program__logo {
   width: 100%;
-  max-width: 320px;
-  height: auto;
+  height: 100%;
+  object-fit: contain;
   display: block;
   margin: 0 auto;
-  filter: drop-shadow(0 8px 24px rgba(27, 58, 45, 0.12));
+  filter: drop-shadow(0 8px 24px rgba(27, 58, 45, 0.10));
   transition: transform 0.4s var(--ease);
 }
-.program__visual:hover .program__logo { transform: scale(1.04) rotate(-1deg); }
+
 @media (max-width: 720px) {
-  .program__logo { max-width: 220px; }
+  .program__visual--iris,
+  .program__visual--evergreen,
+  .program__visual--hydro { width: min(240px, 70%); padding: 12%; }
 }
 
