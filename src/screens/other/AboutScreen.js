@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import BrushDivider from '../../components/ui/BrushDivider';
+import ProjectLogo from '../../components/ui/ProjectLogo';
 
 export default function AboutScreen({ navigation }) {
   return (
@@ -35,9 +36,9 @@ export default function AboutScreen({ navigation }) {
       </BrushText>
 
       <View style={styles.projectItem}>
-        <Text style={styles.projectEmoji}>🍽️</Text>
+        <ProjectLogo project="iris" size={56} />
         <View style={styles.projectText}>
-          <Text style={styles.projectName}>IRIS — Food Rescue</Text>
+          <Text style={[styles.projectName, { color: Colors.pink }]}>IRIS — Food Rescue</Text>
           <Text style={styles.projectDesc}>
             Rescue surplus food from restaurants and deliver it to those in need.
           </Text>
@@ -45,9 +46,9 @@ export default function AboutScreen({ navigation }) {
       </View>
 
       <View style={styles.projectItem}>
-        <Text style={styles.projectEmoji}>🌲</Text>
+        <ProjectLogo project="evergreen" size={56} />
         <View style={styles.projectText}>
-          <Text style={styles.projectName}>Evergreen — Conservation</Text>
+          <Text style={[styles.projectName, { color: Colors.green }]}>Evergreen — Conservation</Text>
           <Text style={styles.projectDesc}>
             Protect wildlife and restore natural habitats in local communities.
           </Text>
@@ -55,9 +56,9 @@ export default function AboutScreen({ navigation }) {
       </View>
 
       <View style={styles.projectItem}>
-        <Text style={styles.projectEmoji}>💧</Text>
+        <ProjectLogo project="hydro" size={56} />
         <View style={styles.projectText}>
-          <Text style={styles.projectName}>Hydro — Clean Water</Text>
+          <Text style={[styles.projectName, { color: Colors.sky }]}>Hydro — Clean Water</Text>
           <Text style={styles.projectDesc}>
             Provide safe drinking water to underserved communities worldwide.
           </Text>

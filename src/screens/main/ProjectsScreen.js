@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useBreakpoint from '../../hooks/useBreakpoint';
 import { getOrgStats } from '../../services/orgStats';
+import ProjectLogo from '../../components/ui/ProjectLogo';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -12,37 +13,34 @@ function buildProjects(stats) {
   return [
     {
       key: 'IRIS',
+      logo: 'iris',
       name: 'IRIS',
       subtitle: 'Food Rescue Initiative',
       description:
         'Rescue surplus food from local restaurants and deliver it to communities in need. Every meal saved is a step toward zero food waste.',
-      color: Colors.sage,
-      lightColor: Colors.sageLight,
-      emoji: '🍽️',
+      color: Colors.pink,
       stat: fmt(stats.meals),
       statLabel: 'meals rescued',
     },
     {
       key: 'Evergreen',
+      logo: 'evergreen',
       name: 'Evergreen',
       subtitle: 'Conservation & Reforestation',
       description:
         'Native tree planting, urban canopy restoration, and pollinator corridors — led by chapter volunteers.',
       color: Colors.green,
-      lightColor: Colors.greenLight,
-      emoji: '🌲',
       stat: 'Launching',
       statLabel: 'first planting day',
     },
     {
       key: 'Hydro',
+      logo: 'hydro',
       name: 'Hydro',
       subtitle: 'Waterway Protection',
       description:
         'River, creek, and coastline cleanups. Microplastic surveys. Storm drain stenciling.',
       color: Colors.sky,
-      lightColor: Colors.skyLight,
-      emoji: '💧',
       stat: fmt(stats.water),
       statLabel: 'gallons saved',
     },
@@ -80,10 +78,8 @@ export default function ProjectsScreen({ navigation }) {
               onPress={() => navigation.navigate('ProjectDetail', { project: project.key })}
               style={[...cardStyle, { borderLeftColor: project.color }]}
             >
-              <View style={[styles.emojiCircle, { backgroundColor: project.lightColor }]}>
-                <Text style={styles.emoji}>{project.emoji}</Text>
-              </View>
-              <Text style={styles.cardTitle}>{project.name}</Text>
+              <ProjectLogo project={project.logo} size={92} style={{ marginBottom: 14 }} />
+              <Text style={[styles.cardTitle, { color: project.color }]}>{project.name}</Text>
               <Text style={styles.cardSubtitle}>{project.subtitle}</Text>
               <Text style={styles.cardDesc}>{project.description}</Text>
               <View style={styles.statRow}>
