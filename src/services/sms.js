@@ -1,23 +1,30 @@
 // SMS notification scaffold.
 //
-// The actual send happens server-side (Cloud Function / Cloudflare
-// Worker) so we don't ship API secrets to the client. This client-side
-// module only:
+// We use TextBelt instead of Twilio because:
+//   • Single REST endpoint — no SDK to install or upgrade
+//   • Free tier (key="textbelt") sends 1 SMS/day from anywhere — good
+//     for end-to-end testing without paying anything
+//   • Pay-as-you-go credits when you outgrow the free tier; no monthly
+//     phone-number rental ($0 base) and ~$0.0035 per SMS (vs. $0.0075
+//     on Twilio)
+//   • API takes plain phone + message + key — that's it
+//
+// The dispatch still happens server-side (Cloud Function / Cloudflare
+// Worker) so we never ship the API key in the client. This module:
 //   1. Decides WHEN a reminder should fire (smart logic based on when
 //      the volunteer claimed vs. when the pickup window closes).
-//   2. Writes a "sms_outbox" Firestore doc with {to, body, send_at}.
-//      The server function listens for new outbox docs and forwards
-//      them to Twilio (or whatever provider is configured server-side).
+//   2. Writes an "sms_outbox" Firestore doc with {to, body, send_at,
+//      provider, kind, ref_id}. The dispatcher reads new docs and
+//      POSTs them to TextBelt.
 //
 // To turn it on:
-//   1. Sign up for Twilio (or any SMS provider that supports webhooks)
-//   2. Buy a phone number ($1/mo + ~$0.008 per SMS)
-//   3. Deploy functions/sms-dispatcher (needs Firebase Blaze plan)
-//   4. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM in the
-//      function's env. Done.
+//   1. Visit textbelt.com → "Get an API key" → purchase $5-10 of
+//      credits (~1500-3000 SMS) or use 'textbelt' for one daily test
+//   2. Deploy the sms-dispatcher Cloud Function or Cloudflare Worker
+//   3. Set TEXTBELT_KEY in the function env. Done.
 //
-// Until then, every enqueue() call still writes the outbox doc — it
-// just sits there waiting. No-op gracefully if firebase isn't ready.
+// Until then, enqueue() still writes the outbox doc — it just sits
+// there. No errors, no missed events.
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 
@@ -42,18 +49,22 @@ export function computeReminderTime({ claimedAt, pickupWindowUntil }) {
 }
 
 // --- Outbox writer ---------------------------------------------------
-// `to` is an E.164 phone (+15551234567). Body is the message text.
+// `to` is a phone (we normalize to E.164). Body is the message.
 // `sendAt` is optional; if absent the dispatcher sends immediately.
-export async function enqueueSMS({ to, body, sendAt, kind, refId }) {
+export async function enqueueSMS({ to, body, sendAt, kind, refId, provider = 'textbelt' }) {
   if (!isFirebaseConfigured) return null;
   if (!to || !body) return null;
   const e164 = normalizeE164(to);
   if (!e164) return null;
+  // TextBelt accepts up to 160 chars per SMS segment cheaply; long
+  // messages incur per-segment charges. Trim politely.
+  const trimmed = body.length > 320 ? body.slice(0, 317) + '...' : body;
   try {
     const ref = await addDoc(collection(db, 'sms_outbox'), {
       to: e164,
-      body,
+      body: trimmed,
       send_at: sendAt ? sendAt.toISOString() : null,  // null = send now
+      provider,                                        // 'textbelt' default
       kind: kind || 'misc',                            // grouping for analytics
       ref_id: refId || null,                           // e.g. pickup id
       status: 'queued',                                // dispatcher flips this

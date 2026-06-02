@@ -1,0 +1,21 @@
+# Cloudflare Worker config for the SMS dispatcher.
+# Copy to wrangler.toml (which is .gitignored) and fill in your details.
+#
+# Setup:
+#   cd workers/sms-dispatcher
+#   npm install -g wrangler
+#   wrangler login
+#   cp wrangler.toml.example wrangler.toml
+#   wrangler secret put TEXTBELT_KEY
+#   wrangler secret put FIREBASE_PROJECT_ID    # better-nature-app
+#   wrangler secret put FIREBASE_SA_EMAIL      # from service account JSON
+#   wrangler secret put FIREBASE_SA_KEY        # private_key, with \n preserved
+#   wrangler deploy
+
+name = "bn-sms-dispatcher"
+main = "index.js"
+compatibility_date = "2024-09-01"
+
+# Cron: every minute.
+[triggers]
+crons = ["*/1 * * * *"]

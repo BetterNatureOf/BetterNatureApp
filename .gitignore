@@ -18,3 +18,4 @@ google-service-account.json
 skills-lock.json
 scripts/serviceAccount.json
 
+workers/sms-dispatcher/wrangler.toml
