@@ -62,6 +62,7 @@ import ExecFinance from '../screens/executive/ExecFinance';
 import MetricsEditor from '../screens/admin/MetricsEditor';
 import CheckInScreen from '../screens/admin/CheckInScreen';
 import ImpactMap from '../screens/impact/ImpactMap';
+import MemberApprovalGate from '../components/ui/MemberApprovalGate';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
 // having to pass params.
@@ -208,6 +209,7 @@ function ProjectDetail({ route, navigation }) {
 
 export default function MainNavigator() {
   return (
+    <MemberApprovalGate>
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
@@ -271,6 +273,7 @@ export default function MainNavigator() {
       {/* Back-compat alias so old navigation.navigate('FoodInsecurityMap') calls still work */}
       <Stack.Screen name="FoodInsecurityMap" component={ImpactMap} />
     </Stack.Navigator>
+    </MemberApprovalGate>
   );
 }
 

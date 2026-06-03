@@ -13,6 +13,7 @@ import {
   updateUserChapter,
   removeUser,
 } from '../../services/database';
+import { updateProfile } from '../../services/auth';
 import Screen from '../../components/ui/Screen';
 
 const ROLE_OPTIONS = [
@@ -124,18 +125,31 @@ export default function ManageMembers({ navigation }) {
       (m.chapters?.name || '').toLowerCase().includes(search.toLowerCase())
   );
 
+  async function setMemberStatus(member, status) {
+    try {
+      await updateProfile(member.id, { member_status: status });
+      load();
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Failed to update status');
+    }
+  }
+
+  // Pending applications get their own section at the top so the
+  // exec sees them on every visit without scrolling.
+  const pending = filtered.filter((m) => m.member_status === 'pending');
   // Group by role for quick scanning
   const execs = filtered.filter(
-    (m) => m.role === 'executive'
+    (m) => m.role === 'executive' && m.member_status !== 'pending'
   );
   const presidents = filtered.filter(
-    (m) => m.role === 'chapter_president' || m.role === 'chapter_pres'
+    (m) => (m.role === 'chapter_president' || m.role === 'chapter_pres') && m.member_status !== 'pending'
   );
   const rest = filtered.filter(
     (m) =>
       m.role !== 'executive' &&
       m.role !== 'chapter_president' &&
-      m.role !== 'chapter_pres'
+      m.role !== 'chapter_pres' &&
+      m.member_status !== 'pending'
   );
 
   return (
@@ -160,6 +174,27 @@ export default function ManageMembers({ navigation }) {
         />
 
         <Text style={styles.count}>{filtered.length} members</Text>
+
+        {pending.length > 0 && (
+          <>
+            <Text style={[styles.groupLabel, { color: Colors.pink }]}>
+              Pending approval ({pending.length})
+            </Text>
+            {pending.map((m) => (
+              <View key={m.id} style={styles.pendingRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pendingName}>{m.name || '(no name)'}</Text>
+                  <Text style={styles.pendingEmail}>{m.email}</Text>
+                  {m.chapters?.name ? <Text style={styles.pendingEmail}>{m.chapters.name}</Text> : null}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Button title="Approve" variant="small" onPress={() => setMemberStatus(m, 'approved')} />
+                  <Button title="Reject" variant="small" onPress={() => setMemberStatus(m, 'rejected')} />
+                </View>
+              </View>
+            ))}
+          </>
+        )}
 
         {execs.length > 0 && (
           <>
@@ -385,6 +420,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
+  pendingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFF1F2', borderRadius: 12, padding: 14, marginBottom: 8,
+    borderWidth: 1, borderColor: '#FECDD3',
+  },
+  pendingName: { fontSize: 15, fontWeight: '700', color: Colors.dark },
+  pendingEmail: { fontSize: 12, color: Colors.gray, marginTop: 2 },
   list: { gap: 8, marginBottom: 8 },
   listWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: {

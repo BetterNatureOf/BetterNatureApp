@@ -111,6 +111,11 @@ export async function signUp({ email, password, name, phone, city, zip, role, re
     meals_rescued: 0,
     // Email signup collects everything we need, so they're complete on creation.
     profile_complete: true,
+    // Members start in 'pending' and only get full app access once
+    // an exec approves them in Manage Members. Restaurants use a
+    // separate restaurant_status; execs/presidents/admins seeded
+    // outside this flow bypass via role check in MemberApprovalGate.
+    member_status: (role || 'member') === 'member' ? 'pending' : 'approved',
     referral_code: generateReferralCode(),
     referrals_count: 0,
     referred_by: null,
