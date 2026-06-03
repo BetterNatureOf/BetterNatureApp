@@ -40,8 +40,10 @@ export default function Screen({
           boxSizing: 'border-box',
         },
       },
-      // Inner uses flex column so children using `alignSelf: 'center'`
-      // (notably <ResponsiveContainer>) get centered horizontally.
+      // Inner: stretch children full-width (the RN default) so things
+      // like the Welcome hero fill the viewport edge-to-edge.
+      // Centering with a max-width is handled by <ResponsiveContainer>
+      // via marginHorizontal: 'auto'.
       React.createElement(
         'div',
         {
@@ -50,6 +52,7 @@ export default function Screen({
             flexDirection: 'column',
             alignItems: 'stretch',
             minHeight: '100%',
+            width: '100%',
             boxSizing: 'border-box',
             ...flat,
           },

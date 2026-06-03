@@ -23,8 +23,14 @@ export default function ResponsiveContainer({ children, maxWidth = 880, style })
 
 const styles = StyleSheet.create({
   phone: { width: '100%' },
+  // marginHorizontal:'auto' centers the block regardless of whether
+  // the parent uses flex stretch, block layout, or anything else.
+  // (alignSelf:'center' was getting flattened to no-op inside our
+  // Screen wrapper's flex column on web.)
   wide: {
     width: '100%',
     alignSelf: 'center',
+    marginLeft: 'auto',
+    marginRight: 'auto',
   },
 });
