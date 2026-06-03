@@ -98,8 +98,16 @@ export default function SignContract({ route, navigation }) {
     } finally { setSaving(false); }
   }
 
+  const Wrapper = Platform.OS === 'web'
+    ? ({ children }) => <>{children}</>
+    : ({ children }) => (
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          {children}
+        </KeyboardAvoidingView>
+      );
+
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <Wrapper>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -203,7 +211,7 @@ export default function SignContract({ route, navigation }) {
           </Text>
         </ResponsiveContainer>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </Wrapper>
   );
 }
 
