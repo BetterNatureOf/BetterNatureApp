@@ -9,7 +9,7 @@
 // pre-picked one. If not, the picker shows once the volunteer is heading
 // out so they can commit to a destination before we mark them en route.
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Input from '../../components/ui/Input';
@@ -190,7 +190,11 @@ export default function PickupDetail({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   back: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },

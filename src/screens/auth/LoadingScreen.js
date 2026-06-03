@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Animated } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Animated, Platform } from 'react-native';
 import { Colors } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 
@@ -54,6 +54,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
   titleWrap: {
     flex: 1,

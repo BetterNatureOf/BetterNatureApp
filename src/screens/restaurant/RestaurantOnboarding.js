@@ -197,7 +197,11 @@ function Field({ label, children }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   back: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 },
   backText: { fontSize: 15, color: Colors.green, fontWeight: '600' },

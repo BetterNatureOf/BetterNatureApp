@@ -2,7 +2,7 @@
 // Used by execs/admins from the AdminPanel. Writes feed both the app's
 // FridgePicker and the website's Leaflet map.
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
@@ -242,7 +242,11 @@ function Field({ label, children }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   back: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 },
   backText: { fontSize: 15, color: Colors.green, fontWeight: '600' },

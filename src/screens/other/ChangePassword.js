@@ -84,7 +84,11 @@ export default function ChangePassword({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   back: { fontSize: 16, color: Colors.green, marginBottom: 8 },
   title: { color: Colors.green },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Alert, Platform } from 'react-native';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Toggle from '../../components/ui/Toggle';
@@ -114,7 +114,11 @@ export default function SettingsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   back: { fontSize: 16, color: Colors.green, marginBottom: 8 },
   title: { color: Colors.green, marginBottom: 20 },

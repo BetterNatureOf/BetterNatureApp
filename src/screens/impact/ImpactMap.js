@@ -5,9 +5,7 @@
 //  the headline: every gap card is a recruiting call to start a chapter.
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking,
-} from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import { LAYERS, COPY, POINTS, aggregate, loadLiveFridges } from '../../data/impactMap';
 import { openInMaps } from '../../services/maps';
@@ -175,7 +173,11 @@ function Mini({ v, l, warn }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { paddingBottom: 40 },
   header: { padding: 24, paddingTop: 60 },
   back: { fontSize: 16, color: Colors.green, marginBottom: 12 },
