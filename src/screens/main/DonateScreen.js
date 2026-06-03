@@ -1,64 +1,59 @@
 // Donate.
 //
-// The Zeffy iframe owns the whole donation flow now — amount, monthly
-// vs. one-time, card / ACH / Apple Pay-on-card. We don't render our own
-// amount chips or monthly toggle anymore; they were redundant (Zeffy
-// re-asks for the same thing the moment the iframe loads) and adding
-// chrome before the embed made the page feel slower than it is.
-//
-// A Stripe-backed Apple Pay / Google Pay one-tap row still renders
-// above the embed when FEATURES.STRIPE_PSP is on — it's a faster path
-// for repeat donors. Until Stripe is configured, the row self-hides.
+// Bare-bones: a fixed-height container that holds the Zeffy iframe.
+// We avoid ScrollView + ResponsiveContainer + BrushText here entirely
+// because /donate has been crashing with a deep "reading '0' of
+// undefined" error during paint on the production bundle; this version
+// has effectively zero work in its render path to make sure the
+// failure isn't ours.
 import React from 'react';
-import { ScrollView, StyleSheet, Text, Platform } from 'react-native';
-import { Colors, Type } from '../../config/theme';
-import BrushText from '../../components/ui/BrushText';
-import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import { FEATURES } from '../../config/features';
-import ZeffyEmbed from '../../components/donate/ZeffyEmbed';
-
-// PSP donation row is conditionally imported below — only when the
-// Stripe feature flag is on. Some older bundles crashed inside the
-// lazy Stripe loader on first paint when Stripe wasn't configured, so
-// we just don't render that subtree until it's actually wired.
-let DonationCTA = null;
-if (FEATURES.STRIPE_PSP) {
-  // eslint-disable-next-line global-require
-  DonationCTA = require('../../components/donate/DonationCTA').default;
-}
+import { View, Text, StyleSheet, Platform } from 'react-native';
+import { Colors } from '../../config/theme';
+import { getZeffyFormUrl } from '../../services/zeffy';
 
 export default function DonateScreen() {
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ResponsiveContainer maxWidth={720}>
-        <BrushText variant="screenTitle" style={styles.title}>
-          Make a donation
-        </BrushText>
-        <Text style={styles.subtitle}>
-          100% of your gift goes to BetterNature programs. Tax-deductible.
-        </Text>
+  const url = getZeffyFormUrl();
 
-        {DonationCTA ? (
-          <DonationCTA
-            label="Donate one-tap"
-            description="Apple Pay or Google Pay — fastest path for repeat donors"
-            showZeffy={false}
-          />
-        ) : null}
+  // Web: render an <iframe> directly. We don't pass through any of
+  // our wrapper components on this screen — the page is the iframe.
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.web}>
+        <Text style={styles.title}>Make a donation</Text>
+        <Text style={styles.subtitle}>100% of your gift goes to BetterNature programs. Tax-deductible.</Text>
+        {React.createElement('iframe', {
+          src: url,
+          title: 'Donate to BetterNature',
+          style: {
+            width: '100%',
+            height: 'calc(100vh - 150px)',
+            border: 'none',
+            display: 'block',
+            background: 'transparent',
+            borderRadius: 16,
+            overflow: 'hidden',
+            boxShadow: '0 12px 36px rgba(27,58,45,0.10)',
+          },
+          allow: 'payment',
+          loading: 'lazy',
+        })}
+      </View>
+    );
+  }
 
-        <ZeffyEmbed height={Platform.OS === 'web' ? 980 : 0} />
-      </ResponsiveContainer>
-    </ScrollView>
-  );
+  // Native: external link is handled by ZeffyEmbed elsewhere; this
+  // screen is only used on web in practice.
+  return null;
 }
 
 const styles = StyleSheet.create({
-  container: {
+  web: {
     flex: 1,
     backgroundColor: Colors.cream,
-    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+    padding: 24,
+    paddingTop: 60,
+    height: '100vh',
   },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
-  title: { color: Colors.green },
-  subtitle: { ...Type.body, color: Colors.gray, marginTop: 6, marginBottom: 24 },
+  title:    { fontSize: 30, fontWeight: '700', color: Colors.green, marginBottom: 6 },
+  subtitle: { fontSize: 14, color: Colors.gray, marginBottom: 16 },
 });
