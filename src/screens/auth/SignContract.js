@@ -61,6 +61,11 @@ export default function SignContract({ route, navigation }) {
   });
 
   const [agreed, setAgreed] = useState(false);
+  // SMS consent is a required precondition for joining BetterNature —
+  // we use texts for pickup alerts, event reminders, and safety
+  // dispatch. Stored alongside the contract so we have provable
+  // opt-in for TCPA compliance.
+  const [smsConsent, setSmsConsent] = useState(false);
   const [signedName, setSignedName] = useState(user?.name || '');
   const [saving, setSaving] = useState(false);
 
@@ -73,6 +78,7 @@ export default function SignContract({ route, navigation }) {
       return notify('Fill the form', `Missing: ${missing.map((f) => f.label).join(', ')}.`);
     }
     if (!agreed) return notify('Check the box', 'You need to mark agreement to continue.');
+    if (!smsConsent) return notify('Text alerts required', 'BetterNature uses SMS for pickup alerts, event reminders, and safety dispatch. You need to opt in to text messages to participate. You can pause individual categories later in Settings.');
     if (!signedName.trim()) return notify('Type your name', 'Your typed name acts as your signature.');
     if (!user?.id) return notify('Not signed in');
     setSaving(true);
@@ -80,8 +86,18 @@ export default function SignContract({ route, navigation }) {
       await saveContract(user.id, kind, {
         signedName,
         version: spec.version,
-        extras: values,
+        extras: { ...values, sms_consent: true, sms_consent_at: new Date().toISOString() },
       });
+      // Mirror SMS consent at the top level of the profile so the
+      // dispatcher worker can read it without loading the full
+      // contract block.
+      try {
+        const { updateProfile } = await import('../../services/auth');
+        await updateProfile(user.id, {
+          sms_consent: true,
+          sms_consent_at: new Date().toISOString(),
+        });
+      } catch {}
       // Email is best-effort — never blocks the in-app save. We try
       // even if Firebase write failed because the user typed something
       // and we want a backup record.
@@ -191,6 +207,19 @@ export default function SignContract({ route, navigation }) {
             </View>
             <Text style={[styles.agreeText, agreed && { color: Colors.green, fontWeight: '700' }]}>
               I have read and agree to the terms above.
+            </Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            onPress={() => setSmsConsent(!smsConsent)}
+            style={[styles.agreeRow, smsConsent && styles.agreeRowOn]}
+            scaleTo={0.99}
+          >
+            <View style={[styles.checkbox, smsConsent && styles.checkboxOn]}>
+              {smsConsent ? <Icon name="check" size={14} color={Colors.white} /> : null}
+            </View>
+            <Text style={[styles.agreeText, smsConsent && { color: Colors.green, fontWeight: '700' }]}>
+              I agree to receive SMS text messages from BetterNature for pickup alerts, event reminders, and safety dispatch. Standard message and data rates may apply. Reply STOP to opt out at any time, or pause categories in Settings.
             </Text>
           </AnimatedPressable>
 

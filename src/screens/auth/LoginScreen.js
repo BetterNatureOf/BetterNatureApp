@@ -14,7 +14,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import { signIn } from '../../services/auth';
+import { signIn, sendResetEmail } from '../../services/auth';
 import { signInWithGoogle, signInWithApple, linkPendingCredential } from '../../services/authFirebase';
 import { FEATURES } from '../../config/features';
 import { notify, confirm } from '../../services/ui';
@@ -95,6 +95,20 @@ export default function LoginScreen({ navigation }) {
     }
   }
 
+  async function handleForgotPassword() {
+    const target = (email || '').trim();
+    if (!target) {
+      notify('Enter your email', 'Type the email you signed up with above, then tap "Forgot password?" again.');
+      return;
+    }
+    try {
+      await sendResetEmail(target);
+      notify('Check your email', `We sent a password reset link to ${target}. It may take a minute to arrive.`);
+    } catch (e) {
+      notify('Could not send', e?.message || 'Try again in a moment.');
+    }
+  }
+
   function handleGoogle() { return handleOAuthResult(signInWithGoogle(), 'Google'); }
   function handleApple()  { return handleOAuthResult(signInWithApple(),  'Apple'); }
 
@@ -140,6 +154,10 @@ export default function LoginScreen({ navigation }) {
             loading={loading}
             style={styles.btn}
           />
+
+          <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
 
           {showOAuth && (
             <>
@@ -198,6 +216,8 @@ const styles = StyleSheet.create({
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 32 },
   btn: { marginTop: 8 },
+  forgotBtn: { alignSelf: 'center', paddingVertical: 12, marginTop: 4 },
+  forgotText: { color: Colors.green, fontSize: 14, fontWeight: '600' },
   signupLink: { textAlign: 'center', marginTop: 24, ...Type.caption },
   signupBold: { color: Colors.pink, fontWeight: '600' },
   divider: {

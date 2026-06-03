@@ -14,6 +14,7 @@ export {
   uploadIdImage,
   changePassword,
   sendResetEmail,
+  deleteAccount,
   emailAlreadyRegistered,
   signInWithGoogle,
   signInWithApple,

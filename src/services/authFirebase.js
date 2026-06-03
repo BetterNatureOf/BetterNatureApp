@@ -20,12 +20,14 @@ import {
   reauthenticateWithCredential,
   updatePassword as fbUpdatePassword,
   sendPasswordResetEmail,
+  deleteUser as fbDeleteUser,
 } from 'firebase/auth';
 import {
   doc,
   setDoc,
   getDoc,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -448,6 +450,26 @@ export async function sendResetEmail(email) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   if (!email) throw new Error('Enter your email.');
   await sendPasswordResetEmail(auth, email);
+}
+
+// Hard delete: nukes the Firestore profile + the Firebase Auth user.
+// Caller is responsible for the two-step "are you sure" UX. We mark the
+// doc deleted_at first so any concurrent reads (analytics, audit) see
+// the tombstone even if the auth delete fails mid-flight and we have
+// to retry. Auth delete needs a recent sign-in — if it errors with
+// `requires-recent-login`, caller should re-prompt for password and retry.
+export async function deleteAccount() {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Not signed in.');
+  const uid = fb.uid;
+  // Tombstone the profile doc first so downstream reads stop returning it.
+  try { await updateDoc(doc(db, 'users', uid), { deleted_at: serverTimestamp(), name: 'Deleted user', email: null, phone: null }); } catch {}
+  // Best-effort actual delete of the profile doc.
+  try { await deleteDoc(doc(db, 'users', uid)); } catch {}
+  // Finally, delete the auth user. If this throws requires-recent-login,
+  // the caller should reauth and call again.
+  await fbDeleteUser(fb);
 }
 
 // ── Proactive account linking ───────────────────────────────────────

@@ -6,7 +6,8 @@ import Toggle from '../../components/ui/Toggle';
 import BrushDivider from '../../components/ui/BrushDivider';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
-import { updateProfile } from '../../services/auth';
+import { updateProfile, deleteAccount } from '../../services/auth';
+import { notify, confirm } from '../../services/ui';
 
 export default function SettingsScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -15,6 +16,8 @@ export default function SettingsScreen({ navigation }) {
   const [pushNotifs, setPushNotifs] = useState(prefs.push !== false);
   const [eventReminders, setEventReminders] = useState(prefs.events !== false);
   const [pickupAlerts, setPickupAlerts] = useState(prefs.pickups !== false);
+  const [smsAlerts, setSmsAlerts] = useState(user?.sms_consent !== false);
+  const clearAuth = useAuthStore((s) => s.signOut);
 
   // Persist any toggle change to users/{uid}.notification_prefs. Best-effort —
   // if the user is offline we still update local state immediately.
@@ -37,6 +40,49 @@ export default function SettingsScreen({ navigation }) {
   function togglePickups() {
     const v = !pickupAlerts; setPickupAlerts(v);
     persistPrefs({ push: pushNotifs, events: eventReminders, pickups: v });
+  }
+  async function toggleSms() {
+    const v = !smsAlerts;
+    // Turning SMS off is a heavy decision — it disables the channel
+    // BetterNature uses for pickup/event/safety dispatch. Confirm.
+    if (!v) {
+      const ok = await confirm(
+        'Pause text alerts?',
+        'You won\'t get pickup alerts, event reminders, or safety dispatch by text. You can re-enable any time.'
+      );
+      if (!ok) return;
+    }
+    setSmsAlerts(v);
+    if (!user?.id) return;
+    try {
+      await updateProfile(user.id, { sms_consent: v, sms_consent_changed_at: new Date().toISOString() });
+      if (setUser) setUser({ ...user, sms_consent: v });
+    } catch {}
+  }
+
+  // Two-step delete: first confirm "are you sure", then a final
+  // "this will erase your progress" before the actual delete fires.
+  async function handleDeleteAccount() {
+    const ok = await confirm(
+      'ARE YOU SURE?',
+      'Deleting your account removes your profile, history, and signed agreements. This cannot be undone.'
+    );
+    if (!ok) return;
+    const reallyOk = await confirm(
+      'DELETE YOUR ACCOUNT AND PROGRESS?',
+      'Last chance. Tap OK to permanently delete your BetterNature account.'
+    );
+    if (!reallyOk) return;
+    try {
+      await deleteAccount();
+      clearAuth();
+    } catch (e) {
+      if (String(e?.code || e?.message || '').includes('requires-recent-login')) {
+        notify('Please sign in again', 'For security, sign out and sign back in, then try deleting your account again.');
+      } else {
+        notify('Could not delete', e?.message || 'Try again in a moment.');
+      }
+    }
   }
 
   function openUrl(url) {
@@ -80,6 +126,14 @@ export default function SettingsScreen({ navigation }) {
         <Toggle value={pickupAlerts} onToggle={togglePickups} />
       </View>
 
+      <View style={styles.settingRow}>
+        <View style={styles.settingText}>
+          <Text style={styles.settingLabel}>Text Messages (SMS)</Text>
+          <Text style={styles.settingDesc}>Pickup alerts, event reminders, safety dispatch. Required to participate; pause anytime.</Text>
+        </View>
+        <Toggle value={smsAlerts} onToggle={toggleSms} />
+      </View>
+
       <BrushDivider />
 
       <BrushText variant="sectionHeader" style={styles.sectionTitle}>
@@ -106,6 +160,10 @@ export default function SettingsScreen({ navigation }) {
       </TouchableOpacity>
 
       <BrushDivider />
+
+      <TouchableOpacity onPress={handleDeleteAccount} style={styles.deleteBtn}>
+        <Text style={styles.deleteText}>Delete my account</Text>
+      </TouchableOpacity>
 
       <Text style={styles.version}>BetterNature v1.0.0</Text>
      </ResponsiveContainer>
@@ -142,4 +200,13 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.grayLight,
   },
   version: { ...Type.caption, textAlign: 'center', marginTop: 16 },
+  deleteBtn: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginTop: 8,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  deleteText: { fontSize: 15, color: '#EF4444', fontWeight: '700' },
 });
