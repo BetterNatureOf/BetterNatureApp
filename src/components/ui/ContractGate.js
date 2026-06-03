@@ -59,10 +59,23 @@ export default function ContractGate({ kind, children }) {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>What you’re agreeing to</Text>
+          {/* The new CONTRACTS shape stores legal text under
+              spec.recitals (preamble paragraphs) + spec.sections
+              (numbered sections). Earlier versions used a flat
+              spec.clauses array — when we updated contracts.js to the
+              real legal text from the .docx files, this component
+              didn't get migrated and was reading spec.clauses[0] on
+              undefined, which is exactly the "reading '0' of undefined"
+              error people saw on the Org / Restaurant / President /
+              Admin tabs. */}
           <Text style={styles.cardBody}>
-            {spec.clauses[0]}
+            {(spec.recitals && spec.recitals[0]) ||
+             (spec.sections && spec.sections[0]?.body?.[0]) ||
+             'See the full agreement to review the terms.'}
           </Text>
-          <Text style={styles.cardMore}>+ {spec.clauses.length - 1} more clauses on the full form.</Text>
+          <Text style={styles.cardMore}>
+            + {(spec.sections?.length ?? 0)} more sections on the full form.
+          </Text>
         </View>
 
         <Button
