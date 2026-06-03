@@ -55,10 +55,19 @@ function withMockFallback(list /* , mock */) {
 // ── Chapters ──
 export async function fetchChapters() {
   if (useMock()) return mockChapters;
-  const snap = await getDocs(
-    query(collection(db, 'chapters'), where('status', '==', 'active'), orderBy('name'))
-  );
-  return withMockFallback(snapToList(snap), mockChapters);
+  // We used to do where(status=='active')+orderBy('name'), but that
+  // compound query needs a composite index in Firestore — if the
+  // index isn't built (common during development) the query throws
+  // and the caller's catch swallows it, leaving the exec with an
+  // empty list and no clue why. Pull everything, filter + sort
+  // client-side. Chapter count is small (dozens), not millions.
+  const snap = await getDocs(collection(db, 'chapters'));
+  let list = snapToList(snap);
+  // Show 'active' chapters by default, but tolerate docs without
+  // the status field — treat them as active.
+  list = list.filter((c) => !c.status || c.status === 'active');
+  list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return withMockFallback(list, mockChapters);
 }
 
 export async function fetchChapterById(id) {
@@ -90,11 +99,14 @@ export async function fetchEvents(chapterId) {
   if (useMock()) {
     return chapterId ? mockEvents.filter((e) => e.chapter_id === chapterId) : mockEvents;
   }
+  // Same composite-index pitfall — fetch all + filter client-side.
   const today = new Date().toISOString().split('T')[0];
-  const constraints = [where('date', '>=', today), orderBy('date')];
-  if (chapterId) constraints.unshift(where('chapter_id', '==', chapterId));
-  const snap = await getDocs(query(collection(db, 'events'), ...constraints));
-  return snapToList(snap);
+  const snap = await getDocs(collection(db, 'events'));
+  let list = snapToList(snap);
+  if (chapterId) list = list.filter((e) => e.chapter_id === chapterId);
+  list = list.filter((e) => !e.date || e.date >= today);
+  list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  return list;
 }
 
 export async function fetchEventById(id) {
@@ -821,15 +833,14 @@ export async function completePickup(pickupId, actualWeightLbs) {
 // ── Restaurants ──
 export async function fetchRestaurants(status = 'approved') {
   if (useMock()) return mockRestaurants.filter((r) => r.status === status);
-  const snap = await getDocs(
-    query(
-      collection(db, 'restaurants'),
-      where('status', '==', status),
-      orderBy('name')
-    )
-  );
+  // where()+orderBy() on different fields needs a composite index;
+  // do it client-side so a missing index doesn't black-hole the list.
+  const snap = await getDocs(collection(db, 'restaurants'));
+  let list = snapToList(snap);
+  if (status) list = list.filter((r) => r.status === status);
+  list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return withMockFallback(
-    snapToList(snap),
+    list,
     mockRestaurants.filter((r) => r.status === status)
   );
 }
@@ -888,15 +899,18 @@ export async function fetchAllDonations() {
 // ── Notifications ──
 export async function fetchNotifications(userId) {
   if (useMock()) return mockNotifications;
+  // where()+orderBy() needs composite index; do single-field where
+  // and sort + slice client-side.
   const snap = await getDocs(
-    query(
-      collection(db, 'notifications'),
-      where('user_id', '==', userId),
-      orderBy('created_at', 'desc'),
-      fbLimit(50)
-    )
+    query(collection(db, 'notifications'), where('user_id', '==', userId))
   );
-  return withMockFallback(snapToList(snap), mockNotifications);
+  let list = snapToList(snap);
+  list.sort((a, b) => {
+    const ta = a.created_at?.toMillis?.() || 0;
+    const tb = b.created_at?.toMillis?.() || 0;
+    return tb - ta;
+  });
+  return withMockFallback(list.slice(0, 50), mockNotifications);
 }
 
 export async function markNotificationRead(notifId) {
