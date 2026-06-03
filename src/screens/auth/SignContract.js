@@ -99,20 +99,26 @@ export default function SignContract({ route, navigation }) {
   }
 
   const Wrapper = Platform.OS === 'web'
-    ? ({ children }) => <>{children}</>
+    ? ({ children }) => React.createElement(
+        'div',
+        { style: { height: '100vh', width: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', backgroundColor: Colors.cream } },
+        React.createElement('div', { style: { paddingBottom: 40 } }, children)
+      )
     : ({ children }) => (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          {children}
+          <ScrollView
+            style={styles.container}
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
+            {children}
+          </ScrollView>
         </KeyboardAvoidingView>
       );
 
   return (
     <Wrapper>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <>
         <ResponsiveContainer maxWidth={760}>
           <View style={styles.badge}>
             <Icon name="file" size={14} color={Colors.green} />
@@ -210,7 +216,7 @@ export default function SignContract({ route, navigation }) {
             BetterNature  ·  EIN 99-4028399  ·  624 Cypress Knoll Dr, Collierville, TN 38017
           </Text>
         </ResponsiveContainer>
-      </ScrollView>
+      </>
     </Wrapper>
   );
 }

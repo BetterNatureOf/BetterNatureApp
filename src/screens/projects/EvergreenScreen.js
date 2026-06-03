@@ -20,12 +20,21 @@ const ANIMAL_CATEGORIES = [
   { key: 'urban',    name: 'Urban canopy',       icon: 'recycle' },
 ];
 
+const WebScroll = ({ children, bg }) => React.createElement(
+  'div',
+  { style: { height: '100vh', width: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', backgroundColor: bg } },
+  React.createElement('div', { style: { paddingBottom: 40 } }, children)
+);
+
 export default function EvergreenScreen({ navigation }) {
   const { events } = useEvents();
   const evergreenEvents = events.filter((e) => e.project === 'Evergreen');
 
+  const Body = Platform.OS === 'web'
+    ? ({ children }) => <WebScroll bg={Colors.cream}>{children}</WebScroll>
+    : ({ children }) => <ScrollView style={styles.container} contentContainerStyle={styles.content}>{children}</ScrollView>;
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Body>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -111,7 +120,7 @@ export default function EvergreenScreen({ navigation }) {
           Event photos will appear here after your chapter uploads them.
         </Text>
       </Card>
-    </ScrollView>
+    </Body>
   );
 }
 
