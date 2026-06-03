@@ -28,6 +28,36 @@ import {
 import { getProfile } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
 
+// Hoisted out of the component so it isn't redefined on every render.
+// (When defined inline, every keystroke creates a brand-new component
+// type and React unmounts/remounts the whole subtree, blurring inputs.)
+const WebWrapper = ({ children }) => React.createElement(
+  'div',
+  {
+    style: {
+      height: '100vh',
+      width: '100%',
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      WebkitOverflowScrolling: 'touch',
+      backgroundColor: Colors.cream,
+    },
+  },
+  React.createElement('div', { style: { paddingBottom: 40 } }, children)
+);
+const NativeWrapper = ({ children }) => (
+  <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      {children}
+    </ScrollView>
+  </KeyboardAvoidingView>
+);
+const Wrapper = Platform.OS === 'web' ? WebWrapper : NativeWrapper;
+
 export default function SignContract({ route, navigation }) {
   const kind = route?.params?.kind || 'volunteer';
   const spec = CONTRACTS[kind];
@@ -113,24 +143,6 @@ export default function SignContract({ route, navigation }) {
       notify('Could not save', e?.message || 'Try again.');
     } finally { setSaving(false); }
   }
-
-  const Wrapper = Platform.OS === 'web'
-    ? ({ children }) => React.createElement(
-        'div',
-        { style: { height: '100vh', width: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', backgroundColor: Colors.cream } },
-        React.createElement('div', { style: { paddingBottom: 40 } }, children)
-      )
-    : ({ children }) => (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView
-            style={styles.container}
-            contentContainerStyle={styles.content}
-            keyboardShouldPersistTaps="handled"
-          >
-            {children}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      );
 
   return (
     <Wrapper>
