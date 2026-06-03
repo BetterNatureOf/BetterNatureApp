@@ -16,7 +16,8 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import { POINTS, loadLiveFridges } from '../../data/impactMap';
 import USInsecurityMap from '../../components/maps/USInsecurityMap';
-import FridgeNetworkMap from '../../components/maps/FridgeNetworkMap';
+import FridgeLeafletMap from '../../components/maps/FridgeLeafletMap';
+import FridgeListView from '../../components/maps/FridgeListView';
 
 const TABS = [
   { key: 'insecurity', label: 'Food Insecurity' },
@@ -25,7 +26,10 @@ const TABS = [
 
 export default function BNMap({ navigation }) {
   const [tab, setTab] = useState('insecurity');
+  const [fridgeView, setFridgeView] = useState('map'); // 'map' | 'list'
   const [fridges, setFridges] = useState([]);
+  const [userLocation, setUserLocation] = useState(null);
+  const [geoState, setGeoState] = useState('idle'); // idle | asking | granted | denied | unsupported
 
   useEffect(() => {
     let alive = true;
@@ -34,6 +38,25 @@ export default function BNMap({ navigation }) {
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Ask for geolocation the moment the user opens the Fridges tab.
+  // We don't ask on mount because it'd be a creepy prompt before
+  // the user has any indication of why we want their location.
+  function requestLocation() {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGeoState('unsupported');
+      return;
+    }
+    setGeoState('asking');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+        setGeoState('granted');
+      },
+      () => setGeoState('denied'),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+    );
+  }
 
   const gaps = useMemo(() => POINTS.filter((p) => p.kind === 'gap'), []);
 
@@ -80,9 +103,49 @@ export default function BNMap({ navigation }) {
 
         {/* Map surface */}
         <View style={styles.surface}>
-          {tab === 'insecurity'
-            ? <USInsecurityMap fridges={fridges} />
-            : <FridgeNetworkMap fridges={fridges} />}
+          {tab === 'insecurity' ? (
+            <USInsecurityMap fridges={fridges} />
+          ) : (
+            <View>
+              {/* Sub-toggle: Map | List */}
+              <View style={styles.subToggleRow}>
+                <View style={styles.subToggle}>
+                  {[
+                    { key: 'map',  label: 'Map' },
+                    { key: 'list', label: 'List' },
+                  ].map((opt) => {
+                    const active = fridgeView === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.subTab, active && styles.subTabActive]}
+                        onPress={() => setFridgeView(opt.key)}
+                      >
+                        <Text style={[styles.subTabText, active && styles.subTabTextActive]}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {geoState === 'idle' || geoState === 'denied' ? (
+                  <TouchableOpacity onPress={requestLocation} style={styles.locateBtn}>
+                    <Text style={styles.locateBtnText}>
+                      {geoState === 'denied' ? 'Try location again' : 'Use my location'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : geoState === 'asking' ? (
+                  <Text style={styles.locateState}>Getting location…</Text>
+                ) : geoState === 'granted' ? (
+                  <Text style={styles.locateStateOn}>Centered on you</Text>
+                ) : null}
+              </View>
+
+              {fridgeView === 'map' && Platform.OS === 'web' ? (
+                <FridgeLeafletMap fridges={fridges} userLocation={userLocation} height={580} />
+              ) : (
+                <FridgeListView fridges={fridges} userLocation={userLocation} />
+              )}
+            </View>
+          )}
         </View>
 
         {/* Gap recruiting rail — surfaces the same call-to-action the
@@ -145,4 +208,15 @@ const styles = StyleSheet.create({
   gapState: { fontSize: 12, color: Colors.grayMid, marginTop: 2 },
   gapCta: { marginTop: 12, backgroundColor: Colors.pink, paddingVertical: 10, borderRadius: Radius.pill, alignItems: 'center' },
   gapCtaText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
+
+  subToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
+  subToggle: { flexDirection: 'row', backgroundColor: '#F7F5EF', borderRadius: Radius.pill, padding: 4 },
+  subTab: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: Radius.pill },
+  subTabActive: { backgroundColor: Colors.white, ...Shadows.card },
+  subTabText: { fontSize: 12, fontWeight: '700', color: Colors.gray, letterSpacing: 0.3 },
+  subTabTextActive: { color: Colors.green },
+  locateBtn: { backgroundColor: Colors.green, paddingVertical: 9, paddingHorizontal: 14, borderRadius: Radius.pill },
+  locateBtnText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  locateState: { ...Type.caption, color: Colors.grayMid },
+  locateStateOn: { fontSize: 12, color: Colors.green, fontWeight: '700' },
 });

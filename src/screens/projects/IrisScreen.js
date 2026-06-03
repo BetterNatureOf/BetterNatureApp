@@ -28,6 +28,7 @@ import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import ProjectLogo from '../../components/ui/ProjectLogo';
 import Screen from '../../components/ui/Screen';
 import FridgeNetworkMap from '../../components/maps/FridgeNetworkMap';
+import FridgeLeafletMap from '../../components/maps/FridgeLeafletMap';
 import { loadLiveFridges } from '../../data/impactMap';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
@@ -135,11 +136,24 @@ export default function IrisScreen({ navigation }) {
           <Text style={styles.mapPreviewEyebrow}>The fridge network</Text>
           <Text style={styles.mapPreviewTitle}>Where surplus food goes</Text>
         </View>
-        <FridgeNetworkMap
-          fridges={liveFridges}
-          compact
-          onSeeAll={() => navigation.navigate('BNMap')}
-        />
+        {Platform.OS === 'web' ? (
+          <>
+            <FridgeLeafletMap fridges={liveFridges} height={320} />
+            <TouchableOpacity
+              style={styles.fridgePreviewCta}
+              onPress={() => navigation.navigate('BNMap')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.fridgePreviewCtaText}>Open the full BN Map →</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <FridgeNetworkMap
+            fridges={liveFridges}
+            compact
+            onSeeAll={() => navigation.navigate('BNMap')}
+          />
+        )}
       </View>
 
       {/* BN Map link (food insecurity + fridges) */}
@@ -263,6 +277,8 @@ const styles = StyleSheet.create({
   mapPreviewHeader: { marginBottom: 12 },
   mapPreviewEyebrow: { ...Type.eyebrow, color: Colors.pink, fontSize: 11 },
   mapPreviewTitle: { fontSize: 18, fontWeight: '800', color: Colors.green, marginTop: 2 },
+  fridgePreviewCta: { marginTop: 14, backgroundColor: Colors.green, paddingVertical: 12, borderRadius: 999, alignItems: 'center' },
+  fridgePreviewCtaText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
   mapCard: {
     flexDirection: 'row',
     alignItems: 'center',
