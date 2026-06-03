@@ -62,6 +62,7 @@ import ExecFinance from '../screens/executive/ExecFinance';
 import MetricsEditor from '../screens/admin/MetricsEditor';
 import CheckInScreen from '../screens/admin/CheckInScreen';
 import ImpactMap from '../screens/impact/ImpactMap';
+import BNMap from '../screens/impact/BNMap';
 import MemberApprovalGate from '../components/ui/MemberApprovalGate';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
@@ -273,10 +274,11 @@ export default function MainNavigator() {
       {/* Check-in — pres/exec verify volunteer attendance */}
       <Stack.Screen name="CheckIn" component={CheckInScreen} />
 
-      {/* Impact Map — replaces FoodInsecurityMap; shows chapters, the gap, partners, plantings, cleanups */}
-      <Stack.Screen name="ImpactMap" component={ImpactMap} />
-      {/* Back-compat alias so old navigation.navigate('FoodInsecurityMap') calls still work */}
-      <Stack.Screen name="FoodInsecurityMap" component={ImpactMap} />
+      {/* BN Map — the new unified map (Food Insecurity tab + Fridges tab) */}
+      <Stack.Screen name="BNMap" component={BNMap} />
+      {/* Back-compat aliases so old navigation.navigate('ImpactMap'/'FoodInsecurityMap') calls land on the new screen */}
+      <Stack.Screen name="ImpactMap" component={BNMap} />
+      <Stack.Screen name="FoodInsecurityMap" component={BNMap} />
     </Stack.Navigator>
     </MemberApprovalGate>
   );

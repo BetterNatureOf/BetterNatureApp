@@ -72,7 +72,8 @@ const screens = {
   ExecMetrics: 'exec/metrics',
   PresMetrics: 'pres/metrics',
   CheckIn: 'check-in',
-  ImpactMap: 'map',
+  BNMap: 'map',
+  ImpactMap: 'impact-map',
   FoodInsecurityMap: 'food-map',
 };
 

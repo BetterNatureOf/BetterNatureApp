@@ -21,14 +21,13 @@ const COL = 'fridges';
 
 export async function listFridges({ chapterId } = {}) {
   if (!isFirebaseConfigured) return [];
-  let q;
-  if (chapterId) {
-    q = query(collection(db, COL), where('chapter_id', '==', chapterId), where('active', '==', true));
-  } else {
-    q = query(collection(db, COL), where('active', '==', true), orderBy('city'));
-  }
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Avoid where()+orderBy() compound queries (composite-index trap).
+  const snap = await getDocs(collection(db, COL));
+  let list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  list = list.filter((f) => f.active !== false); // missing field == active
+  if (chapterId) list = list.filter((f) => f.chapter_id === chapterId);
+  list.sort((a, b) => (a.city || '').localeCompare(b.city || ''));
+  return list;
 }
 
 export async function getFridge(id) {

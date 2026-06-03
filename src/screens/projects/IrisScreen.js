@@ -27,6 +27,8 @@ import Icon from '../../components/ui/Icon';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import ProjectLogo from '../../components/ui/ProjectLogo';
 import Screen from '../../components/ui/Screen';
+import FridgeNetworkMap from '../../components/maps/FridgeNetworkMap';
+import { loadLiveFridges } from '../../data/impactMap';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -38,11 +40,13 @@ export default function IrisScreen({ navigation }) {
   const [stats, setStats] = useState({ meals: 0 });
   const [partners, setPartners] = useState(0);
   const [volunteers, setVolunteers] = useState(0);
+  const [liveFridges, setLiveFridges] = useState([]);
 
   useEffect(() => {
     getOrgStats().then(setStats).catch(() => {});
     fetchRestaurants('approved').then((r) => setPartners(r.length)).catch(() => {});
     fetchAllMembers().then((m) => setVolunteers(m.length)).catch(() => {});
+    loadLiveFridges().then(setLiveFridges).catch(() => {});
   }, []);
 
   const irisEvents = events.filter((e) => e.project === 'IRIS');
@@ -124,18 +128,32 @@ export default function IrisScreen({ navigation }) {
         <StatCard number={fmt(volunteers)} label="Volunteers" color={Colors.sage} style={styles.stat} />
       </View>
 
-      {/* Food Insecurity Map Link */}
+      {/* Fridge network preview \u2014 pulled live from Firestore on
+          mount; tapping anywhere opens the full BN Map. */}
+      <View style={styles.mapPreviewWrap}>
+        <View style={styles.mapPreviewHeader}>
+          <Text style={styles.mapPreviewEyebrow}>The fridge network</Text>
+          <Text style={styles.mapPreviewTitle}>Where surplus food goes</Text>
+        </View>
+        <FridgeNetworkMap
+          fridges={liveFridges}
+          compact
+          onSeeAll={() => navigation.navigate('BNMap')}
+        />
+      </View>
+
+      {/* BN Map link (food insecurity + fridges) */}
       <TouchableOpacity
         style={styles.mapCard}
         activeOpacity={0.8}
-        onPress={() => navigation.navigate('ImpactMap')}
+        onPress={() => navigation.navigate('BNMap')}
       >
         <View style={styles.mapIconWrap}>
-          <Text style={styles.mapIcon}>{'\u{1F30D}'}</Text>
+          <Text style={styles.mapIcon}>{'\u{1F5FA}'}\uFE0F</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.mapTitle}>The Impact Map</Text>
-          <Text style={styles.mapSubtitle}>Chapters, partners, and the gap {'\u2014'} every city we haven't reached yet</Text>
+          <Text style={styles.mapTitle}>BN Map</Text>
+          <Text style={styles.mapSubtitle}>Food-insecurity heatmap + the live fridge network</Text>
         </View>
         <Text style={styles.mapArrow}>{'\u203A'}</Text>
       </TouchableOpacity>
@@ -231,6 +249,20 @@ const styles = StyleSheet.create({
   pickupQty: { ...Type.caption, fontWeight: '600' },
   pickupInstructions: { ...Type.caption, fontStyle: 'italic', marginTop: 6 },
   claimBtn: { marginTop: 12 },
+  mapPreviewWrap: {
+    marginHorizontal: 24,
+    marginTop: 20,
+    marginBottom: 8,
+    padding: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    ...Shadows.card,
+  },
+  mapPreviewHeader: { marginBottom: 12 },
+  mapPreviewEyebrow: { ...Type.eyebrow, color: Colors.pink, fontSize: 11 },
+  mapPreviewTitle: { fontSize: 18, fontWeight: '800', color: Colors.green, marginTop: 2 },
   mapCard: {
     flexDirection: 'row',
     alignItems: 'center',
