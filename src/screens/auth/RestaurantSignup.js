@@ -12,7 +12,8 @@ import { Colors, Type } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { createRestaurant } from '../../services/database';
+import { createRestaurant, updateRestaurant } from '../../services/database';
+import { signUp, updateProfile } from '../../services/auth';
 import useAuthStore, { ROLES } from '../../store/authStore';
 import Screen from '../../components/ui/Screen';
 
@@ -23,6 +24,7 @@ export default function RestaurantSignup({ navigation }) {
     address: '',
     contact_name: '',
     email: '',
+    password: '',
     phone: '',
     food_type: '',
     frequency: '',
@@ -34,32 +36,64 @@ export default function RestaurantSignup({ navigation }) {
   }
 
   async function handleSubmit() {
-    if (!form.name.trim() || !form.email.trim()) {
-      Alert.alert('Required', 'Please fill in the restaurant name and email.');
+    if (!form.name.trim() || !form.email.trim() || !form.password) {
+      Alert.alert('Required', 'Please fill in restaurant name, email, and password.');
+      return;
+    }
+    if (form.password.length < 6) {
+      Alert.alert('Password too short', 'Use at least 6 characters.');
       return;
     }
 
     setLoading(true);
     try {
-      await createRestaurant(form);
-      // Do NOT log them in. Restaurants are gated behind an exec
-      // approval — we'll email login credentials once the partner is
-      // approved in Manage Restaurants. Bounce back to the welcome
-      // screen so they don't get stuck on a half-state.
+      // 1) Create the Firebase Auth account with the restaurant's
+      //    chosen password so they can log in later.
+      const authData = await signUp({
+        email: form.email,
+        password: form.password,
+        name: form.name,
+        phone: form.phone,
+        city: '',
+        zip: '',
+        role: ROLES.RESTAURANT,
+      });
+      const uid = authData?.user?.id;
+
+      // 2) Create the restaurant doc in pending state, linked to the
+      //    user's uid so exec can match it back to the Auth account.
+      const created = await createRestaurant({
+        ...form,
+        password: undefined, // never persist plaintext
+        user_id: uid,
+      });
+
+      // 3) Mirror restaurant_id + restaurant_status on the user doc so
+      //    the dashboard gate can read them on login without a join.
+      if (uid) {
+        try {
+          await updateProfile(uid, {
+            restaurant_id: created?.id || null,
+            restaurant_status: 'pending',
+          });
+        } catch {}
+      }
+
+      // 4) Log them in. The RestaurantNavigator's pending gate will
+      //    show an "awaiting approval" screen until an exec flips the
+      //    status to 'approved' in Manage Restaurants.
+      if (authData?.user) {
+        setUser({
+          ...authData.user,
+          role: ROLES.RESTAURANT,
+          restaurant_id: created?.id || null,
+          restaurant_status: 'pending',
+        });
+      }
+
       Alert.alert(
         'Application received',
-        "Thanks! A BetterNature executive will review your application. We'll email you at " +
-          (form.email || 'the address you provided') +
-          ' once you\'re approved.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (navigation?.canGoBack?.()) navigation.goBack();
-              else navigation.navigate('Welcome');
-            },
-          },
-        ]
+        "Thanks! A BetterNature executive will review your application in the app. You'll see your dashboard unlock as soon as you're approved."
       );
     } catch (e) {
       Alert.alert('Error', e.message || 'Failed to submit');
@@ -106,6 +140,13 @@ export default function RestaurantSignup({ navigation }) {
           onChangeText={(v) => update('email', v)}
           keyboardType="email-address"
           autoCapitalize="none"
+        />
+        <Input
+          label="Password"
+          placeholder="At least 6 characters"
+          value={form.password}
+          onChangeText={(v) => update('password', v)}
+          secureTextEntry
         />
         <Input
           label="Phone"

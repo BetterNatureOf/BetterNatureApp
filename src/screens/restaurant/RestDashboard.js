@@ -22,6 +22,7 @@ import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 import DonationCTA from '../../components/donate/DonationCTA';
 import ContractGate from '../../components/ui/ContractGate';
+import RestaurantApprovalGate from '../../components/ui/RestaurantApprovalGate';
 import {
   fetchDonationHistory, fetchPickupsByRestaurant,
 } from '../../services/database';
@@ -154,6 +155,7 @@ export default function RestDashboard({ navigation }) {
   ];
 
   return (
+    <RestaurantApprovalGate>
     <ContractGate kind="restaurant">
     <Screen
       contentStyle={[styles.content, isPhone && styles.contentPhone]}
@@ -302,6 +304,7 @@ export default function RestDashboard({ navigation }) {
       </ResponsiveContainer>
     </Screen>
     </ContractGate>
+    </RestaurantApprovalGate>
   );
 }
 
