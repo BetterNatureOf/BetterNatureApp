@@ -40,7 +40,22 @@ export default function Screen({
           boxSizing: 'border-box',
         },
       },
-      React.createElement('div', { style: flat }, children)
+      // Inner uses flex column so children using `alignSelf: 'center'`
+      // (notably <ResponsiveContainer>) get centered horizontally.
+      React.createElement(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            minHeight: '100%',
+            boxSizing: 'border-box',
+            ...flat,
+          },
+        },
+        children
+      )
     );
   }
   return (
