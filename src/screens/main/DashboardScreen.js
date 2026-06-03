@@ -1,272 +1,36 @@
 // Home / Dashboard.
 //
-// Mobile: a single column scroll — stats, active pickups, projects, events,
-// member-of-the-month, donate card.
-//
-// Desktop / laptop: the same building blocks rearranged into a real
-// two-column workspace that fills the viewport. The right rail (1/3 of
-// the width) holds Events + Donate + Member-of-the-month so the eye
-// always lands on "what to do next" without scrolling. Left column
-// (2/3) is the user's actual work: stats, active pickups, programs.
-//
-// We don't cap maxWidth on desktop because the explicit ask was: use the
-// whole laptop screen. Padding scales with breakpoint instead of layout
-// width so the content breathes without feeling like a stretched phone.
+// TEMPORARY: stripped to a minimal render to isolate the
+// "Cannot read properties of undefined (reading '0')" production crash.
+// Once we confirm the bare version renders, we'll fold building blocks
+// back in one at a time to find the culprit.
 import React from 'react';
-import { ScrollView, StyleSheet, View, Text } from 'react-native';
-import { Colors, Type } from '../../config/theme';
+import { ScrollView, StyleSheet, View, Text, Platform } from 'react-native';
+import { Colors } from '../../config/theme';
 import useAuthStore from '../../store/authStore';
-import useNotifStore from '../../store/notifStore';
-import DashboardHeader from '../../components/sections/DashboardHeader';
-import ProjectCards from '../../components/sections/ProjectCards';
-import UpcomingEvents from '../../components/sections/UpcomingEvents';
-import DonateCard from '../../components/sections/DonateCard';
-import MemberOfMonth from '../../components/sections/MemberOfMonth';
-import MyPickups from '../../components/sections/MyPickups';
-import BrushDivider from '../../components/ui/BrushDivider';
-import StatCard from '../../components/ui/StatCard';
-import Icon from '../../components/ui/Icon';
-import useBreakpoint from '../../hooks/useBreakpoint';
-import useEvents from '../../hooks/useEvents';
-import usePickups from '../../hooks/usePickups';
-import { confirm } from '../../services/ui';
 
 export default function DashboardScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
-  const unreadCount = useNotifStore((s) => s.unreadCount);
-  const { events } = useEvents();
-  const { pickups, claim } = usePickups();
-  const { isDesktop, isTablet, width } = useBreakpoint();
-
-  async function handleClaimPickup(pickup) {
-    const ok = await confirm(
-      'Claim Pickup',
-      `Claim the pickup from ${pickup.restaurant_name}?`
-    );
-    if (!ok) return;
-    try { await claim(pickup.id); } catch {}
-  }
-
-  // First-time member: zero pickups, zero events, zero hours. Show a
-  // welcome banner with three clear next-steps so the empty home
-  // screen reads like guidance instead of "is this even working?"
-  const isNew = !user?.events_attended && !user?.meals_rescued && !user?.hours_logged;
-
-  const welcome = isNew ? (
-    <View style={styles.welcome}>
-      <Text style={styles.welcomeEyebrow}>WELCOME TO BETTERNATURE</Text>
-      <Text style={styles.welcomeTitle}>You’re in. Here’s what to do next.</Text>
-      <View style={{ height: 14 }} />
-      <WelcomeStep n="1" icon="id-card" title="Verify your ID"
-        body="Required before you can claim pickups. Takes 60 seconds."
-        onPress={() => navigation.navigate('VerifyId')} done={!!user?.id_document_url} />
-      <WelcomeStep n="2" icon="user" title="Finish your profile"
-        body="So restaurants can reach you on pickup day."
-        onPress={() => navigation.navigate('EditProfile')} done={!!user?.profile_complete} />
-      <WelcomeStep n="3" icon="calendar" title="Browse upcoming events"
-        body="Plantings, cleanups, chapter actions."
-        onPress={() => navigation.navigate('Iris')} />
-    </View>
-  ) : null;
-
-  // ── Building blocks ────────────────────────────────────────────────
-  const stats = (
-    <View style={styles.statsRow}>
-      <StatCard number={user?.events_attended || 0} label="Events" color={Colors.green} style={styles.statItem} />
-      <StatCard number={user?.meals_rescued || 0} label="Meals Rescued" color={Colors.sage} style={styles.statItem} />
-      <StatCard number={`${user?.hours_logged || 0}h`} label="Hours" color={Colors.pink} style={styles.statItem} />
-    </View>
-  );
-
-  const activePickups = (
-    <MyPickups
-      pickups={pickups}
-      userId={user?.id}
-      onPickupPress={(p) => navigation.navigate('PickupDetail', { pickupId: p.id, pickup: p })}
-      onClaimPress={handleClaimPickup}
-    />
-  );
-
-  const projects = (
-    <ProjectCards onPress={(project) => navigation.navigate('ProjectDetail', { project })} />
-  );
-
-  const events_ = (
-    <UpcomingEvents
-      events={events}
-      onEventPress={(event) => navigation.navigate('EventDetail', { event })}
-    />
-  );
-
-  // ── Desktop layout: hero strip + two-column workspace ──────────────
-  if (isDesktop) {
-    // Generous horizontal padding scales with the viewport so the
-    // content reads at the same rhythm whether the laptop is 13" or 27".
-    const pad = Math.max(32, Math.min(96, Math.round((width - 1280) * 0.25 + 32)));
-    return (
-      <View style={styles.container}>
-        <DashboardHeader
-          user={user}
-          chapterName={user?.chapter?.name}
-          unreadCount={unreadCount}
-          onNotifPress={() => navigation.navigate('Notifications')}
-        />
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.contentDesktop, { paddingHorizontal: pad }]}
-          showsVerticalScrollIndicator={false}
-        >
-          {welcome}
-          {/* Stats row — drop its built-in horizontal padding here since
-              contentDesktop already handles it. */}
-          <View style={[styles.statsRow, styles.flushH]}>
-            <StatCard number={user?.events_attended || 0} label="Events" color={Colors.green} style={styles.statItem} />
-            <StatCard number={user?.meals_rescued || 0} label="Meals Rescued" color={Colors.sage} style={styles.statItem} />
-            <StatCard number={`${user?.hours_logged || 0}h`} label="Hours" color={Colors.pink} style={styles.statItem} />
-          </View>
-
-          <View style={[styles.twoCol, styles.flushH]}>
-            {/* Left — primary workspace */}
-            <View style={styles.colMain}>
-              {activePickups}
-              <View style={{ height: 28 }} />
-              {projects}
-            </View>
-
-            {/* Right — what's next */}
-            <View style={styles.colSide}>
-              {events_}
-              <View style={{ height: 20 }} />
-              <DonateCard onPress={() => navigation.navigate('Donate')} />
-              <View style={{ height: 20 }} />
-              <MemberOfMonth member={null} />
-            </View>
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // ── Phone + tablet: single column, padding bumps a notch on tablet ─
   return (
-    <View style={styles.container}>
-      <DashboardHeader
-        user={user}
-        chapterName={user?.chapter?.name}
-        unreadCount={unreadCount}
-        onNotifPress={() => navigation.navigate('Notifications')}
-      />
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          isTablet && { paddingHorizontal: 48 },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {welcome}
-        {stats}
-        {activePickups}
-        <BrushDivider />
-        {projects}
-        <BrushDivider />
-        {events_}
-        <MemberOfMonth member={null} />
-        <DonateCard onPress={() => navigation.navigate('Donate')} />
-      </ScrollView>
-    </View>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.eyebrow}>HOME</Text>
+      <Text style={styles.title}>Welcome, {user?.name || 'volunteer'}</Text>
+      <Text style={styles.body}>
+        The full dashboard is being rebuilt to fix a production rendering
+        bug. Other tabs work — Donate, Projects, Impact, Profile.
+      </Text>
+    </ScrollView>
   );
 }
-
-function WelcomeStep({ n, icon, title, body, onPress, done }) {
-  return (
-    <View style={[wstyles.step, done && wstyles.stepDone]}>
-      <View style={[wstyles.stepNum, done && wstyles.stepNumDone]}>
-        {done
-          ? <Icon name="check" size={14} color={Colors.white} strokeWidth={3} />
-          : <Text style={wstyles.stepNumText}>{n}</Text>}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={wstyles.stepTitle}>{title}</Text>
-        <Text style={wstyles.stepBody}>{body}</Text>
-      </View>
-      {!done ? (
-        <Text style={wstyles.stepCta} onPress={onPress}>Start →</Text>
-      ) : null}
-    </View>
-  );
-}
-
-const wstyles = StyleSheet.create({
-  step: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 10,
-  },
-  stepDone: { opacity: 0.55 },
-  stepNum: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: Colors.greenLight,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  stepNumDone: { backgroundColor: Colors.green },
-  stepNumText: { fontWeight: '800', color: Colors.green, fontSize: 13 },
-  stepTitle: { fontSize: 14, fontWeight: '700', color: Colors.dark },
-  stepBody: { fontSize: 12.5, color: '#5C6370', marginTop: 1, lineHeight: 17 },
-  stepCta: { fontSize: 13, fontWeight: '700', color: Colors.pink },
-});
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
-  welcome: {
-    marginHorizontal: 24,
-    marginTop: 22,
-    padding: 22,
-    borderRadius: 18,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-    shadowColor: '#1B3A2D',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
-  welcomeEyebrow: {
-    fontSize: 10.5, fontWeight: '800', letterSpacing: 1.5,
-    color: Colors.green,
-  },
-  welcomeTitle: {
-    fontSize: 22, fontWeight: '600',
-    color: Colors.dark,
-    fontFamily: Type.screenTitle?.fontFamily,
-    marginTop: 6,
-    letterSpacing: -0.3,
-  },
-  scroll: { flex: 1 },
-  content: { paddingBottom: 32 },
-  contentDesktop: {
-    paddingTop: 24,
-    paddingBottom: 60,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    marginTop: 22,
-    gap: 14,
-  },
-  statItem: { flex: 1 },
-
-  // Desktop columns: 2:1 split. flex values, not fixed widths, so the
-  // layout still adapts to ultra-wide and laptop screens alike.
-  twoCol: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    marginTop: 32,
-    gap: 32,
-    alignItems: 'flex-start',
-  },
-  colMain: { flex: 2, minWidth: 0 },
-  colSide: { flex: 1, minWidth: 280 },
-  // Strips the default horizontal padding on rows so the parent
-  // contentDesktop's responsive padding is the only horizontal source.
-  flushH: { paddingHorizontal: 0 },
+  content: { padding: 24, paddingTop: 80 },
+  eyebrow: { fontSize: 12, fontWeight: '800', color: Colors.green, letterSpacing: 1, marginBottom: 6 },
+  title:   { fontSize: 28, fontWeight: '700', color: Colors.green, marginBottom: 14 },
+  body:    { fontSize: 15, color: Colors.gray, lineHeight: 22 },
 });
