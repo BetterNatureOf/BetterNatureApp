@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Card from '../../components/ui/Card';
@@ -116,7 +116,11 @@ export default function EvergreenScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.cream },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.cream,
+    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  },
   content: { paddingBottom: 40 },
   header: { padding: 24, paddingTop: 60, backgroundColor: Colors.greenLight },
   back: { fontSize: 16, color: Colors.green, marginBottom: 8 },
