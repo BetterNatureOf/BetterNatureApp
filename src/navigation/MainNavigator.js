@@ -251,6 +251,11 @@ export default function MainNavigator() {
       <Stack.Screen name="Broadcast" component={BroadcastScreen} />
       <Stack.Screen name="ExportReports" component={ExportReports} />
 
+      {/* Executives that are also chapter presidents reach the
+          president dashboard through this stack entry — their
+          Manage tab still goes to ExecutiveDashboard. */}
+      <Stack.Screen name="PresidentDashboard" component={PresidentDashboard} />
+
       {/* President-flavored aliases so PresidentDashboard's existing
           navigation.navigate('PresEvents') etc. keep working. */}
       <Stack.Screen name="PresEvents" component={PresEvents} />

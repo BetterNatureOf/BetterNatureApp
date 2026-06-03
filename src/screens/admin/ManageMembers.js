@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, Platform } from 'react-native';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, Platform, Image } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
@@ -222,13 +222,42 @@ export default function ManageMembers({ navigation }) {
 
         {rest.length > 0 && (
           <>
-            <Text style={styles.groupLabel}>Members & Volunteers</Text>
-            <MemberList
-              members={rest}
-              onEdit={openEdit}
-              onRemove={handleRemove}
-              wide={isWide}
-            />
+            <Text style={styles.groupLabel}>Members & Volunteers (by chapter)</Text>
+            {/* Group members by chapter so the exec sees who's where. */}
+            {(() => {
+              const groups = new Map();
+              rest.forEach((m) => {
+                const key = m.chapter_id || '__none__';
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(m);
+              });
+              const ordered = [...groups.entries()].sort(([a], [b]) => {
+                if (a === '__none__') return 1;
+                if (b === '__none__') return -1;
+                const an = chapters.find((c) => c.id === a)?.name || '';
+                const bn = chapters.find((c) => c.id === b)?.name || '';
+                return an.localeCompare(bn);
+              });
+              return ordered.map(([key, list]) => {
+                const chapterName =
+                  key === '__none__'
+                    ? 'No chapter assigned'
+                    : chapters.find((c) => c.id === key)?.name || 'Unknown chapter';
+                return (
+                  <View key={key} style={{ marginTop: 12 }}>
+                    <Text style={styles.chapterHeader}>
+                      {chapterName} <Text style={styles.chapterCount}>· {list.length}</Text>
+                    </Text>
+                    <MemberList
+                      members={list}
+                      onEdit={openEdit}
+                      onRemove={handleRemove}
+                      wide={isWide}
+                    />
+                  </View>
+                );
+              });
+            })()}
           </>
         )}
 
@@ -241,8 +270,82 @@ export default function ManageMembers({ navigation }) {
         >
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>{editing?.name}</Text>
+              <ScrollView style={{ maxHeight: '90vh' }} contentContainerStyle={{ paddingBottom: 8 }}>
+              <Text style={styles.modalTitle}>{editing?.name || '(no name)'}</Text>
               <Text style={styles.modalEmail}>{editing?.email}</Text>
+
+              {/* Contact info */}
+              <View style={styles.detailGrid}>
+                {editing?.phone ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailKey}>Phone</Text>
+                    <Text style={styles.detailVal} selectable>{editing.phone}</Text>
+                  </View>
+                ) : null}
+                {(editing?.address || editing?.city || editing?.zip) ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailKey}>Address</Text>
+                    <Text style={styles.detailVal} selectable>
+                      {[editing?.address, editing?.city, editing?.zip].filter(Boolean).join(', ')}
+                    </Text>
+                  </View>
+                ) : null}
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>User ID</Text>
+                  <Text style={styles.detailValMono} selectable>{editing?.id}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>Status</Text>
+                  <Text style={styles.detailVal}>
+                    {editing?.member_status || 'approved'}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>ID verification</Text>
+                  <Text style={styles.detailVal}>
+                    {editing?.verification_status || 'not submitted'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Stats */}
+              <View style={styles.statsGrid}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBig}>{editing?.events_attended || 0}</Text>
+                  <Text style={styles.statLabel}>Events</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBig}>{editing?.meals_rescued || 0}</Text>
+                  <Text style={styles.statLabel}>Meals</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBig}>{editing?.hours_logged || 0}h</Text>
+                  <Text style={styles.statLabel}>Hours</Text>
+                </View>
+              </View>
+
+              {/* ID images */}
+              {(editing?.id_document_front_url || editing?.id_document_url || editing?.id_document_back_url) ? (
+                <>
+                  <Text style={[styles.fieldLabel, { marginTop: 8 }]}>ID document</Text>
+                  <View style={styles.idImagesRow}>
+                    {(editing?.id_document_front_url || editing?.id_document_url) ? (
+                      <Image
+                        source={{ uri: editing.id_document_front_url || editing.id_document_url }}
+                        style={styles.idImage}
+                        resizeMode="cover"
+                      />
+                    ) : null}
+                    {editing?.id_document_back_url ? (
+                      <Image
+                        source={{ uri: editing.id_document_back_url }}
+                        style={styles.idImage}
+                        resizeMode="cover"
+                      />
+                    ) : null}
+                  </View>
+                </>
+              ) : null}
 
               <Text style={styles.fieldLabel}>Role</Text>
               {ROLE_OPTIONS.map((opt) => (
@@ -331,6 +434,7 @@ export default function ManageMembers({ navigation }) {
                   style={{ flex: 1, marginLeft: 8 }}
                 />
               </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -427,6 +531,25 @@ const styles = StyleSheet.create({
   },
   pendingName: { fontSize: 15, fontWeight: '700', color: Colors.dark },
   pendingEmail: { fontSize: 12, color: Colors.gray, marginTop: 2 },
+  chapterHeader: {
+    fontSize: 13, fontWeight: '700', color: Colors.green,
+    marginTop: 6, marginBottom: 6, letterSpacing: 0.2,
+  },
+  chapterCount: { color: Colors.grayMid, fontWeight: '500' },
+  detailGrid: {
+    backgroundColor: Colors.grayFaint || '#F7F5EF', borderRadius: 12,
+    padding: 12, marginTop: 10, marginBottom: 12, gap: 6,
+  },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
+  detailKey: { fontSize: 12, color: Colors.grayMid, fontWeight: '600', flexShrink: 0 },
+  detailVal: { fontSize: 13, color: Colors.dark, fontWeight: '500', textAlign: 'right', flexShrink: 1 },
+  detailValMono: { fontSize: 11, color: Colors.dark, textAlign: 'right', flexShrink: 1, fontFamily: Platform.OS === 'web' ? 'monospace' : 'Courier' },
+  statsGrid: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  statBox: { flex: 1, alignItems: 'center', backgroundColor: Colors.white, borderRadius: 10, paddingVertical: 12, borderWidth: 1, borderColor: Colors.glassBorder },
+  statBig: { fontSize: 22, fontWeight: '800', color: Colors.green },
+  statLabel: { fontSize: 11, color: Colors.grayMid, marginTop: 2, fontWeight: '600' },
+  idImagesRow: { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 12 },
+  idImage: { flex: 1, height: 110, borderRadius: 10, backgroundColor: Colors.grayLight },
   list: { gap: 8, marginBottom: 8 },
   listWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: {

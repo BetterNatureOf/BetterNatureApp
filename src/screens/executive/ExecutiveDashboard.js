@@ -126,6 +126,22 @@ export default function ExecutiveDashboard({ navigation }) {
         </BrushText>
 
         <View style={[styles.grid, isWide && styles.gridWide]}>
+          {/* If this exec is also assigned as a chapter's president
+              (i.e. they have a chapter_id), surface a shortcut into
+              the president view alongside the org-wide tools. */}
+          {user?.chapter_id ? (
+            <TouchableOpacity
+              style={[styles.card, isWide && styles.cardWide, isDesktop && styles.cardDesktop]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('PresidentDashboard')}
+            >
+              <View style={[styles.emojiWrap, { backgroundColor: Colors.green + '15' }]}>
+                <Text style={styles.emoji}>{'\u{1F3DB}️'}</Text>
+              </View>
+              <Text style={styles.label}>My Chapter (President view)</Text>
+              <Text style={styles.desc}>Events, members, reports, and metrics for the chapter you lead.</Text>
+            </TouchableOpacity>
+          ) : null}
           {TOOLS.map((item) => (
             <TouchableOpacity
               key={item.key}

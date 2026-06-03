@@ -17,9 +17,18 @@ export default function WelcomeScreen({ navigation }) {
   const [volunteers, setVolunteers] = useState(0);
   const [chapters, setChapters] = useState(0);
   useEffect(() => {
-    getOrgStats().then(setStats).catch(() => {});
-    fetchAllMembers().then((m) => setVolunteers(m.length)).catch(() => {});
-    fetchChapters().then((c) => setChapters(c.length)).catch(() => {});
+    let alive = true;
+    function refresh() {
+      if (!alive) return;
+      getOrgStats().then((s) => alive && setStats(s)).catch(() => {});
+      fetchAllMembers().then((m) => alive && setVolunteers(m.length)).catch(() => {});
+      fetchChapters().then((c) => alive && setChapters(c.length)).catch(() => {});
+    }
+    refresh();
+    // Re-pull every 15s so the hero numbers track real activity
+    // without requiring the visitor to reload the page.
+    const t = setInterval(refresh, 15000);
+    return () => { alive = false; clearInterval(t); };
   }, []);
   return (
     <Screen contentStyle={styles.content} showsVerticalScrollIndicator={false}>

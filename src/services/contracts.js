@@ -382,6 +382,11 @@ export async function saveContract(uid, kind, { signedName, version, extras = {}
 
 export function hasSignedContract(user, kind) {
   if (!user) return false;
+  // Executives can also act as chapter presidents. The two specs are
+  // mapped to the same EXECUTIVE document under the hood, so an exec
+  // who's already signed counts as having signed the president
+  // agreement too — they don't need to re-sign to use chapter tools.
+  if (kind === 'president' && user.contract_executive?.signed) return true;
   const block = user[`contract_${kind}`] || {};
   if (!block.signed) return false;
   const live = CONTRACTS[kind]?.version ?? 1;
