@@ -65,7 +65,7 @@ export default function VerifyIdScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Body>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -93,9 +93,19 @@ export default function VerifyIdScreen({ navigation }) {
         loading={busy}
         style={{ marginTop: 18 }}
       />
-    </ScrollView>
+    </Body>
   );
 }
+
+const Body = Platform.OS === 'web'
+  ? ({ children }) => React.createElement(
+      'div',
+      { style: { height: '100vh', width: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', backgroundColor: Colors.cream, padding: 24, paddingTop: 60, paddingBottom: 60, boxSizing: 'border-box' } },
+      children
+    )
+  : ({ children }) => (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>{children}</ScrollView>
+    );
 
 function Well({ label, uri, onPress }) {
   return (
