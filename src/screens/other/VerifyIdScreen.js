@@ -19,6 +19,7 @@ import useAuthStore from '../../store/authStore';
 import Icon from '../../components/ui/Icon';
 import { uploadIdDocument, getProfile } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function VerifyIdScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -104,7 +105,7 @@ const Body = Platform.OS === 'web'
       children
     )
   : ({ children }) => (
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>{children}</ScrollView>
+      <Screen contentStyle={styles.content}>{children}</Screen>
     );
 
 function Well({ label, uri, onPress }) {

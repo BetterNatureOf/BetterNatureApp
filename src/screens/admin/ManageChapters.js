@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform }
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import { fetchChapters, updateChapter } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 export default function ManageChapters({ navigation }) {
   const [chapters, setChapters] = useState([]);
@@ -42,7 +43,7 @@ export default function ManageChapters({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -64,7 +65,7 @@ export default function ManageChapters({ navigation }) {
           </View>
         </TouchableOpacity>
       ))}
-    </ScrollView>
+    </Screen>
   );
 }
 

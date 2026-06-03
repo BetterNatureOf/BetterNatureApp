@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import { fetchChapters } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 export default function SignupStep2({ navigation, route }) {
   const userData = route.params;
@@ -43,7 +44,7 @@ export default function SignupStep2({ navigation, route }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
      <ResponsiveContainer maxWidth={560}>
       <BrushText variant="screenTitle" style={styles.title}>
         Choose Your Chapter
@@ -104,7 +105,7 @@ export default function SignupStep2({ navigation, route }) {
         </Text>
       </TouchableOpacity>
      </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

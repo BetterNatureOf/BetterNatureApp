@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { createChapter } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 export default function StartChapter({ navigation, route }) {
   const userData = route?.params;
@@ -43,7 +44,7 @@ export default function StartChapter({ navigation, route }) {
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
         <BrushText variant="screenTitle" style={styles.title}>
           Start a Chapter
         </BrushText>
@@ -69,7 +70,7 @@ export default function StartChapter({ navigation, route }) {
         </Text>
 
         <Button title="Submit Chapter Application" onPress={handleCreate} loading={loading} style={styles.btn} />
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

@@ -4,6 +4,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Icon from '../../components/ui/Icon';
 import ContractGate from '../../components/ui/ContractGate';
+import Screen from '../../components/ui/Screen';
 
 const ADMIN_ITEMS = [
   { key: 'chapters', label: 'Manage Chapters', icon: 'pin', desc: 'View, edit, and approve chapters', screen: 'ManageChapters' },
@@ -20,7 +21,7 @@ const ADMIN_ITEMS = [
 export default function AdminPanel({ navigation }) {
   return (
     <ContractGate kind="executive">
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <BrushText variant="screenTitle" style={styles.title}>
         Admin Panel
       </BrushText>
@@ -43,7 +44,7 @@ export default function AdminPanel({ navigation }) {
           <Text style={styles.arrow}>›</Text>
         </TouchableOpacity>
       ))}
-    </ScrollView>
+    </Screen>
     </ContractGate>
   );
 }

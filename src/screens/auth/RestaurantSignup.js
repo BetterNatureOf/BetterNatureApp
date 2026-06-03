@@ -14,6 +14,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { createRestaurant } from '../../services/database';
 import useAuthStore, { ROLES } from '../../store/authStore';
+import Screen from '../../components/ui/Screen';
 
 export default function RestaurantSignup({ navigation }) {
   const setUser = useAuthStore((s) => s.setUser);
@@ -70,11 +71,7 @@ export default function RestaurantSignup({ navigation }) {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
         <BrushText variant="screenTitle" style={styles.title}>
           Restaurant Partner Signup
         </BrushText>
@@ -134,7 +131,7 @@ export default function RestaurantSignup({ navigation }) {
           loading={loading}
           style={styles.btn}
         />
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

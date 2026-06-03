@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, Platform }
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import { fetchAnimalsHelped } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 export default function AnimalGallery({ navigation, route }) {
   const { species, name } = route.params;
@@ -28,7 +29,7 @@ export default function AnimalGallery({ navigation, route }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back to Evergreen</Text>
       </TouchableOpacity>
@@ -59,7 +60,7 @@ export default function AnimalGallery({ navigation, route }) {
           )}
         </View>
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

@@ -24,6 +24,7 @@ import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { CONTRACTS, roleForKind } from '../../services/contracts';
 import { getProfile } from '../../services/auth';
+import Screen from '../../components/ui/Screen';
 
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -68,7 +69,7 @@ export default function ContractView({ route, navigation }) {
   const signed = !!block.signed;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={760}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
           <Icon name="back" size={18} color={Colors.green} />
@@ -137,7 +138,7 @@ export default function ContractView({ route, navigation }) {
           BetterNature · EIN 99-4028399 · 624 Cypress Knoll Dr, Collierville, TN 38017
         </Text>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

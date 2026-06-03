@@ -11,6 +11,7 @@ import {
   checkInVolunteer,
   markNoShow,
 } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 // Pres / exec opens this after an event happens. They see the list of
 // signed-up volunteers and tap ✓ (check in) or ✗ (no show). A check-in
@@ -72,7 +73,7 @@ export default function CheckInScreen({ navigation, route }) {
   const total = signups.length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={700}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
@@ -211,7 +212,7 @@ export default function CheckInScreen({ navigation, route }) {
           the leaderboard. Only check in people who actually showed up.
         </Text>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

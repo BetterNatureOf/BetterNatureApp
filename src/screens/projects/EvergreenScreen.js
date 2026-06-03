@@ -9,6 +9,7 @@ import BrushDivider from '../../components/ui/BrushDivider';
 import useEvents from '../../hooks/useEvents';
 import Icon from '../../components/ui/Icon';
 import ProjectLogo from '../../components/ui/ProjectLogo';
+import Screen from '../../components/ui/Screen';
 
 // Habitat categories — replaced cartoon emoji with the project's Lucide
 // vocabulary (tree, leaf, droplet). Counts come from real data later;
@@ -32,7 +33,7 @@ export default function EvergreenScreen({ navigation }) {
 
   const Body = Platform.OS === 'web'
     ? ({ children }) => <WebScroll bg={Colors.cream}>{children}</WebScroll>
-    : ({ children }) => <ScrollView style={styles.container} contentContainerStyle={styles.content}>{children}</ScrollView>;
+    : ({ children }) => <Screen contentStyle={styles.content}>{children}</Screen>;
   return (
     <Body>
       {/* Header */}

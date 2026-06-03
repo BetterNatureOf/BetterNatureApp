@@ -7,6 +7,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
 import { fetchLeaderboard } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 const TIME_FILTERS = [
   { key: 'all', label: 'All time' },
@@ -209,7 +210,7 @@ export function LeaderboardBody({ embedded = false }) {
 
 export default function LeaderboardScreen({ navigation }) {
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={900}>
         {navigation && (
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -218,7 +219,7 @@ export default function LeaderboardScreen({ navigation }) {
         )}
         <LeaderboardBody />
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

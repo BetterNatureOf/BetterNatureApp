@@ -12,6 +12,7 @@ import FadeInView from '../../components/ui/FadeInView';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 import { confirm } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 const MENU_ITEMS = [
   { key: 'refer', label: 'Bring a friend', icon: 'gift', screen: 'Refer' },
@@ -46,7 +47,7 @@ export default function ProfileScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
      <ResponsiveContainer maxWidth={780}>
       {/* Profile Header */}
       <LinearGradient
@@ -130,7 +131,7 @@ export default function ProfileScreen({ navigation }) {
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
      </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

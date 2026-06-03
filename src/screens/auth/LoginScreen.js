@@ -20,6 +20,7 @@ import { FEATURES } from '../../config/features';
 import { notify, confirm } from '../../services/ui';
 import { isFirebaseConfigured } from '../../config/firebase';
 import useAuthStore, { ROLES } from '../../store/authStore';
+import Screen from '../../components/ui/Screen';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -121,11 +122,7 @@ export default function LoginScreen({ navigation }) {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ResponsiveContainer maxWidth={460}>
           <BrushText variant="screenTitle" style={styles.title}>
             Welcome Back
@@ -200,7 +197,7 @@ export default function LoginScreen({ navigation }) {
             Don't have an account? <Text style={styles.signupBold}>Sign up</Text>
           </Text>
         </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

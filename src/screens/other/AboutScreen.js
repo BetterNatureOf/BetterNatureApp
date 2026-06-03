@@ -4,10 +4,11 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import BrushDivider from '../../components/ui/BrushDivider';
 import ProjectLogo from '../../components/ui/ProjectLogo';
+import Screen from '../../components/ui/Screen';
 
 export default function AboutScreen({ navigation }) {
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
 
       <BrushText variant="heroStat" style={styles.title}>
@@ -71,7 +72,7 @@ export default function AboutScreen({ navigation }) {
         BetterNature © {new Date().getFullYear()}{'\n'}
         Built with love for a better world.
       </Text>
-    </ScrollView>
+    </Screen>
   );
 }
 

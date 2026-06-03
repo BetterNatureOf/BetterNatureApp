@@ -28,6 +28,7 @@ import useAuthStore from '../../store/authStore';
 import {
   ensureReferralCode, getReferralStats, referralLink,
 } from '../../services/referrals';
+import Screen from '../../components/ui/Screen';
 
 export default function ReferScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -79,7 +80,7 @@ export default function ReferScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>{'\u2039 Back'}</Text>
@@ -123,7 +124,7 @@ export default function ReferScreen({ navigation }) {
         <Text style={styles.step}>2. They sign up — code auto-applies from the link.</Text>
         <Text style={styles.step}>3. Their first event credits both of you.</Text>
       </Card>
-    </ScrollView>
+    </Screen>
   );
 }
 

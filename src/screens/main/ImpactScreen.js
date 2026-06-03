@@ -9,6 +9,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
 import { LeaderboardBody } from './LeaderboardScreen';
 import { getOrgStats } from '../../services/orgStats';
+import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -21,7 +22,7 @@ export default function ImpactScreen() {
   }, []);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
      <ResponsiveContainer maxWidth={1100}>
       <BrushText variant="screenTitle" style={styles.title}>
         Your Impact
@@ -131,7 +132,7 @@ export default function ImpactScreen() {
       </Text>
       <LeaderboardBody embedded />
      </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

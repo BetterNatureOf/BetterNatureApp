@@ -15,6 +15,7 @@ import Input from '../../components/ui/Input';
 import { emailAlreadyRegistered } from '../../services/auth';
 import { phoneAlreadyRegistered } from '../../services/duplicates';
 import { notify } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function SignupStep1({ navigation }) {
   const [checking, setChecking] = useState(false);
@@ -97,11 +98,7 @@ export default function SignupStep1({ navigation }) {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
        <ResponsiveContainer maxWidth={520}>
         <BrushText variant="screenTitle" style={styles.title}>
           Join BetterNature
@@ -178,7 +175,7 @@ export default function SignupStep1({ navigation }) {
           Already have an account? <Text style={styles.loginBold}>Sign in</Text>
         </Text>
        </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

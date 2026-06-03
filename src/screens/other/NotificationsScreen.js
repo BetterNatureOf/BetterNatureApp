@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import useNotifStore from '../../store/notifStore';
 import { fetchNotifications, markNotificationRead } from '../../services/database';
 import useAuthStore from '../../store/authStore';
+import Screen from '../../components/ui/Screen';
 
 const NOTIF_EMOJIS = {
   pickup: '🍽️',
@@ -41,7 +42,7 @@ export default function NotificationsScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
@@ -84,7 +85,7 @@ export default function NotificationsScreen({ navigation }) {
           </TouchableOpacity>
         ))
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

@@ -13,6 +13,7 @@ import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import { listFridges, createFridge, updateFridge } from '../../services/fridges';
 import { notify, notifyThen, confirm } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 const blank = {
   name: '', address: '', city: '', state: '', zip: '',
@@ -93,7 +94,7 @@ export default function ManageFridges({ navigation }) {
 
   if (editing) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Screen contentStyle={styles.content}>
         <ResponsiveContainer maxWidth={640}>
           <AnimatedPressable onPress={close} style={styles.back} scaleTo={0.97}>
             <Icon name="back" size={18} color={Colors.green} />
@@ -178,7 +179,7 @@ export default function ManageFridges({ navigation }) {
             </AnimatedPressable>
           ) : null}
         </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     );
   }
 

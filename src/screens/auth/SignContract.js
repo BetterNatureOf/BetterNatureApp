@@ -27,6 +27,7 @@ import {
 } from '../../services/contracts';
 import { getProfile } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 // Hoisted out of the component so it isn't redefined on every render.
 // (When defined inline, every keystroke creates a brand-new component
@@ -47,13 +48,9 @@ const WebWrapper = ({ children }) => React.createElement(
 );
 const NativeWrapper = ({ children }) => (
   <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
+    <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
       {children}
-    </ScrollView>
+    </Screen>
   </KeyboardAvoidingView>
 );
 const Wrapper = Platform.OS === 'web' ? WebWrapper : NativeWrapper;

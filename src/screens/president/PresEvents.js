@@ -4,6 +4,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import useAuthStore from '../../store/authStore';
 import { fetchEvents } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 const PROJECT_COLORS = {
   iris: Colors.sage,
@@ -30,7 +31,7 @@ export default function PresEvents({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -105,7 +106,7 @@ export default function PresEvents({ navigation }) {
           </View>
         ))
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

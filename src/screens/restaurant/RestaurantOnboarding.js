@@ -24,6 +24,7 @@ import { updateProfile, getProfile } from '../../services/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { notify, notifyThen } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function RestaurantOnboarding({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -110,7 +111,7 @@ export default function RestaurantOnboarding({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ResponsiveContainer maxWidth={720}>
           <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
             <Icon name="back" size={18} color={Colors.green} />
@@ -182,7 +183,7 @@ export default function RestaurantOnboarding({ navigation }) {
 
           <Button title={saving ? 'Saving…' : 'Save & continue'} onPress={save} loading={saving} style={{ marginTop: 22 }} />
         </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

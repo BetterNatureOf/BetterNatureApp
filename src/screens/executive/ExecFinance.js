@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from '
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import { fetchAllDonations } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 function fmtMoney(n) {
   return `$${(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -44,7 +45,7 @@ export default function ExecFinance({ navigation }) {
   }, [donations, tab]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -116,7 +117,7 @@ export default function ExecFinance({ navigation }) {
           </View>
         ))
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

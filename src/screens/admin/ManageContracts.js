@@ -18,6 +18,7 @@ import { db } from '../../config/firebase';
 import { fetchAllMembers } from '../../services/database';
 import { CONTRACTS, roleForKind } from '../../services/contracts';
 import { notify, confirm } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 const FILTERS = [
   { key: 'all',         label: 'All' },
@@ -117,7 +118,7 @@ export default function ManageContracts({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={920}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
           <Icon name="back" size={18} color={Colors.green} />
@@ -215,7 +216,7 @@ export default function ManageContracts({ navigation }) {
           </View>
         )}
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

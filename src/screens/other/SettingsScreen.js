@@ -8,6 +8,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
 import { updateProfile, deleteAccount } from '../../services/auth';
 import { notify, confirm } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function SettingsScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -90,7 +91,7 @@ export default function SettingsScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
      <ResponsiveContainer maxWidth={720}>
       <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
 
@@ -126,14 +127,6 @@ export default function SettingsScreen({ navigation }) {
         <Toggle value={pickupAlerts} onToggle={togglePickups} />
       </View>
 
-      <View style={styles.settingRow}>
-        <View style={styles.settingText}>
-          <Text style={styles.settingLabel}>Text Messages (SMS)</Text>
-          <Text style={styles.settingDesc}>Pickup alerts, event reminders, safety dispatch. Required to participate; pause anytime.</Text>
-        </View>
-        <Toggle value={smsAlerts} onToggle={toggleSms} />
-      </View>
-
       <BrushDivider />
 
       <BrushText variant="sectionHeader" style={styles.sectionTitle}>
@@ -167,7 +160,7 @@ export default function SettingsScreen({ navigation }) {
 
       <Text style={styles.version}>BetterNature v1.0.0</Text>
      </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

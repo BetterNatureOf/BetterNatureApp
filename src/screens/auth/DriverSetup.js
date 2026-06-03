@@ -39,6 +39,7 @@ import useAuthStore from '../../store/authStore';
 import { uploadIdImage, getProfile } from '../../services/auth';
 import { saveDriverSetup } from '../../services/verifications';
 import { notify, notifyThen } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 const RELATIONSHIPS = [
   { key: 'parent',   label: 'Parent' },
@@ -135,7 +136,7 @@ export default function DriverSetup({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ResponsiveContainer maxWidth={680}>
           <View style={styles.badge}>
             <Icon name="id-card" size={16} color={Colors.green} />
@@ -264,7 +265,7 @@ export default function DriverSetup({ navigation }) {
             style={{ marginTop: 24 }}
           />
         </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

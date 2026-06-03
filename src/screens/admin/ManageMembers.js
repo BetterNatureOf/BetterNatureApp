@@ -12,6 +12,7 @@ import {
   updateUserChapter,
   removeUser,
 } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 const ROLE_OPTIONS = [
   { key: 'member', label: 'Member', desc: 'Regular volunteer' },
@@ -132,7 +133,7 @@ export default function ManageMembers({ navigation }) {
   );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={900}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
@@ -293,7 +294,7 @@ export default function ManageMembers({ navigation }) {
           </View>
         </Modal>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

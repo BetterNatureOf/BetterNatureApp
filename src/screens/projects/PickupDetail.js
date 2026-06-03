@@ -23,6 +23,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { claimPickup, setPickupEnroute, completePickup, cancelClaim } from '../../services/database';
 import { notify, notifyThen, confirm } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function PickupDetail({ route, navigation }) {
   const pickupId = route?.params?.pickupId;
@@ -122,7 +123,7 @@ export default function PickupDetail({ route, navigation }) {
   const needsFridge = pickup.status === 'claimed' && !pickup.fridge_id;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={720}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
           <Icon name="back" size={18} color={Colors.green} />
@@ -185,7 +186,7 @@ export default function PickupDetail({ route, navigation }) {
           </View>
         ) : null}
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

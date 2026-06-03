@@ -14,6 +14,7 @@ import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { CONTRACTS, roleForKind } from '../../services/contracts';
+import Screen from '../../components/ui/Screen';
 
 const ALL_KINDS = ['volunteer', 'restaurant', 'executive', 'president'];
 
@@ -36,7 +37,7 @@ export default function MyContracts({ navigation }) {
     .filter((k, i, arr) => !(k === 'president' && arr.includes('executive')));
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={680}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
           <Icon name="back" size={18} color={Colors.green} />
@@ -85,7 +86,7 @@ export default function MyContracts({ navigation }) {
           </View>
         )}
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

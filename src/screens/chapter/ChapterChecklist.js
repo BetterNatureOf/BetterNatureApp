@@ -4,6 +4,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import useAuthStore from '../../store/authStore';
 import { fetchChecklistProgress, updateChecklistItem } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 const CHECKLIST_ITEMS = [
   { key: 'team', label: 'Recruit founding team (3+ members)', description: 'Find at least 3 dedicated members' },
@@ -59,7 +60,7 @@ export default function ChapterChecklist({ navigation }) {
   const completed = Object.values(progress).filter((s) => s === 'complete').length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -113,7 +114,7 @@ export default function ChapterChecklist({ navigation }) {
           </TouchableOpacity>
         );
       })}
-    </ScrollView>
+    </Screen>
   );
 }
 

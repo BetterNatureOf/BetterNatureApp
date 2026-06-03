@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform }
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Icon from '../../components/ui/Icon';
+import Screen from '../../components/ui/Screen';
 
 const REPORTS = [
   { key: 'members', label: 'Member Report', desc: 'All members with roles, chapters, and stats', icon: 'users' },
@@ -27,7 +28,7 @@ export default function ExportReports({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
       <BrushText variant="screenTitle" style={styles.title}>
         Export Reports
@@ -51,7 +52,7 @@ export default function ExportReports({ navigation }) {
           <Icon name="download" size={18} color={Colors.grayMid} />
         </TouchableOpacity>
       ))}
-    </ScrollView>
+    </Screen>
   );
 }
 

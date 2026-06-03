@@ -21,6 +21,7 @@ import {
   updateOrgMetric,
   createOrgMetric,
 } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 // Shared editor used by both executive ("org" mode, all metrics) and chapter
 // president ("chapter" mode, only their chapter). Tap a row to adjust its
@@ -114,7 +115,7 @@ export default function MetricsEditor({ navigation, route }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={900}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
@@ -307,7 +308,7 @@ export default function MetricsEditor({ navigation, route }) {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 

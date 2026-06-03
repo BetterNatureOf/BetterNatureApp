@@ -4,6 +4,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import { fetchRestaurants, updateRestaurant } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 export default function ManageRestaurants({ navigation }) {
   const [restaurants, setRestaurants] = useState([]);
@@ -40,7 +41,7 @@ export default function ManageRestaurants({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -82,7 +83,7 @@ export default function ManageRestaurants({ navigation }) {
           </View>
         ))
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

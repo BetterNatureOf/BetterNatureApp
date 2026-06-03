@@ -30,6 +30,7 @@ import { notify, notifyThen, confirm } from '../../services/ui';
 import Icon from '../../components/ui/Icon';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import FadeInView from '../../components/ui/FadeInView';
+import Screen from '../../components/ui/Screen';
 
 const STATUS_TONE = {
   available: { bg: '#FFF2CF', fg: '#7A5400', label: 'Waiting on a volunteer' },
@@ -154,10 +155,8 @@ export default function RestDashboard({ navigation }) {
 
   return (
     <ContractGate kind="restaurant">
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}
-      showsVerticalScrollIndicator
+    <Screen
+      contentStyle={[styles.content, isPhone && styles.contentPhone]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.green} />}
     >
       <ResponsiveContainer maxWidth={1100}>
@@ -301,7 +300,7 @@ export default function RestDashboard({ navigation }) {
           ))}
         </View>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
     </ContractGate>
   );
 }

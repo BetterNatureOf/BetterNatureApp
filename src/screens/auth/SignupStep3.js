@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signUp, uploadIdDocument } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
+import Screen from '../../components/ui/Screen';
 
 export default function SignupStep3({ route }) {
   const userData = route.params;
@@ -93,7 +94,7 @@ export default function SignupStep3({ route }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
      <ResponsiveContainer maxWidth={560}>
       <BrushText variant="screenTitle" style={styles.title}>
         Verify Your Identity
@@ -142,7 +143,7 @@ export default function SignupStep3({ route }) {
         Your ID is stored securely and only visible to BetterNature executives for verification.
       </Text>
      </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

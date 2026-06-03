@@ -26,6 +26,7 @@ import PickupCard from '../../components/pickup/PickupCard';
 import Icon from '../../components/ui/Icon';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import ProjectLogo from '../../components/ui/ProjectLogo';
+import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -90,13 +91,10 @@ export default function IrisScreen({ navigation }) {
         React.createElement('div', { style: { paddingBottom: 40 } }, children)
       )
     : ({ children }) => (
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        <Screen contentStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
           {children}
-        </ScrollView>
+        </Screen>
       );
 
   return (

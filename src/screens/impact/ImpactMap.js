@@ -9,6 +9,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking, Platform
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import { LAYERS, COPY, POINTS, aggregate, loadLiveFridges } from '../../data/impactMap';
 import { openInMaps } from '../../services/maps';
+import Screen from '../../components/ui/Screen';
 
 const FILTERS = [
   { key: 'all',     label: 'All' },
@@ -50,7 +51,7 @@ export default function ImpactMap({ navigation }) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -108,7 +109,7 @@ export default function ImpactMap({ navigation }) {
           <PointCard key={`${p.kind}-${i}`} p={p} onStartChapter={startChapter} />
         ))}
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 

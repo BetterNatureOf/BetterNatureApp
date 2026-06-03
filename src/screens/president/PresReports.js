@@ -10,6 +10,7 @@ import {
   fetchAnimalsHelped,
   fetchOrgMetrics,
 } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 export default function PresReports({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -60,7 +61,7 @@ export default function PresReports({ navigation }) {
   }, [chapterId]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -102,7 +103,7 @@ export default function PresReports({ navigation }) {
         Pickups and events feed these numbers automatically — tap above to
         adjust the offset or add manual metrics like water sites tested.
       </Text>
-    </ScrollView>
+    </Screen>
   );
 }
 

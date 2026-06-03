@@ -25,6 +25,7 @@ import useAuthStore from '../../store/authStore';
 import { saveSignedWaiver } from '../../services/verifications';
 import { getProfile } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export const WAIVER_VERSION = 1;
 
@@ -81,7 +82,7 @@ export default function LiabilityWaiver({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Screen contentStyle={styles.content}>
         <ResponsiveContainer maxWidth={680}>
           <View style={styles.badge}>
             <Icon name="shield" size={18} color={Colors.green} />
@@ -131,7 +132,7 @@ export default function LiabilityWaiver({ navigation }) {
             style={{ marginTop: 22 }}
           />
         </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

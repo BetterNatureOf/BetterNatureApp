@@ -22,6 +22,7 @@ import Input from '../../components/ui/Input';
 import { fetchChapters } from '../../services/database';
 import { updateProfile, getProfile } from '../../services/authFirebase';
 import useAuthStore from '../../store/authStore';
+import Screen from '../../components/ui/Screen';
 
 export default function CompleteProfile() {
   const user = useAuthStore((s) => s.user);
@@ -85,11 +86,7 @@ export default function CompleteProfile() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
        <ResponsiveContainer maxWidth={560}>
         <BrushText variant="screenTitle" style={styles.title}>
           Welcome!
@@ -196,7 +193,7 @@ export default function CompleteProfile() {
           style={styles.btn}
         />
        </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

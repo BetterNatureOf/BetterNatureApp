@@ -23,6 +23,7 @@ import Icon from '../../components/ui/Icon';
 import { fetchAllMembers } from '../../services/database';
 import { setVerificationStatus } from '../../services/verifications';
 import { notify, confirm } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 const FILTERS = [
   { key: 'pending',  label: 'Pending review' },
@@ -88,7 +89,7 @@ export default function ManageVerifications({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={920}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
           <Icon name="back" size={18} color={Colors.green} />
@@ -246,7 +247,7 @@ export default function ManageVerifications({ navigation }) {
           <Text style={styles.lightboxHint}>Tap anywhere to close</Text>
         </TouchableOpacity>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 

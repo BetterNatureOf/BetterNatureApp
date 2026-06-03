@@ -31,6 +31,7 @@ import {
 } from '../../services/auth';
 import { notify, notifyThen, confirm } from '../../services/ui';
 import { FEATURES } from '../../config/features';
+import Screen from '../../components/ui/Screen';
 
 // Map Firebase provider IDs to UI metadata.
 const PROVIDERS = [
@@ -123,7 +124,7 @@ export default function ConnectedAccounts({ navigation }) {
   const visible = PROVIDERS.filter((p) => !p.gated || FEATURES[p.gated]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={620}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
           <Icon name="back" size={18} color={Colors.green} />
@@ -215,7 +216,7 @@ export default function ConnectedAccounts({ navigation }) {
           whichever email is attached to your account — it works as long as your email is verified.
         </Text>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

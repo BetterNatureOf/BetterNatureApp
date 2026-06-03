@@ -8,6 +8,7 @@ import Logo from '../../components/ui/Logo';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { getOrgStats } from '../../services/orgStats';
 import { fetchAllMembers, fetchChapters } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -21,11 +22,7 @@ export default function WelcomeScreen({ navigation }) {
     fetchChapters().then((c) => setChapters(c.length)).catch(() => {});
   }, []);
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <Screen contentStyle={styles.content} showsVerticalScrollIndicator={false}>
       <ResponsiveContainer maxWidth={520}>
         {/* Hero */}
         <LinearGradient
@@ -81,7 +78,7 @@ export default function WelcomeScreen({ navigation }) {
           </Text>
         </View>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

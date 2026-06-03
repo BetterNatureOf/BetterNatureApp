@@ -12,6 +12,7 @@ import {
   SEVERITY_COLORS,
   SEVERITY_LABELS,
 } from '../../services/foodInsecurity';
+import Screen from '../../components/ui/Screen';
 
 const VIEW_TABS = [
   { key: 'all', label: 'All' },
@@ -76,7 +77,7 @@ export default function FoodInsecurityMap({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={900}>
         {/* Back */}
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -218,7 +219,7 @@ export default function FoodInsecurityMap({ navigation }) {
           </Text>
         </View>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

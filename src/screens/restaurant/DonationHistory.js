@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import Card from '../../components/ui/Card';
 import useAuthStore from '../../store/authStore';
 import { fetchPickups, fetchDonationHistory } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -28,7 +29,7 @@ export default function DonationHistory({ navigation }) {
   const isEmpty = pickups.length === 0 && sponsorships.length === 0;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>‹ Back</Text>
       </TouchableOpacity>
@@ -85,7 +86,7 @@ export default function DonationHistory({ navigation }) {
           )}
         </>
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

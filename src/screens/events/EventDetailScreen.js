@@ -8,6 +8,7 @@ import ProjectTag from '../../components/ui/ProjectTag';
 import useAuthStore from '../../store/authStore';
 import { signUpForEvent, cancelEventSignup, getUserSignups, fetchEventSignups } from '../../services/database';
 import { scheduleEventReminders } from '../../services/notifications';
+import Screen from '../../components/ui/Screen';
 
 export default function EventDetailScreen({ navigation, route }) {
   const { event } = route.params;
@@ -88,7 +89,7 @@ export default function EventDetailScreen({ navigation, route }) {
   const noShows = attendees.filter((a) => a.status === 'no_show');
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>{'\u2039'} Back</Text>
       </TouchableOpacity>
@@ -215,7 +216,7 @@ export default function EventDetailScreen({ navigation, route }) {
           style={styles.signUpBtn}
         />
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

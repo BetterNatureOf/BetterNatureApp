@@ -30,6 +30,7 @@ import useBreakpoint from '../../hooks/useBreakpoint';
 import useEvents from '../../hooks/useEvents';
 import usePickups from '../../hooks/usePickups';
 import { confirm } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function DashboardScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -111,10 +112,8 @@ export default function DashboardScreen({ navigation }) {
           unreadCount={unreadCount}
           onNotifPress={() => navigation.navigate('Notifications')}
         />
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.contentDesktop, { paddingHorizontal: pad }]}
-          showsVerticalScrollIndicator={false}
+        <Screen
+          contentStyle={[styles.contentDesktop, { paddingHorizontal: pad }]}
         >
           {welcome}
           {/* Stats row — drop its built-in horizontal padding here since
@@ -142,7 +141,7 @@ export default function DashboardScreen({ navigation }) {
               <MemberOfMonth member={null} />
             </View>
           </View>
-        </ScrollView>
+        </Screen>
       </View>
     );
   }
@@ -156,13 +155,11 @@ export default function DashboardScreen({ navigation }) {
         unreadCount={unreadCount}
         onNotifPress={() => navigation.navigate('Notifications')}
       />
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
+      <Screen
+        contentStyle={[
           styles.content,
           isTablet && { paddingHorizontal: 48 },
         ]}
-        showsVerticalScrollIndicator={false}
       >
         {welcome}
         {stats}
@@ -173,7 +170,7 @@ export default function DashboardScreen({ navigation }) {
         {events_}
         <MemberOfMonth member={null} />
         <DonateCard onPress={() => navigation.navigate('Donate')} />
-      </ScrollView>
+      </Screen>
     </View>
   );
 }

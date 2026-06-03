@@ -25,6 +25,7 @@ import useAuthStore from '../../store/authStore';
 import { CONTRACTS, hasSignedContract } from '../../services/contracts';
 import { signOut } from '../../services/auth';
 import { useNavigation } from '@react-navigation/native';
+import Screen from './Screen';
 
 export default function ContractGate({ kind, children }) {
   const user = useAuthStore((s) => s.user);
@@ -43,10 +44,7 @@ export default function ContractGate({ kind, children }) {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={580}>
         <View style={styles.badge}>
           <Icon name="lock" size={14} color={Colors.green} />
@@ -88,7 +86,7 @@ export default function ContractGate({ kind, children }) {
           <Text style={styles.signOutText}>Not now — sign out</Text>
         </AnimatedPressable>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

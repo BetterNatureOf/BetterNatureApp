@@ -11,6 +11,7 @@ import { fetchChapters, fetchAllMembers, fetchRestaurants, fetchAllDonations, fe
 import { signOut } from '../../services/auth';
 import { confirm } from '../../services/ui';
 import ContractGate from '../../components/ui/ContractGate';
+import Screen from '../../components/ui/Screen';
 
 const TOOLS = [
   { key: 'chapters', label: 'Manage Chapters', emoji: '\u{1F4CD}', desc: 'Approve, edit, or close chapters', screen: 'ManageChapters', color: Colors.sage },
@@ -70,7 +71,7 @@ export default function ExecutiveDashboard({ navigation }) {
 
   return (
     <ContractGate kind="executive">
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={1200}>
         {/* Header */}
         <View style={styles.header}>
@@ -143,7 +144,7 @@ export default function ExecutiveDashboard({ navigation }) {
           ))}
         </View>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
     </ContractGate>
   );
 }

@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import useAuthStore from '../../store/authStore';
 import { createAnnouncement } from '../../services/database';
+import Screen from '../../components/ui/Screen';
 
 const TARGETS = [
   { key: 'all', label: 'Everyone' },
@@ -44,7 +45,7 @@ export default function BroadcastScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
       <BrushText variant="screenTitle" style={styles.title}>
         Broadcast
@@ -77,7 +78,7 @@ export default function BroadcastScreen({ navigation }) {
       />
 
       <Button title="Send Broadcast" onPress={handleSend} loading={loading} style={styles.btn} />
-    </ScrollView>
+    </Screen>
   );
 }
 

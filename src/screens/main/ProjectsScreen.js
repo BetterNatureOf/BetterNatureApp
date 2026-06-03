@@ -6,6 +6,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useBreakpoint from '../../hooks/useBreakpoint';
 import { getOrgStats } from '../../services/orgStats';
 import ProjectLogo from '../../components/ui/ProjectLogo';
+import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -61,7 +62,7 @@ export default function ProjectsScreen({ navigation }) {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={1200}>
         <BrushText variant="screenTitle" style={styles.title}>
           Our Projects
@@ -92,7 +93,7 @@ export default function ProjectsScreen({ navigation }) {
           ))}
         </View>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
   );
 }
 

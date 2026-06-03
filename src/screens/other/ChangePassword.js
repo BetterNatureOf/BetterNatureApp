@@ -11,6 +11,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
 import { changePassword, sendResetEmail } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function ChangePassword({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -49,7 +50,7 @@ export default function ChangePassword({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
        <ResponsiveContainer maxWidth={560}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
@@ -78,7 +79,7 @@ export default function ChangePassword({ navigation }) {
           <Text style={styles.resetText}>Send password reset email</Text>
         </TouchableOpacity>
        </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

@@ -9,6 +9,7 @@ import BrushDivider from '../../components/ui/BrushDivider';
 import Input from '../../components/ui/Input';
 import { openDonationForm } from '../../services/zeffy';
 import ProjectLogo from '../../components/ui/ProjectLogo';
+import Screen from '../../components/ui/Screen';
 
 const MILESTONES = [
   { label: 'Research Phase', status: 'complete' },
@@ -27,7 +28,7 @@ const WebScroll = ({ children, bg }) => React.createElement(
 export default function HydroScreen({ navigation }) {
   const Body = Platform.OS === 'web'
     ? ({ children }) => <WebScroll bg={Colors.cream}>{children}</WebScroll>
-    : ({ children }) => <ScrollView style={styles.container} contentContainerStyle={styles.content}>{children}</ScrollView>;
+    : ({ children }) => <Screen contentStyle={styles.content}>{children}</Screen>;
   return (
     <Body>
       {/* Header */}

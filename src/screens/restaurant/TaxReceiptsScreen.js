@@ -9,6 +9,7 @@ import useAuthStore from '../../store/authStore';
 import {
   listReceiptsForRestaurant, receiptUrl,
 } from '../../services/taxReceipts';
+import Screen from '../../components/ui/Screen';
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -39,7 +40,7 @@ export default function TaxReceiptsScreen({ navigation }) {
   const totalLbs = receipts.reduce((s, r) => s + (r.weight_lbs || 0), 0);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>{'\u2039 Back'}</Text>
@@ -92,7 +93,7 @@ export default function TaxReceiptsScreen({ navigation }) {
           </TouchableOpacity>
         ))
       )}
-    </ScrollView>
+    </Screen>
   );
 }
 

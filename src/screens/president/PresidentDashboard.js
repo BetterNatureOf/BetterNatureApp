@@ -12,6 +12,7 @@ import { signOut } from '../../services/auth';
 import Icon from '../../components/ui/Icon';
 import { confirm } from '../../services/ui';
 import ContractGate from '../../components/ui/ContractGate';
+import Screen from '../../components/ui/Screen';
 
 const ACTIONS = [
   { key: 'events', label: 'Manage Events', icon: 'calendar', desc: 'Create and edit chapter events', screen: 'PresEvents', color: Colors.green },
@@ -53,7 +54,7 @@ export default function PresidentDashboard({ navigation }) {
 
   return (
     <ContractGate kind="president">
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={1100}>
         {/* Header */}
         <LinearGradient
@@ -108,7 +109,7 @@ export default function PresidentDashboard({ navigation }) {
           ))}
         </View>
       </ResponsiveContainer>
-    </ScrollView>
+    </Screen>
     </ContractGate>
   );
 }

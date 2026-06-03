@@ -21,6 +21,7 @@ import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
 import FridgePicker from '../../components/ui/FridgePicker';
+import Screen from '../../components/ui/Screen';
 
 const WEIGHT_CHIPS = [5, 10, 20, 50, 100];
 
@@ -135,7 +136,7 @@ export default function ScheduleDonation({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
        <ResponsiveContainer maxWidth={760}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>{'\u2039 Back'}</Text>
@@ -270,7 +271,7 @@ export default function ScheduleDonation({ navigation }) {
           </View>
         )}
        </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }

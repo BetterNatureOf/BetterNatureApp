@@ -12,6 +12,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
 import { updateProfile, getProfile } from '../../services/auth';
 import { notifyThen, notify } from '../../services/ui';
+import Screen from '../../components/ui/Screen';
 
 export default function EditProfile({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -54,7 +55,7 @@ export default function EditProfile({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
        <ResponsiveContainer maxWidth={720}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
@@ -108,7 +109,7 @@ export default function EditProfile({ navigation }) {
 
         <Button title={saving ? 'Saving…' : 'Save changes'} onPress={handleSave} loading={saving} style={{ marginTop: 24 }} />
        </ResponsiveContainer>
-      </ScrollView>
+      </Screen>
     </KeyboardAvoidingView>
   );
 }
