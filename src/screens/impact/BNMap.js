@@ -15,7 +15,7 @@ import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import { POINTS, loadLiveFridges } from '../../data/impactMap';
-import USInsecurityMap from '../../components/maps/USInsecurityMap';
+import WorldInsecurityMap from '../../components/maps/WorldInsecurityMap';
 import FridgeLeafletMap from '../../components/maps/FridgeLeafletMap';
 import FridgeListView from '../../components/maps/FridgeListView';
 
@@ -80,8 +80,8 @@ export default function BNMap({ navigation }) {
         <Text style={styles.eyebrow}>Where we work. Where we don't.</Text>
         <BrushText variant="screenTitle" style={styles.title}>BN Map</BrushText>
         <Text style={styles.body}>
-          Two views on the same fight. Switch between the food-insecurity heatmap
-          and the live fridge network.
+          Two views on the same fight, worldwide. Switch between the country-level
+          food-insecurity heatmap and the live fridge network.
         </Text>
 
         {/* Tabs */}
@@ -104,7 +104,7 @@ export default function BNMap({ navigation }) {
         {/* Map surface */}
         <View style={styles.surface}>
           {tab === 'insecurity' ? (
-            <USInsecurityMap fridges={fridges} />
+            <WorldInsecurityMap fridges={fridges} />
           ) : (
             <View>
               {/* Sub-toggle: Map | List */}
