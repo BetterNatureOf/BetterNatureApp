@@ -846,12 +846,17 @@ export async function fetchRestaurants(status = 'approved') {
 }
 
 export async function createRestaurant(restaurant) {
-  if (useMock()) return { id: `r-mock-${Date.now()}`, ...restaurant };
-  const ref = await addDoc(collection(db, 'restaurants'), {
+  if (useMock()) return { id: `r-mock-${Date.now()}`, ...restaurant, status: 'pending' };
+  // Every new restaurant lands in 'pending' until an exec approves
+  // them in Manage Restaurants. The caller can override (e.g. when
+  // an exec adds a partner directly) by passing an explicit status.
+  const payload = {
+    status: 'pending',
     ...restaurant,
     created_at: serverTimestamp(),
-  });
-  return { id: ref.id, ...restaurant };
+  };
+  const ref = await addDoc(collection(db, 'restaurants'), payload);
+  return { id: ref.id, ...payload };
 }
 
 export async function updateRestaurant(id, updates) {

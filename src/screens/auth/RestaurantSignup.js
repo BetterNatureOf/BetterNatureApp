@@ -41,21 +41,23 @@ export default function RestaurantSignup({ navigation }) {
 
     setLoading(true);
     try {
-      const created = await createRestaurant(form);
+      await createRestaurant(form);
+      // Do NOT log them in. Restaurants are gated behind an exec
+      // approval — we'll email login credentials once the partner is
+      // approved in Manage Restaurants. Bounce back to the welcome
+      // screen so they don't get stuck on a half-state.
       Alert.alert(
-        'Welcome to BetterNature!',
-        'Your restaurant is signed up. Opening your dashboard…',
+        'Application received',
+        "Thanks! A BetterNature executive will review your application. We'll email you at " +
+          (form.email || 'the address you provided') +
+          ' once you\'re approved.',
         [
           {
-            text: 'Continue',
-            onPress: () =>
-              setUser({
-                id: created?.id || `mock-restaurant-${Date.now()}`,
-                name: form.name,
-                email: form.email,
-                phone: form.phone,
-                role: ROLES.RESTAURANT,
-              }),
+            text: 'OK',
+            onPress: () => {
+              if (navigation?.canGoBack?.()) navigation.goBack();
+              else navigation.navigate('Welcome');
+            },
           },
         ]
       );
