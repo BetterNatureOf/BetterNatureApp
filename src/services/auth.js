@@ -11,6 +11,7 @@ export {
   getProfile,
   updateProfile,
   uploadIdDocument,
+  uploadIdImage,
   changePassword,
   sendResetEmail,
   emailAlreadyRegistered,

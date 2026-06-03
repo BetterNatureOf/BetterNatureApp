@@ -373,24 +373,48 @@ export async function updateProfile(userId, updates) {
   return getProfile(userId);
 }
 
-export async function uploadIdDocument(userId, fileUri) {
+// Upload a single ID image to Firebase Storage. Returns the download
+// URL. Used by both the personal-ID flow (VerifyIdScreen) and the
+// driver's-license flow (DriverSetup) — the caller decides which side
+// it is and stamps the resulting URL on the appropriate user-doc field.
+//
+// We tag the storage path with a `kind` segment so admins can browse
+// the bucket organized by purpose ("id-docs/personal/..." vs.
+// "id-docs/driver/..."), and with a `side` segment so front and back
+// don't collide.
+export async function uploadIdImage(userId, fileUri, { kind = 'personal', side = 'front' } = {}) {
   if (!isFirebaseConfigured) return fileUri;
-  const fileName = `id-docs/${userId}-${Date.now()}.jpg`;
+  const fileName = `id-docs/${kind}/${userId}-${side}-${Date.now()}.jpg`;
   const response = await fetch(fileUri);
   const blob = await response.blob();
-
   const storageRef = ref(storage, fileName);
   await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
-  const url = await getDownloadURL(storageRef);
+  return getDownloadURL(storageRef);
+}
 
-  // Stamp pending status so the upload immediately shows up in
-  // Admin → Verify IDs for review. Also wipe any prior reviewer notes.
+// Personal ID — upload front + back and stamp both URLs on the user
+// doc. Sets verification_status to 'pending' so the upload shows up in
+// Admin → Verify IDs for review. Keeps the legacy `id_document_url`
+// field pointing at the front so older code that reads it (e.g. the
+// ID gate, the admin list thumbnail) keeps working.
+export async function uploadIdDocument(userId, { frontUri, backUri }) {
+  if (!isFirebaseConfigured) return null;
+  if (!frontUri) throw new Error('Front of the ID is required.');
+  if (!backUri)  throw new Error('Back of the ID is required.');
+
+  const [frontUrl, backUrl] = await Promise.all([
+    uploadIdImage(userId, frontUri, { kind: 'personal', side: 'front' }),
+    uploadIdImage(userId, backUri,  { kind: 'personal', side: 'back' }),
+  ]);
+
   await updateDoc(doc(db, 'users', userId), {
-    id_document_url: url,
+    id_document_url: frontUrl,            // legacy field — points at front
+    id_document_front_url: frontUrl,
+    id_document_back_url: backUrl,
     verification_status: 'pending',
     verification_reviewed_at: null,
   });
-  return url;
+  return { frontUrl, backUrl };
 }
 
 // Re-authenticate with the current password (Firebase requires this before

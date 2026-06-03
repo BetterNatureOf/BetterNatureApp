@@ -36,7 +36,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
-import { uploadIdDocument, getProfile } from '../../services/auth';
+import { uploadIdImage, getProfile } from '../../services/auth';
 import { saveDriverSetup } from '../../services/verifications';
 import { notify, notifyThen } from '../../services/ui';
 
@@ -54,7 +54,8 @@ export default function DriverSetup({ navigation }) {
   const setUser = useAuthStore((s) => s.setUser);
 
   const [type, setType] = useState('self');                 // 'self' | 'other'
-  const [licenseUri, setLicenseUri] = useState(null);
+  const [licenseFrontUri, setLicenseFrontUri] = useState(null);
+  const [licenseBackUri,  setLicenseBackUri]  = useState(null);
   const [holderName, setHolderName] = useState('');
   const [relationship, setRelationship] = useState('parent');
   const [holderPhone, setHolderPhone] = useState('');
@@ -62,23 +63,24 @@ export default function DriverSetup({ navigation }) {
   const [consentChecked, setConsentChecked] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  async function pickLicense() {
+  async function pickFor(setter) {
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
         const lib = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-        if (!lib.canceled) setLicenseUri(lib.assets[0].uri);
+        if (!lib.canceled) setter(lib.assets[0].uri);
         return;
       }
       const cam = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-      if (!cam.canceled) setLicenseUri(cam.assets[0].uri);
+      if (!cam.canceled) setter(cam.assets[0].uri);
     } catch (e) {
       notify('Could not open camera', e?.message || 'Try the photo library instead.');
     }
   }
 
   async function handleSubmit() {
-    if (!licenseUri) return notify('Upload the license', 'A clear photo of a valid driver’s license is required.');
+    if (!licenseFrontUri) return notify('Front of the license', 'Photo of the FRONT of the driver’s license is required.');
+    if (!licenseBackUri)  return notify('Back of the license',  'Photo of the BACK of the driver’s license is required too.');
 
     if (type === 'other') {
       if (!holderName.trim()) return notify('Driver’s name required', 'Enter the full legal name of the person driving.');
@@ -97,15 +99,22 @@ export default function DriverSetup({ navigation }) {
     if (!user?.id) return notify('Not signed in');
     setSaving(true);
     try {
-      // 1. Upload the license image. We reuse the existing storage
-      // helper but pass a distinct filename suffix so it doesn't
-      // overwrite the volunteer's personal ID.
-      const licenseUrl = await uploadIdDocument(user.id + '-driver', licenseUri);
+      // 1. Upload both license images. We file them under a driver
+      // namespace so they don't get confused with the volunteer's
+      // personal-ID images in Firebase Storage.
+      const [licenseFrontUrl, licenseBackUrl] = await Promise.all([
+        uploadIdImage(user.id, licenseFrontUri, { kind: 'driver', side: 'front' }),
+        uploadIdImage(user.id, licenseBackUri,  { kind: 'driver', side: 'back' }),
+      ]);
 
-      // 2. Save the structured driver block on the user doc.
+      // 2. Save the structured driver block on the user doc. We pass
+      // licenseUrl pointing at the front for back-compat with admin
+      // surfaces that only render a single thumbnail.
       await saveDriverSetup(user.id, {
         type,
-        licenseUrl,
+        licenseUrl: licenseFrontUrl,
+        licenseFrontUrl,
+        licenseBackUrl,
         holderName:         type === 'other' ? holderName.trim() : (user.name || ''),
         holderRelationship: type === 'other' ? relationship : 'self',
         holderPhone:        type === 'other' ? holderPhone.trim() : (user.phone || ''),
@@ -159,30 +168,22 @@ export default function DriverSetup({ navigation }) {
             </AnimatedPressable>
           </View>
 
-          {/* License upload */}
+          {/* License upload — front + back */}
           <Text style={styles.sectionLabel}>
             {type === 'self' ? 'Your driver’s license' : 'Driver’s license photo'}
           </Text>
-          <AnimatedPressable
-            style={styles.licenseWell}
-            onPress={pickLicense}
-            scaleTo={0.985}
-          >
-            {licenseUri ? (
-              <Image source={{ uri: licenseUri }} style={styles.licensePreview} resizeMode="cover" />
-            ) : (
-              <View style={styles.licenseEmpty}>
-                <Icon name="id-card" size={42} color={Colors.green} strokeWidth={1.5} />
-                <Text style={styles.licenseCta}>Tap to take a photo</Text>
-                <Text style={styles.licenseHelp}>Front of the card. Make sure name + expiration are readable.</Text>
-              </View>
-            )}
-          </AnimatedPressable>
-          {licenseUri ? (
-            <AnimatedPressable onPress={pickLicense} style={styles.retake}>
-              <Text style={styles.retakeText}>Retake</Text>
-            </AnimatedPressable>
-          ) : null}
+          <LicenseWell
+            label="Front"
+            help="Name, photo, and expiration should all be readable."
+            uri={licenseFrontUri}
+            onPress={() => pickFor(setLicenseFrontUri)}
+          />
+          <LicenseWell
+            label="Back"
+            help="Hold the card flat under good light. Barcode + class info should be clear."
+            uri={licenseBackUri}
+            onPress={() => pickFor(setLicenseBackUri)}
+          />
 
           {/* "Other" → collect driver info + consent */}
           {type === 'other' ? (
@@ -267,6 +268,53 @@ export default function DriverSetup({ navigation }) {
     </KeyboardAvoidingView>
   );
 }
+
+// Re-usable well — captures one side of the license. Same dashed
+// "Tap to take photo" empty state on both halves.
+function LicenseWell({ label, help, uri, onPress }) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={licenseWellStyles.label}>{label}</Text>
+      <AnimatedPressable style={licenseWellStyles.well} onPress={onPress} scaleTo={0.985}>
+        {uri ? (
+          <Image source={{ uri }} style={licenseWellStyles.preview} resizeMode="cover" />
+        ) : (
+          <View style={licenseWellStyles.empty}>
+            <Icon name="id-card" size={36} color={Colors.green} strokeWidth={1.5} />
+            <Text style={licenseWellStyles.cta}>Tap to take {label.toLowerCase()}</Text>
+            <Text style={licenseWellStyles.help}>{help}</Text>
+          </View>
+        )}
+      </AnimatedPressable>
+      {uri ? (
+        <AnimatedPressable onPress={onPress} style={licenseWellStyles.retake}>
+          <Text style={licenseWellStyles.retakeText}>Retake {label.toLowerCase()}</Text>
+        </AnimatedPressable>
+      ) : null}
+    </View>
+  );
+}
+
+const licenseWellStyles = StyleSheet.create({
+  label: { fontSize: 12, fontWeight: '800', color: Colors.dark, letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 6 },
+  well: {
+    width: '100%',
+    aspectRatio: 16 / 10,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.white,
+    borderWidth: 2, borderColor: Colors.green + '40',
+    borderStyle: 'dashed',
+    overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+    ...Shadows.soft,
+  },
+  preview: { width: '100%', height: '100%' },
+  empty: { alignItems: 'center', padding: 16 },
+  cta: { fontSize: 14, fontWeight: '800', color: Colors.green, marginTop: 6 },
+  help: { ...Type.caption, marginTop: 4, textAlign: 'center', paddingHorizontal: 10 },
+  retake: { alignSelf: 'center', padding: 6, marginTop: 2 },
+  retakeText: { fontSize: 12, fontWeight: '600', color: Colors.pink },
+});
 
 const styles = StyleSheet.create({
   container: {

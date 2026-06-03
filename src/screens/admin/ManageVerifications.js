@@ -136,13 +136,24 @@ export default function ManageVerifications({ navigation }) {
           <View style={{ gap: 12 }}>
             {inBucket.map((u) => (
               <View key={u.id} style={styles.row}>
-                <TouchableOpacity
-                  onPress={() => setLightbox(u.id_document_url)}
-                  style={styles.thumbWrap}
-                  accessibilityLabel="Open ID at full size"
-                >
-                  <Image source={{ uri: u.id_document_url }} style={styles.thumb} resizeMode="cover" />
-                </TouchableOpacity>
+                {/* Personal ID — front + back stacked vertically. Either
+                    one (or both) opens the lightbox on tap. Falls back
+                    to the legacy single-image field if a row predates
+                    the front/back split. */}
+                <View style={styles.thumbStack}>
+                  <Thumb
+                    label="ID front"
+                    uri={u.id_document_front_url || u.id_document_url}
+                    onPress={setLightbox}
+                  />
+                  {u.id_document_back_url ? (
+                    <Thumb
+                      label="ID back"
+                      uri={u.id_document_back_url}
+                      onPress={setLightbox}
+                    />
+                  ) : null}
+                </View>
 
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{u.name || u.business_name || '(no name)'}</Text>
@@ -166,17 +177,34 @@ export default function ManageVerifications({ navigation }) {
                       license URL, or pink "missing" copy. The license image is
                       tappable too so admins can compare to the personal ID
                       side-by-side. */}
-                  {u.driver?.license_url ? (
-                    <View style={[styles.waiverPill, { backgroundColor: Colors.cream }]}>
-                      <Icon name="id-card" size={12} color={Colors.green} />
-                      <TouchableOpacity onPress={() => setLightbox(u.driver.license_url)}>
+                  {u.driver?.license_front_url || u.driver?.license_url ? (
+                    <View style={styles.driverBlock}>
+                      <View style={[styles.waiverPill, { backgroundColor: Colors.cream }]}>
+                        <Icon name="id-card" size={12} color={Colors.green} />
                         <Text style={styles.waiverText}>
                           {u.driver.type === 'self'
                             ? `Driver: self`
                             : `Driver: ${u.driver.holder_name} (${u.driver.holder_relationship})${u.driver.consent_signed_name ? ' · signed' : ''}`
-                          } · view license
+                          }
                         </Text>
-                      </TouchableOpacity>
+                      </View>
+                      {/* License thumbnails — front + back, side by side. */}
+                      <View style={styles.licenseRow}>
+                        <Thumb
+                          label="License front"
+                          uri={u.driver.license_front_url || u.driver.license_url}
+                          onPress={setLightbox}
+                          size="small"
+                        />
+                        {u.driver.license_back_url ? (
+                          <Thumb
+                            label="License back"
+                            uri={u.driver.license_back_url}
+                            onPress={setLightbox}
+                            size="small"
+                          />
+                        ) : null}
+                      </View>
                     </View>
                   ) : (
                     <Text style={[styles.meta, { color: Colors.pink, fontWeight: '700' }]}>No driver’s license on file</Text>
@@ -219,6 +247,30 @@ export default function ManageVerifications({ navigation }) {
         </TouchableOpacity>
       </Modal>
     </ScrollView>
+  );
+}
+
+// Small tappable thumbnail used for ID + license images. label sits
+// under the image so admins can tell front vs. back at a glance.
+function Thumb({ label, uri, onPress, size = 'normal' }) {
+  if (!uri) {
+    return (
+      <View style={[styles.thumbWrap, size === 'small' && styles.thumbWrapSmall, styles.thumbEmpty]}>
+        <Text style={styles.thumbMissing}>missing</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ alignItems: 'center', gap: 2 }}>
+      <TouchableOpacity
+        onPress={() => onPress(uri)}
+        style={[styles.thumbWrap, size === 'small' && styles.thumbWrapSmall]}
+        accessibilityLabel={`Open ${label} at full size`}
+      >
+        <Image source={{ uri }} style={styles.thumb} resizeMode="cover" />
+      </TouchableOpacity>
+      <Text style={styles.thumbLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -273,6 +325,13 @@ const styles = StyleSheet.create({
     ...Shadows.soft,
     borderWidth: 1, borderColor: Colors.glassBorder,
   },
+  thumbStack: { gap: 6 },
+  thumbWrapSmall: { width: 70, height: 70, borderRadius: 8 },
+  thumbEmpty: { alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.grayLight },
+  thumbMissing: { fontSize: 10, fontWeight: '700', color: Colors.grayMid, textTransform: 'uppercase', letterSpacing: 0.3 },
+  thumbLabel: { fontSize: 10, fontWeight: '700', color: Colors.gray, letterSpacing: 0.3, textTransform: 'uppercase' },
+  driverBlock: { marginTop: 6, gap: 6 },
+  licenseRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   thumbWrap: {
     width: 110, height: 110, borderRadius: 12,
     overflow: 'hidden',

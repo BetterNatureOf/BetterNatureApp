@@ -24,7 +24,9 @@ export async function setVerificationStatus(uid, status) {
 // touching unrelated profile fields.
 export async function saveDriverSetup(uid, {
   type,
-  licenseUrl,
+  licenseUrl,             // back-compat: equals front URL
+  licenseFrontUrl,
+  licenseBackUrl,
   holderName,
   holderRelationship,
   holderPhone,
@@ -34,7 +36,9 @@ export async function saveDriverSetup(uid, {
   await updateDoc(doc(db, 'users', uid), {
     driver: {
       type,                                                  // 'self' | 'other'
-      license_url: licenseUrl,
+      license_url: licenseUrl || licenseFrontUrl,            // legacy single thumbnail
+      license_front_url: licenseFrontUrl || licenseUrl || null,
+      license_back_url: licenseBackUrl || null,
       holder_name: holderName || '',
       holder_relationship: holderRelationship || '',
       holder_phone: holderPhone || '',
