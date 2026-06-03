@@ -74,12 +74,24 @@ export default function IrisScreen({ navigation }) {
     );
   }
 
+  const Body = Platform.OS === 'web'
+    ? ({ children }) => (
+        <View style={[styles.container, { overflowY: 'auto', overflowX: 'hidden', height: '100vh' }]}>
+          <View style={styles.content}>{children}</View>
+        </View>
+      )
+    : ({ children }) => (
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
+          {children}
+        </ScrollView>
+      );
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={Platform.OS === 'web' ? undefined : <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
+    <Body>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -177,7 +189,7 @@ export default function IrisScreen({ navigation }) {
           />
         ))
       )}
-    </ScrollView>
+    </Body>
   );
 }
 
