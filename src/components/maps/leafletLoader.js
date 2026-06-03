@@ -14,6 +14,7 @@ const D3_GEO         = 'https://cdn.jsdelivr.net/npm/d3-geo@3/dist/d3-geo.min.js
 const D3_PROJECTION  = 'https://cdn.jsdelivr.net/npm/d3-geo-projection@4/dist/d3-geo-projection.min.js';
 const TOPOJSON       = 'https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js';
 const WORLD_ATLAS    = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+const US_STATES      = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json';
 
 function loadScriptOnce(url) {
   if (typeof window === 'undefined') return Promise.reject(new Error('window missing'));
@@ -42,11 +43,21 @@ export function ensureWorldGeo() {
     await loadScriptOnce(D3_GEO);
     await loadScriptOnce(D3_PROJECTION);
     await loadScriptOnce(TOPOJSON);
-    const world = await fetch(WORLD_ATLAS).then((r) => {
-      if (!r.ok) throw new Error('world-atlas fetch failed');
-      return r.json();
-    });
-    const result = { d3: window.d3, topojson: window.topojson, world };
+    // Parallel fetch — world borders + US states. The states layer
+    // gives the Robinson choropleth real US sub-national outlines so
+    // hovering inside the US surfaces state-level rates instead of
+    // a single country-wide blob.
+    const [world, usStates] = await Promise.all([
+      fetch(WORLD_ATLAS).then((r) => {
+        if (!r.ok) throw new Error('world-atlas fetch failed');
+        return r.json();
+      }),
+      fetch(US_STATES).then((r) => {
+        if (!r.ok) throw new Error('us-atlas fetch failed');
+        return r.json();
+      }).catch(() => null), // optional — map still works without it
+    ]);
+    const result = { d3: window.d3, topojson: window.topojson, world, usStates };
     window.__bnWorldGeo = result;
     return result;
   })();

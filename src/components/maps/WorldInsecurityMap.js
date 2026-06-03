@@ -10,26 +10,38 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { Colors, Type, Radius } from '../../config/theme';
 import { COUNTRIES_BY_NUMERIC, colorForRate, topInsecure } from '../../data/insecurityByCountry';
+import { STATE_BY_FIPS } from '../../data/insecurityByState';
 import { POINTS } from '../../data/impactMap';
 import { ensureWorldGeo } from './leafletLoader';
 
-// Group BN presence (chapters / fridges / gap cities) by country
-// ISO3 so the hover popup can show "you have 1 chapter and 2
-// fridges in this country" with no extra computation.
-function buildPresenceByIso3(fridges) {
-  const map = {};
+// Roll BN presence up two ways at once: by country ISO3 (for the
+// world hover popup) and by US state postal code (for the state
+// hover popup). One pass over the data, both maps populated.
+function buildPresence(fridges) {
+  const byCountry = {};
+  const byState = {};
+  const ensure = (bag, key) => {
+    if (!bag[key]) bag[key] = { chapters: 0, gap: 0, fridges: 0 };
+    return bag[key];
+  };
   POINTS.forEach((p) => {
-    if (!p.country) return;
-    if (!map[p.country]) map[p.country] = { chapters: 0, gap: 0, fridges: 0 };
-    if (p.kind === 'chapter') map[p.country].chapters += 1;
-    if (p.kind === 'gap')     map[p.country].gap += 1;
+    if (p.country) {
+      const c = ensure(byCountry, p.country);
+      if (p.kind === 'chapter') c.chapters += 1;
+      if (p.kind === 'gap')     c.gap += 1;
+    }
+    if (p.country === 'USA' && p.state) {
+      const s = ensure(byState, p.state);
+      if (p.kind === 'chapter') s.chapters += 1;
+      if (p.kind === 'gap')     s.gap += 1;
+    }
   });
   (fridges || []).forEach((f) => {
     const iso = f.country || 'USA';
-    if (!map[iso]) map[iso] = { chapters: 0, gap: 0, fridges: 0 };
-    map[iso].fridges += 1;
+    ensure(byCountry, iso).fridges += 1;
+    if (iso === 'USA' && f.state) ensure(byState, f.state).fridges += 1;
   });
-  return map;
+  return { byCountry, byState };
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -65,24 +77,27 @@ function WebRobinson({ presence }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Build the country paths once we have d3 + world.
-  const features = useMemo(() => {
+  // Project both layers together so they stay aligned.
+  const layers = useMemo(() => {
     if (!ready || typeof window === 'undefined' || !window.__bnWorldGeo) return null;
-    const { topojson, world } = window.__bnWorldGeo;
-    return topojson.feature(world, world.objects.countries).features;
-  }, [ready]);
-
-  const paths = useMemo(() => {
-    if (!features || !window.__bnWorldGeo) return null;
-    const { d3 } = window.__bnWorldGeo;
+    const { d3, topojson, world, usStates } = window.__bnWorldGeo;
     const projection = d3.geoRobinson().fitSize([size.w, size.h], { type: 'Sphere' });
     const path = d3.geoPath(projection);
-    return features.map((f) => {
+
+    const countries = topojson.feature(world, world.objects.countries).features.map((f) => {
       const numId = String(f.id).padStart(3, '0');
-      const meta = COUNTRIES_BY_NUMERIC[numId];
-      return { d: path(f), numId, meta };
+      return { d: path(f), numId, meta: COUNTRIES_BY_NUMERIC[numId] };
     });
-  }, [features, size]);
+
+    const states = (usStates && usStates.objects?.states)
+      ? topojson.feature(usStates, usStates.objects.states).features.map((f) => {
+          const fips = String(f.id).padStart(2, '0');
+          return { d: path(f), fips, meta: STATE_BY_FIPS[fips] };
+        })
+      : [];
+
+    return { countries, states };
+  }, [ready, size]);
 
   if (error) {
     return (
@@ -100,25 +115,45 @@ function WebRobinson({ presence }) {
       width: '100%',
       style: { display: 'block', borderRadius: 14, background: '#F7F5EF' },
     },
-      // Ocean / sphere outline
       React.createElement('rect', { x: 0, y: 0, width: size.w, height: size.h, fill: '#F7F5EF' }),
-      paths
-        ? paths.map((p) => {
-            const rate = p.meta?.rate;
-            const fill = colorForRate(rate);
-            const isHover = hover?.numId === p.numId;
-            return React.createElement('path', {
-              key: p.numId,
-              d: p.d,
-              fill,
-              stroke: isHover ? Colors.green : '#FFFFFFA0',
-              strokeWidth: isHover ? 1.8 : 0.6,
-              style: { cursor: 'pointer', transition: 'stroke-width 120ms' },
-              onMouseEnter: () => setHover({ numId: p.numId, meta: p.meta }),
-              onMouseLeave: () => setHover((h) => (h?.numId === p.numId ? null : h)),
-            });
-          })
-        : null,
+
+      // Country layer (always rendered first; US states overlay sits
+      // on top so its more-specific rates take visual priority).
+      layers?.countries.map((p) => {
+        const rate = p.meta?.rate;
+        const fill = colorForRate(rate);
+        const isHover = hover?.kind === 'country' && hover.numId === p.numId;
+        return React.createElement('path', {
+          key: `c-${p.numId}`,
+          d: p.d,
+          fill,
+          stroke: isHover ? Colors.green : '#FFFFFFA0',
+          strokeWidth: isHover ? 1.8 : 0.6,
+          style: { cursor: 'pointer', transition: 'stroke-width 120ms' },
+          onMouseEnter: () => setHover({ kind: 'country', numId: p.numId, meta: p.meta }),
+          onMouseLeave: () => setHover((h) => (h?.kind === 'country' && h.numId === p.numId ? null : h)),
+        });
+      }) || null,
+
+      // US state overlay (drawn after countries so it wins clicks/hover
+      // inside the United States). We use Feeding America's
+      // state-level rates here, which are far more granular than the
+      // single US country rate.
+      layers?.states.map((p) => {
+        const rate = p.meta?.rate;
+        const fill = colorForRate(rate);
+        const isHover = hover?.kind === 'state' && hover.fips === p.fips;
+        return React.createElement('path', {
+          key: `s-${p.fips}`,
+          d: p.d,
+          fill,
+          stroke: isHover ? Colors.green : '#1B3A2D60',
+          strokeWidth: isHover ? 1.6 : 0.5,
+          style: { cursor: 'pointer', transition: 'stroke-width 120ms' },
+          onMouseEnter: () => setHover({ kind: 'state', fips: p.fips, meta: p.meta }),
+          onMouseLeave: () => setHover((h) => (h?.kind === 'state' && h.fips === p.fips ? null : h)),
+        });
+      }) || null,
     ),
     !ready ? React.createElement('div',
       {
@@ -142,16 +177,28 @@ function WebRobinson({ presence }) {
           pointerEvents: 'none',
         },
       },
-      React.createElement('div', { style: { fontSize: 11, color: '#7A766C', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' } }, 'Country'),
-      React.createElement('div', { style: { fontSize: 18, fontWeight: 800, color: '#1B3A2D', marginTop: 2 } }, hover.meta.name),
+      React.createElement('div', { style: { fontSize: 11, color: '#7A766C', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' } },
+        hover.kind === 'state' ? 'US state' : 'Country'
+      ),
+      React.createElement('div', { style: { fontSize: 18, fontWeight: 800, color: '#1B3A2D', marginTop: 2 } },
+        hover.kind === 'state' ? `${hover.meta.name}, USA` : hover.meta.name
+      ),
       React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'baseline', marginTop: 10 } },
         React.createElement('div', { style: { fontSize: 28, fontWeight: 800, color: colorForRate(hover.meta.rate) } }, `${hover.meta.rate}%`),
         React.createElement('div', { style: { fontSize: 11, color: '#7A766C', fontWeight: 600 } }, 'food insecure'),
       ),
       React.createElement('div', { style: { marginTop: 12, borderTop: '1px solid #EDE7D6', paddingTop: 10, fontSize: 12, color: '#1B3A2D' } },
-        React.createElement('div', null, `Chapters: ${presence[hover.meta.iso3]?.chapters || 0}`),
-        React.createElement('div', { style: { marginTop: 2 } }, `Community fridges: ${presence[hover.meta.iso3]?.fridges || 0}`),
-        React.createElement('div', { style: { marginTop: 2 } }, `Gap cities: ${presence[hover.meta.iso3]?.gap || 0}`),
+        hover.kind === 'state'
+          ? [
+              React.createElement('div', { key: 'c' }, `Chapters in ${hover.meta.code}: ${presence.byState[hover.meta.code]?.chapters || 0}`),
+              React.createElement('div', { key: 'f', style: { marginTop: 2 } }, `Community fridges: ${presence.byState[hover.meta.code]?.fridges || 0}`),
+              React.createElement('div', { key: 'g', style: { marginTop: 2 } }, `Gap cities: ${presence.byState[hover.meta.code]?.gap || 0}`),
+            ]
+          : [
+              React.createElement('div', { key: 'c' }, `Chapters: ${presence.byCountry[hover.meta.iso3]?.chapters || 0}`),
+              React.createElement('div', { key: 'f', style: { marginTop: 2 } }, `Community fridges: ${presence.byCountry[hover.meta.iso3]?.fridges || 0}`),
+              React.createElement('div', { key: 'g', style: { marginTop: 2 } }, `Gap cities: ${presence.byCountry[hover.meta.iso3]?.gap || 0}`),
+            ]
       ),
     ) : hover && !hover.meta ? React.createElement('div',
       {
@@ -185,7 +232,7 @@ function NativeList({ presence }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.rowName}>{c.name}</Text>
             <Text style={styles.rowSub}>
-              {presence[c.iso3]?.chapters || 0} chapters · {presence[c.iso3]?.fridges || 0} fridges · {presence[c.iso3]?.gap || 0} gap cities
+              {presence.byCountry[c.iso3]?.chapters || 0} chapters · {presence.byCountry[c.iso3]?.fridges || 0} fridges · {presence.byCountry[c.iso3]?.gap || 0} gap cities
             </Text>
           </View>
           <Text style={styles.rowRate}>{c.rate}%</Text>
@@ -196,7 +243,7 @@ function NativeList({ presence }) {
 }
 
 export default function WorldInsecurityMap({ fridges = [] }) {
-  const presence = useMemo(() => buildPresenceByIso3(fridges), [fridges]);
+  const presence = useMemo(() => buildPresence(fridges), [fridges]);
   const top = useMemo(() => topInsecure(10), []);
   return (
     <View>
