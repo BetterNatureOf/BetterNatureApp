@@ -75,10 +75,19 @@ export default function IrisScreen({ navigation }) {
   }
 
   const Body = Platform.OS === 'web'
-    ? ({ children }) => (
-        <View style={[styles.container, { overflowY: 'auto', overflowX: 'hidden', height: '100vh' }]}>
-          <View style={styles.content}>{children}</View>
-        </View>
+    ? ({ children }) => React.createElement(
+        'div',
+        {
+          style: {
+            height: '100vh',
+            width: '100%',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            backgroundColor: Colors.cream,
+          },
+        },
+        React.createElement('div', { style: { paddingBottom: 40 } }, children)
       )
     : ({ children }) => (
         <ScrollView
