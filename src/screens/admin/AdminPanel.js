@@ -11,6 +11,7 @@ const ADMIN_ITEMS = [
   { key: 'restaurants', label: 'Manage Restaurants', icon: 'store', desc: 'Approve/reject restaurant applications', screen: 'ManageRestaurants' },
   { key: 'fridges', label: 'Manage Fridges', icon: 'pin', desc: 'Add or edit community fridge drop-off locations', screen: 'ManageFridges' },
   { key: 'verifications', label: 'Verify IDs', icon: 'id-card', desc: 'Review IDs + signed waivers · approve volunteers to claim pickups', screen: 'ManageVerifications' },
+  { key: 'contracts', label: 'Manage Contracts', icon: 'file', desc: 'Every signed agreement across all accounts · view, search, revoke', screen: 'ManageContracts' },
   { key: 'history', label: 'Global History', icon: 'trending', desc: 'All activity across the organization', screen: 'GlobalHistory' },
   { key: 'broadcast', label: 'Broadcast', icon: 'bell', desc: 'Send announcements to chapters/restaurants', screen: 'Broadcast' },
   { key: 'reports', label: 'Export Reports', icon: 'file', desc: 'Generate PDF/CSV reports', screen: 'ExportReports' },

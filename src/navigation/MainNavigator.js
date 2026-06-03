@@ -45,6 +45,9 @@ import ManageVerifications from '../screens/admin/ManageVerifications';
 import LiabilityWaiver from '../screens/auth/LiabilityWaiver';
 import DriverSetup from '../screens/auth/DriverSetup';
 import SignContract from '../screens/auth/SignContract';
+import ContractView from '../screens/contracts/ContractView';
+import MyContracts from '../screens/contracts/MyContracts';
+import ManageContracts from '../screens/admin/ManageContracts';
 import GlobalHistory from '../screens/admin/GlobalHistory';
 import BroadcastScreen from '../screens/admin/BroadcastScreen';
 import ExportReports from '../screens/admin/ExportReports';
@@ -239,6 +242,9 @@ export default function MainNavigator() {
       <Stack.Screen name="LiabilityWaiver" component={LiabilityWaiver} />
       <Stack.Screen name="DriverSetup" component={DriverSetup} />
       <Stack.Screen name="SignContract" component={SignContract} />
+      <Stack.Screen name="ContractView" component={ContractView} />
+      <Stack.Screen name="MyContracts" component={MyContracts} />
+      <Stack.Screen name="ManageContracts" component={ManageContracts} />
       <Stack.Screen name="GlobalHistory" component={GlobalHistory} />
       <Stack.Screen name="Broadcast" component={BroadcastScreen} />
       <Stack.Screen name="ExportReports" component={ExportReports} />
