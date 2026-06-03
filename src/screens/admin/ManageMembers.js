@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
@@ -65,6 +66,11 @@ export default function ManageMembers({ navigation }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Re-pull members every time the screen is focused so a new
+  // signup created in another tab shows up without needing a
+  // manual reload.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   function openEdit(member) {
     setEditing(member);

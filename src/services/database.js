@@ -1250,8 +1250,15 @@ export async function fetchUserLeaderboardStanding(userId, opts = {}) {
 // ── Admin: Members ──
 export async function fetchAllMembers() {
   if (useMock()) return mockMembers;
-  const snap = await getDocs(query(collection(db, 'users'), orderBy('name')));
+  // Don't orderBy name on the server — Firestore silently excludes
+  // docs that are missing the field, so a brand-new signup that
+  // hasn't completed profile yet would be invisible to execs. Sort
+  // client-side instead and tolerate empty names.
+  const snap = await getDocs(collection(db, 'users'));
   let list = snapToList(snap);
+  // Hide tombstoned (deleted) accounts.
+  list = list.filter((u) => !u.deleted_at);
+  list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (!list.length) return [];
 
   // Hydrate chapter name like the old `users(*, chapters(name))` join did.

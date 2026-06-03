@@ -14,14 +14,24 @@ service cloud.firestore {
     }
     // Role hierarchy used across web + app:
     //   super_admin > admin > volunteer / partner / member
+    // Actual roles used across the app:
+    //   member  - default volunteer
+    //   chapter_president (or chapter_pres) - runs one chapter
+    //   executive - org-wide c-suite (highest)
+    //   restaurant - food donor portal
+    // Legacy 'admin' / 'super_admin' kept for backwards compat with
+    // any seed accounts that predate the role rename.
     function isExec() {
-      return isSignedIn() && role() in ['admin', 'super_admin'];
+      return isSignedIn() && role() in ['executive', 'admin', 'super_admin'];
     }
     function isAdmin() {
-      return isSignedIn() && role() in ['admin', 'super_admin'];
+      return isSignedIn() && role() in ['executive', 'admin', 'super_admin'];
+    }
+    function isPresident() {
+      return isSignedIn() && role() in ['chapter_president', 'chapter_pres', 'executive', 'admin', 'super_admin'];
     }
     function isSuperAdmin() {
-      return isSignedIn() && role() == 'super_admin';
+      return isSignedIn() && role() in ['executive', 'super_admin'];
     }
 
     // ── users ──

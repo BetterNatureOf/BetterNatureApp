@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
@@ -36,31 +37,32 @@ export default function ExecutiveDashboard({ navigation }) {
   const [stats, setStats] = useState({ chapters: 0, members: 0, restaurants: 0 });
   const [finance, setFinance] = useState({ raised: 0, mealsRescued: 0 });
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [chapters, members, restaurants, donations, metrics] =
-          await Promise.all([
-            fetchChapters(),
-            fetchAllMembers(),
-            fetchRestaurants(),
-            fetchAllDonations(),
-            fetchOrgMetrics({ scope: 'org' }),
-          ]);
-        setStats({
-          chapters: chapters.length,
-          members: members.length,
-          restaurants: restaurants.length,
-        });
-        const meals = metrics.find((m) => m.key === 'meals_rescued_org');
-        setFinance({
-          raised: donations.reduce((s, d) => s + (d.amount || 0), 0),
-          mealsRescued: meals?.value || 0,
-        });
-      } catch (e) {}
-    }
-    load();
+  const load = useCallback(async () => {
+    try {
+      const [chapters, members, restaurants, donations, metrics] =
+        await Promise.all([
+          fetchChapters(),
+          fetchAllMembers(),
+          fetchRestaurants(),
+          fetchAllDonations(),
+          fetchOrgMetrics({ scope: 'org' }),
+        ]);
+      setStats({
+        chapters: chapters.length,
+        members: members.length,
+        restaurants: restaurants.length,
+      });
+      const meals = metrics.find((m) => m.key === 'meals_rescued_org');
+      setFinance({
+        raised: donations.reduce((s, d) => s + (d.amount || 0), 0),
+        mealsRescued: meals?.value || 0,
+      });
+    } catch (e) {}
   }, []);
+
+  // Refresh every time the screen comes into focus so newly-created
+  // accounts, chapters, and restaurants appear without a manual reload.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function handleSignOut() {
     const ok = await confirm('Sign Out', 'Sign out of the executive portal?');
