@@ -10,12 +10,22 @@
 // above the embed when FEATURES.STRIPE_PSP is on — it's a faster path
 // for repeat donors. Until Stripe is configured, the row self-hides.
 import React from 'react';
-import { ScrollView, StyleSheet, Platform } from 'react-native';
+import { ScrollView, StyleSheet, Text, Platform } from 'react-native';
 import { Colors, Type } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import DonationCTA from '../../components/donate/DonationCTA';
+import { FEATURES } from '../../config/features';
 import ZeffyEmbed from '../../components/donate/ZeffyEmbed';
+
+// PSP donation row is conditionally imported below — only when the
+// Stripe feature flag is on. Some older bundles crashed inside the
+// lazy Stripe loader on first paint when Stripe wasn't configured, so
+// we just don't render that subtree until it's actually wired.
+let DonationCTA = null;
+if (FEATURES.STRIPE_PSP) {
+  // eslint-disable-next-line global-require
+  DonationCTA = require('../../components/donate/DonationCTA').default;
+}
 
 export default function DonateScreen() {
   return (
@@ -24,21 +34,18 @@ export default function DonateScreen() {
         <BrushText variant="screenTitle" style={styles.title}>
           Make a donation
         </BrushText>
-        <BrushText variant="sectionHeader" style={styles.subtitle}>
+        <Text style={styles.subtitle}>
           100% of your gift goes to BetterNature programs. Tax-deductible.
-        </BrushText>
+        </Text>
 
-        {/* One-tap PSP row — only renders when Stripe is configured
-            AND the device supports Apple Pay or Google Pay. Self-hides
-            otherwise, so the page is just the embed below. */}
-        <DonationCTA
-          label="Donate one-tap"
-          description="Apple Pay or Google Pay — fastest path for repeat donors"
-          showZeffy={false}
-        />
+        {DonationCTA ? (
+          <DonationCTA
+            label="Donate one-tap"
+            description="Apple Pay or Google Pay — fastest path for repeat donors"
+            showZeffy={false}
+          />
+        ) : null}
 
-        {/* The Zeffy donation form, embedded inline. Handles the
-            amount, the monthly toggle, and every payment method. */}
         <ZeffyEmbed height={Platform.OS === 'web' ? 980 : 0} />
       </ResponsiveContainer>
     </ScrollView>
@@ -53,5 +60,5 @@ const styles = StyleSheet.create({
   },
   content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
   title: { color: Colors.green },
-  subtitle: { color: Colors.gray, fontSize: 16, marginTop: 6, marginBottom: 24, fontStyle: 'italic' },
+  subtitle: { ...Type.body, color: Colors.gray, marginTop: 6, marginBottom: 24 },
 });
