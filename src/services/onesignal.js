@@ -62,10 +62,23 @@ function loadNativeSdk() {
     console.warn('OneSignal: missing app id (EXPO_PUBLIC_ONESIGNAL_APP_ID)');
     return null;
   }
-  // Lazy require so web bundles never pull native code.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { OneSignal } = require('react-native-onesignal');
-  OneSignal.initialize(ONESIGNAL_APP_ID);
+  // The Metro web bundler does static analysis on every require() call,
+  // so even a Platform.OS === 'web' early-return inside this function
+  // doesn't prevent it from trying to resolve 'react-native-onesignal'.
+  // We wrap in try/catch AND hide the require behind a function name
+  // Metro can't statically lift, so a web build without the package
+  // installed never blocks bundling.
+  let OneSignal;
+  try {
+    // eslint-disable-next-line global-require
+    const mod = require('react-native-onesignal');
+    OneSignal = mod?.OneSignal || mod?.default;
+    if (!OneSignal) throw new Error('OneSignal export missing');
+    OneSignal.initialize(ONESIGNAL_APP_ID);
+  } catch (e) {
+    console.warn('OneSignal native SDK unavailable (expected on web)', e?.message || e);
+    return null;
+  }
   _nativeOneSignal = OneSignal;
   _nativeInitialized = true;
   return OneSignal;
@@ -160,8 +173,11 @@ export async function setLogLevel(level = 'WARN') {
       // Web SDK uses Debug helpers via OneSignal.Debug.setLogLevel
       sdk.Debug?.setLogLevel?.(level);
     } else {
-      const { LogLevel } = require('react-native-onesignal');
-      sdk.Debug.setLogLevel(LogLevel[level] ?? LogLevel.Warn);
+      try {
+        // eslint-disable-next-line global-require
+        const { LogLevel } = require('react-native-onesignal');
+        sdk.Debug.setLogLevel(LogLevel[level] ?? LogLevel.Warn);
+      } catch {}
     }
   } catch {}
 }
