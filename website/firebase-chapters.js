@@ -19,10 +19,12 @@ export async function listChapters() {
     // "doc was created with a status we're filtering out."
     console.log(`[bn] chapters raw from Firestore: ${raw.length}`);
     raw.forEach((c) => console.log(`  - ${c.name || c.id} · status=${c.status || '(none)'}`));
-    // Show anything that isn't explicitly deactivated or soft-deleted.
-    const list = raw.filter((c) =>
-      !c.deleted_at && c.status !== 'inactive' && c.status !== 'deleted'
-    );
+    // Strict: ONLY status==='active' chapters appear on the public
+    // site. Anything that's been deactivated, soft-deleted, or never
+    // got a real status stamped on it stays hidden. Createchapter in
+    // the app stamps status:'active' on every new chapter, so legacy
+    // docs without it are intentionally excluded.
+    const list = raw.filter((c) => !c.deleted_at && c.status === 'active');
     list.sort((a, b) => (a.city || a.name || '').localeCompare(b.city || b.name || ''));
     console.log(`[bn] chapters after filter: ${list.length}`);
     return list;

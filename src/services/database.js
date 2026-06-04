@@ -63,11 +63,24 @@ export async function fetchChapters() {
   // client-side. Chapter count is small (dozens), not millions.
   const snap = await getDocs(collection(db, 'chapters'));
   let list = snapToList(snap);
-  // Show 'active' chapters by default, but tolerate docs without
-  // the status field — treat them as active.
-  list = list.filter((c) => !c.status || c.status === 'active');
+  // Strict: only status==='active'. Members browsing chapters
+  // should never see deactivated ones. Execs who need the full
+  // list (to reactivate or audit) use fetchAllChapters() below.
+  list = list.filter((c) => c.status === 'active' && !c.deleted_at);
   list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return withMockFallback(list, mockChapters);
+}
+
+// Exec-only helper: returns active + inactive chapters so the
+// Manage Chapters screen can show deactivated ones with a
+// reactivate button. Soft-deleted (deleted_at) docs are still
+// hidden because there's no UX path to undelete them.
+export async function fetchAllChapters() {
+  if (useMock()) return mockChapters;
+  const snap = await getDocs(collection(db, 'chapters'));
+  let list = snapToList(snap).filter((c) => !c.deleted_at);
+  list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return list;
 }
 
 export async function fetchChapterById(id) {

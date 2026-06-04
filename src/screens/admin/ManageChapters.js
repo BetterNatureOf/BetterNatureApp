@@ -24,7 +24,7 @@ import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import {
-  fetchChapters, createChapter, updateChapter,
+  fetchChapters, fetchAllChapters, createChapter, updateChapter,
   fetchAllMembers, fetchEvents, fetchPickups,
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
@@ -88,7 +88,7 @@ export default function ManageChapters({ navigation }) {
       return fallback;
     });
     const [c, m, f, ev, pk] = await Promise.all([
-      safe(fetchChapters(), []),
+      safe(fetchAllChapters(), []),
       safe(fetchAllMembers(), []),
       safe(listFridges(), []),
       safe(fetchEvents(), []),
