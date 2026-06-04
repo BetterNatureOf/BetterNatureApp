@@ -65,6 +65,7 @@ import MetricsEditor from '../screens/admin/MetricsEditor';
 import CheckInScreen from '../screens/admin/CheckInScreen';
 import BNMap from '../screens/impact/BNMap';
 import MemberApprovalGate from '../components/ui/MemberApprovalGate';
+import { isFounderEmail } from '../services/founder';
 import NotificationPreferences from '../screens/other/NotificationPreferences';
 import WebsiteContent from '../screens/admin/WebsiteContent';
 
@@ -134,16 +135,24 @@ function TabIcon({ label, focused }) {
 // Choose which dashboard the "Manage" tab opens to based on role.
 function ManageTab(props) {
   const role = useAuthStore((s) => s.role);
+  const user = useAuthStore((s) => s.user);
   if (role === ROLES.EXECUTIVE) return <ExecutiveDashboard {...props} />;
   if (role === ROLES.PRESIDENT) return <PresidentDashboard {...props} />;
-  // Fallback — shouldn't render because the tab is hidden for plain members.
+  // Founder safety net — if a founder accidentally switched their
+  // role to member, they'd lose the Org tab entirely and have no
+  // way to flip back without dev-tools. Render the exec dashboard
+  // for founder emails regardless of role.
+  if (isFounderEmail(user?.email)) return <ExecutiveDashboard {...props} />;
+  // Fallback — shouldn't render because the tab is hidden otherwise.
   return <DashboardScreen {...props} />;
 }
 
 function MainTabs() {
   const role = useAuthStore((s) => s.role);
-  const showManage = role === ROLES.PRESIDENT || role === ROLES.EXECUTIVE;
-  const manageLabel = role === ROLES.EXECUTIVE ? 'Org' : 'Chapter';
+  const user = useAuthStore((s) => s.user);
+  const isFounder = isFounderEmail(user?.email);
+  const showManage = isFounder || role === ROLES.PRESIDENT || role === ROLES.EXECUTIVE;
+  const manageLabel = (role === ROLES.EXECUTIVE || isFounder) ? 'Org' : 'Chapter';
 
   return (
     <Tab.Navigator
