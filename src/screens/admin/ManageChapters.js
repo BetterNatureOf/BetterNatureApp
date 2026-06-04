@@ -29,6 +29,7 @@ import {
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
 import { notify, confirm } from '../../services/ui';
+import { confirmWithPassword } from '../../services/passwordConfirm';
 import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { getProfile } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
@@ -294,16 +295,23 @@ export default function ManageChapters({ navigation }) {
 
   async function toggleStatus(chapter) {
     const next = chapter.status === 'inactive' ? 'active' : 'inactive';
-    Alert.alert(
-      next === 'active' ? 'Reactivate chapter?' : 'Deactivate chapter?',
-      next === 'inactive'
-        ? `${chapter.name} will be hidden from the website map and member signup. Members keep their accounts.`
-        : `${chapter.name} will appear publicly again.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', onPress: async () => { await updateChapter(chapter.id, { status: next }); load(); } },
-      ]
-    );
+    // Deactivation is destructive — gate it behind the user's
+    // password. Reactivation is reversible, plain confirm is fine.
+    const ok = next === 'inactive'
+      ? await confirmWithPassword(
+          `Deactivate ${chapter.name}?`,
+          `${chapter.name} will be hidden from the website map and member signup. Members keep their accounts.`,
+          { confirmLabel: 'Deactivate', destructive: true }
+        )
+      : await confirm('Reactivate chapter?', `${chapter.name} will appear publicly again.`);
+    if (!ok) return;
+    try {
+      await updateChapter(chapter.id, { status: next });
+      load();
+      notify(next === 'inactive' ? 'Chapter deactivated' : 'Chapter reactivated', '');
+    } catch (e) {
+      notify('Could not update', e?.message || 'Try again.');
+    }
   }
 
   return (

@@ -13,6 +13,7 @@ import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import { listFridges, createFridge, updateFridge } from '../../services/fridges';
 import { notify, notifyThen, confirm } from '../../services/ui';
+import { confirmWithPassword } from '../../services/passwordConfirm';
 import Screen from '../../components/ui/Screen';
 
 const blank = {
@@ -80,7 +81,11 @@ export default function ManageFridges({ navigation }) {
 
   async function deactivate() {
     if (editing === 'new' || !editing) return;
-    const ok = await confirm('Deactivate this fridge?', 'It will hide from the app and the website map. You can re-activate later by editing it.');
+    const ok = await confirmWithPassword(
+      'Deactivate this fridge?',
+      'It will hide from the app and the website map. You can re-activate later by editing it.',
+      { confirmLabel: 'Deactivate', destructive: true }
+    );
     if (!ok) return;
     setSaving(true);
     try {

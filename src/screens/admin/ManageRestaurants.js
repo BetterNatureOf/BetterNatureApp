@@ -5,6 +5,8 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import { fetchRestaurants, updateRestaurant } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { notify, confirm } from '../../services/ui';
+import { confirmWithPassword } from '../../services/passwordConfirm';
 
 export default function ManageRestaurants({ navigation }) {
   const [restaurants, setRestaurants] = useState([]);
@@ -24,20 +26,23 @@ export default function ManageRestaurants({ navigation }) {
   }
 
   async function handleAction(rest, action) {
-    Alert.alert(
-      `${action === 'approved' ? 'Approve' : 'Reject'} ${rest.name}?`,
-      '',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            await updateRestaurant(rest.id, { status: action });
-            load();
-          },
-        },
-      ]
-    );
+    // Reject = destructive (cuts a partner off from the dashboard),
+    // gate with password. Approve is reversible, plain confirm is fine.
+    const ok = action === 'rejected'
+      ? await confirmWithPassword(
+          `Reject ${rest.name}?`,
+          'They will see an "application not accepted" screen and lose access to the restaurant dashboard. You can re-approve later from the Rejected tab.',
+          { confirmLabel: 'Reject', destructive: true }
+        )
+      : await confirm(`Approve ${rest.name}?`, "They'll see their dashboard unlock automatically within 8 seconds.");
+    if (!ok) return;
+    try {
+      await updateRestaurant(rest.id, { status: action });
+      load();
+      notify(action === 'rejected' ? 'Rejected' : 'Approved', '');
+    } catch (e) {
+      notify('Could not save', e?.message || 'Try again.');
+    }
   }
 
   return (

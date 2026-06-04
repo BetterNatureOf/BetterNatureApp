@@ -9,6 +9,7 @@ import useAuthStore from '../../store/authStore';
 import { updateProfile, deleteAccount, getProfile } from '../../services/auth';
 import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { notify, confirm } from '../../services/ui';
+import { confirmWithPassword } from '../../services/passwordConfirm';
 import Screen from '../../components/ui/Screen';
 
 export default function SettingsScreen({ navigation }) {
@@ -87,9 +88,10 @@ export default function SettingsScreen({ navigation }) {
       'Deleting your account removes your profile, history, and signed agreements. This cannot be undone.'
     );
     if (!ok) return;
-    const reallyOk = await confirm(
+    const reallyOk = await confirmWithPassword(
       'DELETE YOUR ACCOUNT AND PROGRESS?',
-      'Last chance. Tap OK to permanently delete your BetterNature account.'
+      'Last chance. Enter your password to permanently delete your BetterNature account.',
+      { confirmLabel: 'Delete account', destructive: true }
     );
     if (!reallyOk) return;
     try {
