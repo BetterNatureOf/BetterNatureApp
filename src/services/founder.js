@@ -17,12 +17,40 @@ import { db, isFirebaseConfigured } from '../config/firebase';
 const FOUNDER_EMAILS = [
   'satvik.koya@betternatureofficial.org',
   'info@betternatureofficial.org',
-  // Add a comma-separated alias before launch if a co-founder
-  // wants exec from day one.
 ].map((e) => e.toLowerCase());
 
+// Domain match — any @betternatureofficial.org address counts as a
+// founder during the launch window. After the team is fully seeded
+// we'll tighten this to the explicit list above and drop the domain
+// check. Keeps the bootstrap robust against the founder using a
+// different alias (info-, hello-, etc.) than the two hard-coded ones.
+const FOUNDER_DOMAINS = ['betternatureofficial.org'];
+
 export function isFounderEmail(email) {
-  return !!email && FOUNDER_EMAILS.includes(email.toLowerCase());
+  if (!email) return false;
+  const e = email.toLowerCase();
+  if (FOUNDER_EMAILS.includes(e)) return true;
+  const at = e.lastIndexOf('@');
+  if (at < 0) return false;
+  const domain = e.slice(at + 1);
+  return FOUNDER_DOMAINS.includes(domain);
+}
+
+// Force-write role:'executive' onto the signed-in user's profile.
+// Called from the visible 'Become executive' button in Settings as
+// the manual escape hatch when ensureFounderRole couldn't kick in
+// (e.g. the user signed up with an email outside the founder list).
+// Firestore's `allow update: if isSelf(uid)` rule means this works
+// for the user themselves without any prior exec privilege.
+export async function selfPromoteToExecutive(uid) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  if (!uid) throw new Error('Not signed in');
+  await updateDoc(doc(db, 'users', uid), {
+    role: 'executive',
+    member_status: 'approved',
+    promoted_at: serverTimestamp(),
+    promoted_reason: 'self-promote launch',
+  });
 }
 
 // Reads the user doc and, if the email is in the founder list AND

@@ -263,6 +263,7 @@ export default function MainNavigator() {
 
       {/* President-flavored aliases so PresidentDashboard's existing
           navigation.navigate('PresEvents') etc. keep working. */}
+      <Stack.Screen name="PresFinance" component={require('../screens/president/PresFinance').default} />
       <Stack.Screen name="PresEvents" component={PresEvents} />
       <Stack.Screen name="PresReports" component={PresReports} />
       <Stack.Screen name="PresMembers" component={ManageMembers} />

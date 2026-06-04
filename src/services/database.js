@@ -125,6 +125,35 @@ export async function createEvent(event) {
   return { id: ref.id, ...event };
 }
 
+// Recurring-event helper: clones a template event into N occurrences.
+// We materialize each occurrence as its own doc instead of carrying a
+// rrule string because (a) RSVPs, signups, and stats all key off
+// event_id and would have to handle 'which occurrence?' otherwise,
+// and (b) presidents need to be able to cancel an individual week
+// without unwinding the series.
+export async function createRecurringEvents(template, { every = 'week', count = 8 } = {}) {
+  if (!template || !template.date) throw new Error('Template needs a base date');
+  const made = [];
+  const seriesId = `series-${Date.now().toString(36)}`;
+  const stepMs = every === 'week' ? 7 * 86400000
+                : every === 'biweek' ? 14 * 86400000
+                : 86400000; // daily fallback
+  const baseDate = new Date(template.date);
+  for (let i = 0; i < count; i++) {
+    const occDate = new Date(baseDate.getTime() + i * stepMs);
+    const isoDate = occDate.toISOString().slice(0, 10);
+    const ev = await createEvent({
+      ...template,
+      date: isoDate,
+      series_id: seriesId,
+      occurrence: i + 1,
+      occurrence_total: count,
+    });
+    made.push(ev);
+  }
+  return { seriesId, count: made.length, events: made };
+}
+
 // In-memory signup list for mock mode.
 const _mockSignups = [];
 

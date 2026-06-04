@@ -21,6 +21,7 @@ const ACTIONS = [
   { key: 'broadcast', label: 'Send Announcement', icon: 'bell', desc: 'Notify your chapter members', screen: 'PresBroadcast', color: Colors.pink },
   { key: 'reports', label: 'Chapter Reports', icon: 'trending', desc: 'Hours, meals, donations this month', screen: 'PresReports', color: Colors.amber },
   { key: 'metrics', label: 'Edit Metrics', icon: 'sparkles', desc: 'Adjust auto-tracked totals or add manual ones', screen: 'PresMetrics', color: Colors.green },
+  { key: 'finance', label: 'Chapter Finance', icon: 'trending', desc: 'Donations attributed to your chapter + CSV exports', screen: 'PresFinance', color: Colors.green },
 ];
 
 export default function PresidentDashboard({ navigation }) {

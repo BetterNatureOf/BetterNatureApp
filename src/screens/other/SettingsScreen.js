@@ -6,7 +6,8 @@ import Toggle from '../../components/ui/Toggle';
 import BrushDivider from '../../components/ui/BrushDivider';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
-import { updateProfile, deleteAccount } from '../../services/auth';
+import { updateProfile, deleteAccount, getProfile } from '../../services/auth';
+import { selfPromoteToExecutive } from '../../services/founder';
 import { notify, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
@@ -63,6 +64,23 @@ export default function SettingsScreen({ navigation }) {
 
   // Two-step delete: first confirm "are you sure", then a final
   // "this will erase your progress" before the actual delete fires.
+  async function handleBecomeExecutive() {
+    const ok = await confirm(
+      'Become executive?',
+      'This gives your account org-wide privileges (create chapters, approve partners, edit anyone\'s role). Only do this if you\'re a BetterNature founder or were told to.'
+    );
+    if (!ok) return;
+    try {
+      await selfPromoteToExecutive(user.id);
+      // Pull a fresh profile so the new role is reflected immediately.
+      const fresh = await getProfile(user.id);
+      if (fresh && setUser) setUser(fresh);
+      notify('Done', "You're now an executive. Open the Org tab to manage chapters.");
+    } catch (e) {
+      notify('Could not upgrade', e?.message || 'Try again.');
+    }
+  }
+
   async function handleDeleteAccount() {
     const ok = await confirm(
       'ARE YOU SURE?',
@@ -145,6 +163,15 @@ export default function SettingsScreen({ navigation }) {
       <TouchableOpacity onPress={() => navigation.navigate('MyContracts')}>
         <Text style={styles.linkItem}>Your signed agreements</Text>
       </TouchableOpacity>
+
+      {(user?.role || 'member') !== 'executive' && (user?.role || 'member') !== 'super_admin' ? (
+        <TouchableOpacity onPress={handleBecomeExecutive} style={styles.execBtn}>
+          <Text style={styles.execBtnTitle}>Become executive</Text>
+          <Text style={styles.execBtnHelp}>
+            Use this if you're a BetterNature founder and your role isn't set yet. Lets you create chapters, approve restaurants, etc.
+          </Text>
+        </TouchableOpacity>
+      ) : null}
       <TouchableOpacity onPress={() => openUrl('https://betternatureofficial.org/privacy')}>
         <Text style={styles.linkItem}>Privacy Policy</Text>
       </TouchableOpacity>
@@ -193,6 +220,16 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.grayLight,
   },
   version: { ...Type.caption, textAlign: 'center', marginTop: 16 },
+  execBtn: {
+    marginTop: 12, marginBottom: 4,
+    padding: 14,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.green,
+    backgroundColor: '#E8F5EE',
+  },
+  execBtnTitle: { fontSize: 15, fontWeight: '800', color: Colors.green },
+  execBtnHelp: { ...Type.caption, color: Colors.gray, marginTop: 4 },
   deleteBtn: {
     alignItems: 'center',
     paddingVertical: 16,

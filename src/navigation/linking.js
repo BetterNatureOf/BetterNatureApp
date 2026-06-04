@@ -73,6 +73,7 @@ const screens = {
   ExecFinance: 'exec/finance',
   ExecMetrics: 'exec/metrics',
   PresMetrics: 'pres/metrics',
+  PresFinance: 'pres/finance',
   CheckIn: 'check-in',
   BNMap: 'map',
   ImpactMap: 'impact-map',
