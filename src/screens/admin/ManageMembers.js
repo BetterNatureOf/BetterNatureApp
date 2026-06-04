@@ -132,27 +132,36 @@ export default function ManageMembers({ navigation, route }) {
 
   async function saveEdit() {
     if (!editing) return;
+    // Snapshot what's being edited so we can close the modal first
+    // and run the writes after. Closing first means a successful
+    // save never leaves the modal stuck open — the previous bug
+    // was that one of the writes was throwing silently before
+    // setEditing(null) could run.
+    const target       = editing;
+    const nextRole     = selectedRole;
+    const nextChapter  = selectedChapter;
+    const ne           = parseInt(statEvents, 10);
+    const nm           = parseInt(statMeals, 10);
+    const nh           = parseFloat(statHours);
+
+    setEditing(null);
     try {
-      if (selectedRole !== editing.role) {
-        await updateUserRole(editing.id, selectedRole);
+      if (nextRole !== target.role) {
+        await updateUserRole(target.id, nextRole);
       }
-      const currentChapter = editing.chapter_id || '';
-      if (selectedChapter !== currentChapter) {
-        await updateUserChapter(editing.id, selectedChapter || null);
+      const currentChapter = target.chapter_id || '';
+      if (nextChapter !== currentChapter) {
+        await updateUserChapter(target.id, nextChapter || null);
       }
       // Stats — only push the ones that actually changed so we don't
       // overwrite an in-flight server increment from an event check-in.
       const updates = {};
-      const ne = parseInt(statEvents, 10);
-      const nm = parseInt(statMeals, 10);
-      const nh = parseFloat(statHours);
-      if (!Number.isNaN(ne) && ne !== (editing.events_attended || 0)) updates.events_attended = ne;
-      if (!Number.isNaN(nm) && nm !== (editing.meals_rescued  || 0)) updates.meals_rescued  = nm;
-      if (!Number.isNaN(nh) && nh !== (editing.hours_logged   || 0)) updates.hours_logged   = nh;
+      if (!Number.isNaN(ne) && ne !== (target.events_attended || 0)) updates.events_attended = ne;
+      if (!Number.isNaN(nm) && nm !== (target.meals_rescued    || 0)) updates.meals_rescued  = nm;
+      if (!Number.isNaN(nh) && nh !== (target.hours_logged     || 0)) updates.hours_logged   = nh;
       if (Object.keys(updates).length) {
-        await updateProfile(editing.id, updates);
+        await updateProfile(target.id, updates);
       }
-      setEditing(null);
       load();
     } catch (e) {
       const code = (e?.code || '').toLowerCase();

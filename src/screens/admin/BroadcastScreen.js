@@ -1,109 +1,128 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import useAuthStore from '../../store/authStore';
-import { createAnnouncement } from '../../services/database';
+import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
+import useAuthStore from '../../store/authStore';
+import { sendBroadcast } from '../../services/broadcast';
+import { notify, confirm } from '../../services/ui';
 
-const TARGETS = [
-  { key: 'all', label: 'Everyone' },
-  { key: 'restaurants', label: 'All Restaurants' },
+const AUDIENCES = [
+  { key: 'bn',          label: 'BetterNature',           desc: 'Everyone in the org (members, presidents, execs)' },
+  { key: 'restaurants', label: 'Food Donors',            desc: 'Approved restaurant partners' },
+  { key: 'all',         label: 'Everyone',               desc: 'BetterNature + food donors' },
 ];
 
 export default function BroadcastScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [target, setTarget] = useState('all');
+  const [audience, setAudience] = useState('bn');
   const [loading, setLoading] = useState(false);
 
   async function handleSend() {
     if (!title.trim() || !message.trim()) {
-      Alert.alert('Required', 'Please enter a title and message.');
+      notify('Required', 'Title and message are both required.');
       return;
     }
-
+    const audMeta = AUDIENCES.find((a) => a.key === audience);
+    const ok = await confirm(
+      `Send to ${audMeta.label}?`,
+      `Everyone in this audience will get an in-app notification and a text message (if they opted in to SMS). This can't be unsent.`
+    );
+    if (!ok) return;
     setLoading(true);
     try {
-      await createAnnouncement({
-        title,
-        message,
-        target,
-        sent_by: user?.id,
+      const result = await sendBroadcast({
+        title, message, audience,
+        sentBy: user?.id || null,
       });
-      Alert.alert('Sent!', 'Broadcast sent successfully.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      if (!result?.ok) {
+        notify('Could not send', result?.reason || 'Something went wrong. Try again.');
+        return;
+      }
+      notify(
+        'Broadcast sent',
+        `${result.notifyCount} in-app notification${result.notifyCount === 1 ? '' : 's'} delivered. ${result.smsCount} text${result.smsCount === 1 ? '' : 's'} queued for delivery.`
+      );
+      navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setLoading(false);
-    }
+      notify('Could not send', e?.message || 'Try again.');
+    } finally { setLoading(false); }
   }
 
   return (
     <Screen contentStyle={styles.content}>
-      <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Broadcast
-      </BrushText>
-      <Text style={styles.subtitle}>Send an announcement to the community</Text>
+      <ResponsiveContainer maxWidth={780}>
+        <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
+        <BrushText variant="screenTitle" style={styles.title}>Broadcast</BrushText>
+        <Text style={styles.subtitle}>
+          Sends an in-app notification AND a text message to everyone in the chosen audience who opted in to SMS.
+        </Text>
 
-      <Text style={styles.label}>Send To</Text>
-      <View style={styles.targetRow}>
-        {TARGETS.map((t) => (
-          <TouchableOpacity
-            key={t.key}
-            style={[styles.targetBtn, target === t.key && styles.targetActive]}
-            onPress={() => setTarget(t.key)}
-          >
-            <Text style={[styles.targetText, target === t.key && styles.targetTextActive]}>
-              {t.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+        <Text style={styles.label}>Audience</Text>
+        <View style={{ gap: 8, marginBottom: 18 }}>
+          {AUDIENCES.map((a) => {
+            const active = audience === a.key;
+            return (
+              <TouchableOpacity
+                key={a.key}
+                style={[styles.audCard, active && styles.audCardActive]}
+                onPress={() => setAudience(a.key)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.audDot, active && styles.audDotActive]}>
+                  {active ? <View style={styles.audDotInner} /> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.audLabel, active && { color: Colors.green }]}>{a.label}</Text>
+                  <Text style={styles.audDesc}>{a.desc}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
-      <Input label="Title" placeholder="Announcement title" value={title} onChangeText={setTitle} />
-      <Input
-        label="Message"
-        placeholder="Write your message..."
-        value={message}
-        onChangeText={setMessage}
-        multiline
-        style={{ height: 120, textAlignVertical: 'top' }}
-      />
+        <Input label="Title" placeholder="Announcement title" value={title} onChangeText={setTitle} />
+        <Input
+          label="Message"
+          placeholder="What's the announcement?"
+          value={message}
+          onChangeText={setMessage}
+          multiline
+          style={{ minHeight: 120, textAlignVertical: 'top' }}
+        />
 
-      <Button title="Send Broadcast" onPress={handleSend} loading={loading} style={styles.btn} />
+        <View style={styles.charCount}>
+          <Text style={styles.charText}>
+            {message.length} characters · SMS will arrive as {message.length > 160 ? Math.ceil(message.length / 160) : 1} segment{message.length > 160 ? 's' : ''}
+          </Text>
+        </View>
+
+        <Button title="Send broadcast" onPress={handleSend} loading={loading} style={styles.btn} />
+      </ResponsiveContainer>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.cream,
-    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
-  },
+  container: { flex: 1, backgroundColor: Colors.cream, ...(Platform.OS === 'web' ? { height: '100vh' } : null) },
   content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
   back: { fontSize: 16, color: Colors.green, marginBottom: 8 },
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
-  label: { fontSize: 15, fontWeight: '500', color: Colors.dark, marginBottom: 8 },
-  targetRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  targetBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.grayLight,
-  },
-  targetActive: { backgroundColor: Colors.green, borderColor: Colors.green },
-  targetText: { fontSize: 13, fontWeight: '600', color: Colors.gray },
-  targetTextActive: { color: Colors.white },
-  btn: { marginTop: 8 },
+  label: { fontSize: 12, fontWeight: '800', color: Colors.gray, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' },
+  audCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14, borderRadius: 14, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.glassBorder },
+  audCardActive: { borderColor: Colors.green, backgroundColor: '#E8F5EE' },
+  audDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Colors.grayMid, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  audDotActive: { borderColor: Colors.green },
+  audDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.green },
+  audLabel: { fontSize: 15, fontWeight: '800', color: Colors.dark },
+  audDesc: { ...Type.caption, marginTop: 2 },
+  charCount: { marginTop: 8, marginBottom: 8 },
+  charText: { ...Type.caption, color: Colors.grayMid },
+  btn: { marginTop: 16 },
 });
