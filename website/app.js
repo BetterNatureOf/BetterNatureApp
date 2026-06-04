@@ -372,17 +372,6 @@
     : C.chapters.featured;
   const liveLoaded = Array.isArray(liveChapters);
 
-  // Temporary visible diagnostic strip. Goes away once we confirm
-  // the live read is working as intended.
-  const diag = document.createElement('div');
-  diag.style.cssText = 'background:#FEF9C3;border:1px solid #FDE68A;color:#854D0E;padding:10px 14px;border-radius:10px;font-size:12px;margin-bottom:16px;font-family:-apple-system,Helvetica,Arial,sans-serif';
-  const diagText = liveLoaded
-    ? `[debug] Firestore returned ${liveChapters.length} chapter${liveChapters.length === 1 ? '' : 's'}: ${liveChapters.map((c) => c.name || c.city || c.id).join(', ') || '(none)'}`
-    : `[debug] Live Firestore read failed; falling back to the static featured list (${C.chapters.featured.length} chapter${C.chapters.featured.length === 1 ? '' : 's'}). Check the browser console for the error.`;
-  diag.textContent = diagText;
-  const grid = document.getElementById('chaptersGrid');
-  if (grid && grid.parentNode) grid.parentNode.insertBefore(diag, grid);
-
   if (renderChapters.length === 0) {
     setHTML('#chaptersGrid', `
       <div class="chapter chapter--empty">

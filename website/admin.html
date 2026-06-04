@@ -276,11 +276,28 @@
 
   <!-- CHAPTERS -->
   <div class="panel" id="panel-chapters">
-    <div class="panel__help">
-      <strong>Featured chapters</strong> shown in the Chapters section grid.
+    <div class="panel__help" style="background:#FEF9C3;border-color:#FDE68A;color:#854D0E">
+      <strong>Chapter editing moved.</strong> The "Featured chapters" form here
+      only ever saved to your browser's local storage — visitors never saw your
+      edits. Chapters are now managed inside the BetterNature app so every
+      change lands in Firestore and the public site reads it on the next page
+      load.
     </div>
-    <div id="chaptersList"></div>
-    <button class="add-row" data-add="chapters">＋ Add a chapter</button>
+    <div style="background:#FFF;border:1px solid #EDE7D6;border-radius:14px;padding:20px;margin-top:14px">
+      <div style="font-size:14px;color:#7A766C;margin-bottom:10px">Manage chapters in the app:</div>
+      <a href="https://app.betternatureofficial.org/#/admin/chapters"
+         target="_blank" rel="noopener"
+         style="display:inline-block;background:#1B3A2D;color:#FFF;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700;font-size:14px">
+        Open Manage Chapters →
+      </a>
+      <div style="margin-top:14px;font-size:12px;color:#7A766C">
+        Use this page (admin.html) for hero text, programs, partners, brand,
+        testimonials, and events. Anything chapter-related goes through the app
+        now.
+      </div>
+    </div>
+    <div id="chaptersList" style="display:none"></div>
+    <button class="add-row" data-add="chapters" style="display:none">＋ Add a chapter</button>
   </div>
 
   <!-- TESTIMONIALS -->
