@@ -346,38 +346,57 @@
   set('#chaptersBody', C.chapters.body);
   $('#startChapterBtn').href = C.chapters.startChapterUrl;
 
-  // Live chapters from Firestore. The app writes denormalized
-  // president_name + member_count + officers onto each chapter doc
-  // every time someone changes a role, so the marketing site reads
-  // those directly without joining /users.
-  // Falls back to C.chapters.featured (the static list in content.js)
-  // if Firestore is unreachable.
-  let liveChapters = [];
+  // Live chapters from Firestore. We distinguish three states so
+  // the user knows what's going on:
+  //   - fetch succeeded with N>0 chapters → render the live list
+  //   - fetch succeeded with 0 chapters   → empty state ("none yet")
+  //                                          NOT the static featured list,
+  //                                          which would mask the
+  //                                          "I added one but it's not
+  //                                          showing" bug we keep hitting.
+  //   - fetch threw (offline, rules)      → static featured list as
+  //                                          a graceful fallback.
+  let liveChapters = null;
   try {
     const { listChapters } = await import('./firebase-chapters.js');
     liveChapters = await listChapters();
+    console.log(`[bn] live chapters loaded: ${liveChapters.length}`);
   } catch (e) {
     console.warn('Live chapters fetch failed; using static featured list', e);
   }
-  const renderChapters = liveChapters.length ? liveChapters : C.chapters.featured;
+  const renderChapters = Array.isArray(liveChapters)
+    ? liveChapters
+    : C.chapters.featured;
+  const liveLoaded = Array.isArray(liveChapters);
 
-  setHTML('#chaptersGrid', renderChapters.map((ch, i) => {
-    const city = ch.city || '';
-    const state = ch.state || '';
-    const president = ch.president_name || ch.president || '—';
-    const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
-    return `
-    <button type="button" class="chapter reveal" data-chapter="${i}">
-      <div class="chapter__city">${city}</div>
-      <div class="chapter__state">${state}</div>
-      <div class="chapter__meta">
-        <span>President: ${president}</span>
-        ${memberCount != null ? `<span class="chapter__members">${memberCount} member${memberCount === 1 ? '' : 's'}</span>` : ''}
+  if (renderChapters.length === 0) {
+    setHTML('#chaptersGrid', `
+      <div class="chapter chapter--empty">
+        <div class="chapter__city">No chapters yet</div>
+        <div class="chapter__meta">
+          <span>Be the first to start one.</span>
+        </div>
       </div>
-      <span class="chapter__more">View chapter →</span>
-    </button>
-  `;
-  }).join(''));
+    `);
+  } else {
+    setHTML('#chaptersGrid', renderChapters.map((ch, i) => {
+      const city = ch.city || ch.name || '';
+      const state = ch.state || '';
+      const president = ch.president_name || ch.president || '—';
+      const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
+      return `
+      <button type="button" class="chapter reveal" data-chapter="${i}">
+        <div class="chapter__city">${city}</div>
+        <div class="chapter__state">${state}</div>
+        <div class="chapter__meta">
+          <span>President: ${president}</span>
+          ${memberCount != null ? `<span class="chapter__members">${memberCount} member${memberCount === 1 ? '' : 's'}</span>` : ''}
+        </div>
+        <span class="chapter__more">View chapter →</span>
+      </button>
+    `;
+    }).join(''));
+  }
 
   // Chapter modal
   const modal = $('#chapterModal');

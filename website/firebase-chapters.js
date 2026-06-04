@@ -11,13 +11,17 @@ import { db } from './firebase-auth.js';
 export async function listChapters() {
   try {
     const snap = await getDocs(collection(db, 'chapters'));
-    const list = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((c) => !c.status || c.status === 'active');
+    let list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Show anything that isn't explicitly deactivated or soft-deleted.
+    // Treats a missing/unknown status the same as 'active' so a chapter
+    // that was created before the status field rolled out still shows.
+    list = list.filter((c) =>
+      !c.deleted_at && c.status !== 'inactive' && c.status !== 'deleted'
+    );
     list.sort((a, b) => (a.city || a.name || '').localeCompare(b.city || b.name || ''));
     return list;
   } catch (e) {
     console.warn('listChapters failed', e);
-    return [];
+    throw e;
   }
 }
