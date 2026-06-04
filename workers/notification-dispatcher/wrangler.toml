@@ -1,0 +1,19 @@
+name = "bn-notification-dispatcher"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+# Runs every minute and drains the queue.
+[triggers]
+crons = ["* * * * *"]
+
+# Public env (these are NOT secrets — set with `wrangler secret put` for the keys).
+[vars]
+EMAIL_FROM = "BetterNature <info@betternatureofficial.org>"
+
+# All secrets — set via:
+#   wrangler secret put FIRESTORE_PROJECT_ID
+#   wrangler secret put GOOGLE_SERVICE_ACCOUNT     (paste the full JSON)
+#   wrangler secret put ONESIGNAL_APP_ID
+#   wrangler secret put ONESIGNAL_REST_API_KEY
+#   wrangler secret put RESEND_API_KEY             (or BREVO_API_KEY)
+#   wrangler secret put MANUAL_TRIGGER_KEY         (any random string)

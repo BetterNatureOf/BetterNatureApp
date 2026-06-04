@@ -445,34 +445,19 @@ export async function createPickup(pickup) {
           where('chapter_id', '==', pickup.chapter_id)
         )
       );
-      const targets = snapToList(memSnap).filter((m) =>
-        ['member', 'chapter_president', 'volunteer'].includes(m.role)
-      );
-      const { enqueueSMS } = await import('./sms');
-      await Promise.all(
-        targets.map(async (m) => {
-          // 1. In-app bell.
-          await addDoc(collection(db, 'notifications'), {
-            user_id: m.id,
-            title: 'New pickup available!',
-            body: `${pickup.restaurant_name} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
-            data: { type: 'new_pickup', pickupId: ref.id },
-            read: false,
-            created_at: serverTimestamp(),
-          });
-          // 2. SMS (queued in sms_outbox; server function relays via
-          //    Twilio when configured). Skip if the volunteer didn't
-          //    give us a phone or opted out of SMS.
-          if (m.phone && m.notification_prefs?.sms !== false) {
-            await enqueueSMS({
-              to: m.phone,
-              body: `BetterNature: new pickup ready at ${pickup.restaurant_name || 'a partner restaurant'}. Open the app to claim. Reply STOP to opt out.`,
-              kind: 'new_pickup',
-              refId: ref.id,
-            });
-          }
-        }),
-      );
+      const targets = snapToList(memSnap)
+        .filter((m) => ['member', 'chapter_president', 'volunteer'].includes(m.role))
+        .map((m) => m.id);
+      const { enqueueNotification } = await import('./notify');
+      await enqueueNotification({
+        recipients: targets,
+        kind: 'pickup',
+        title: 'New pickup available!',
+        body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
+        url: `https://app.betternatureofficial.org/#/pickup/${ref.id}`,
+        data: { type: 'new_pickup', pickupId: ref.id },
+        skipInApp: false,
+      });
     } catch (e) { console.warn('pickup notify failed', e); }
   }
   return newPk;
@@ -532,30 +517,21 @@ export async function claimPickup(pickupId, userId) {
   const snap = await getDoc(ref);
   const pk = snapToOne(snap);
 
-  // Smart reminder: enqueue a scheduled SMS so the volunteer doesn't
-  // forget. computeReminderTime() decides whether to send at all
-  // (skips if window <2h away) and when (24h or 2h ahead depending
-  // on lead time). Best-effort — never blocks the claim.
+  // Smart reminder: confirmation push + email so the volunteer has
+  // the pickup details in their inbox. Pre-arrival scheduled reminders
+  // will be added once the dispatcher supports send_at — for now we
+  // queue an immediate confirmation only.
   try {
-    const { enqueueSMS, computeReminderTime } = await import('./sms');
-    const remindAt = computeReminderTime({
-      claimedAt,
-      pickupWindowUntil: pk?.pickup_window_until,
+    const { enqueueNotification } = await import('./notify');
+    await enqueueNotification({
+      recipients: [userId],
+      kind: 'pickup',
+      title: 'You claimed a pickup',
+      body: `Pickup at ${pk.restaurant_name || 'the restaurant'}. Address: ${pk.restaurant_address || 'see app'}. Open the app for the route.`,
+      url: `https://app.betternatureofficial.org/#/pickup/${pickupId}`,
+      data: { type: 'pickup_claimed', pickupId },
     });
-    if (remindAt) {
-      const vSnap = await getDoc(doc(db, 'users', userId));
-      const vol = vSnap.exists() ? vSnap.data() : null;
-      if (vol?.phone && vol.notification_prefs?.sms !== false) {
-        await enqueueSMS({
-          to: vol.phone,
-          body: `BetterNature reminder: your pickup at ${pk.restaurant_name || 'the restaurant'} is coming up. Address: ${pk.restaurant_address || 'see app'}. Open the app for the route.`,
-          sendAt: remindAt,
-          kind: 'pickup_reminder',
-          refId: pickupId,
-        });
-      }
-    }
-  } catch (e) { console.warn('reminder enqueue', e); }
+  } catch (e) { console.warn('claim notify', e); }
 
   return pk;
 }
@@ -801,18 +777,19 @@ export async function completePickup(pickupId, actualWeightLbs) {
           read: false,
           created_at: serverTimestamp(),
         });
-        // SMS the restaurant too (best-effort).
-        const { enqueueSMS } = await import('./sms');
-        const rSnap = await getDoc(doc(db, 'users', pk.restaurant_id));
-        const rest = rSnap.exists() ? rSnap.data() : null;
-        if (rest?.phone && rest.notification_prefs?.sms !== false) {
-          await enqueueSMS({
-            to: rest.phone,
-            body: `BetterNature: your donation just landed${dropOff}. ~${meals} meals rescued. Tax receipt incoming via email.`,
-            kind: 'restaurant_delivered',
-            refId: pickupId,
+        // Push + email the restaurant too (best-effort).
+        try {
+          const { enqueueNotification } = await import('./notify');
+          // Restaurant docs may store the linked user_id; if so, use it.
+          const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+          await enqueueNotification({
+            recipients: [linkedUid],
+            kind: 'general',
+            title: 'Your donation just landed',
+            body: `Your donation just landed${dropOff}. ~${meals} meals rescued. Your tax receipt is on the way.`,
+            data: { type: 'restaurant_delivered', pickupId },
           });
-        }
+        } catch {}
       } catch (e) { console.warn('restaurant delivered notify', e); }
     }
 

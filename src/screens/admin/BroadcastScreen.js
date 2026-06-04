@@ -31,7 +31,7 @@ export default function BroadcastScreen({ navigation }) {
     const audMeta = AUDIENCES.find((a) => a.key === audience);
     const ok = await confirm(
       `Send to ${audMeta.label}?`,
-      `Everyone in this audience will get an in-app notification and a text message (if they opted in to SMS). This can't be unsent.`
+      `Everyone in this audience will get an in-app notification, a browser push (if enabled), and an email (if opted in). This can't be unsent.`
     );
     if (!ok) return;
     setLoading(true);
@@ -46,7 +46,7 @@ export default function BroadcastScreen({ navigation }) {
       }
       notify(
         'Broadcast sent',
-        `${result.notifyCount} in-app notification${result.notifyCount === 1 ? '' : 's'} delivered. ${result.smsCount} text${result.smsCount === 1 ? '' : 's'} queued for delivery.`
+        `${result.inappCount || 0} in-app · ${result.pushCount || 0} push queued · ${result.emailCount || 0} email queued.`
       );
       navigation.goBack();
     } catch (e) {

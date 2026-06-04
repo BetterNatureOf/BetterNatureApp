@@ -41,6 +41,7 @@ const screens = {
   VerifyId: 'profile/verify',
   PickupDetail: 'pickups/:pickupId',
   ChapterChecklist: 'chapter',
+  NotificationPreferences: 'notifications/prefs',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',
   Refer: 'refer',

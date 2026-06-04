@@ -118,6 +118,15 @@ export async function signUp({ email, password, name, phone, city, state, countr
     // separate restaurant_status; execs/presidents/admins seeded
     // outside this flow bypass via role check in MemberApprovalGate.
     member_status: (role || 'member') === 'member' ? 'pending' : 'approved',
+    // Notification preferences — opt-in by default for the three
+    // categories we send. Push stays off until the user accepts
+    // the browser permission prompt in Notification Preferences.
+    push_enabled: false,
+    onesignal_player_id: null,
+    notif_volunteer: true,
+    notif_pickup: true,
+    notif_general: true,
+    email_consent: true,
     referral_code: generateReferralCode(),
     referrals_count: 0,
     referred_by: null,
@@ -141,6 +150,19 @@ export async function signUp({ email, password, name, phone, city, state, countr
   if (inviteCode) {
     try { await applyReferral(cred.user.uid, inviteCode); } catch {}
   }
+
+  // Welcome email + in-app — fires whether or not push is enabled
+  // yet (the user hasn't seen the permission prompt). Best-effort.
+  try {
+    const { enqueueNotification } = await import('./notify');
+    await enqueueNotification({
+      recipients: [cred.user.uid],
+      kind: 'welcome',
+      title: 'Welcome to BetterNature 🌱',
+      body: `Hi ${name || 'there'}! Your account is ready. Open the app, pick a chapter, and start rescuing food + planting trees.`,
+      url: 'https://app.betternatureofficial.org/#/home',
+    });
+  } catch {}
 
   return {
     user: userDoc,
