@@ -36,11 +36,27 @@ service cloud.firestore {
 
     // ── users ──
     // Anyone signed in can read member profiles (for leaderboard, signups).
-    // Only the user themselves can update their row; exec/admin can update roles.
+    // The user themselves can update non-privileged fields. Privileged
+    // fields (role, member_status, verification_status, restaurant_status)
+    // can only be changed by execs — OR by the user themselves if and
+    // only if their auth email is on the BetterNature founder domain.
+    // This closes the rule-level hole where a regular member could call
+    // setDoc({role:'executive'}) on their own doc via the JS SDK.
+    function isFounderToken() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.lower().matches('.*@betternatureofficial[.]org');
+    }
+    function touchesPrivilegedFields() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['role','member_status','verification_status','restaurant_status']);
+    }
     match /users/{uid} {
       allow read: if isSignedIn();
       allow create: if isSelf(uid);
-      allow update: if isSelf(uid) || isExec();
+      allow update: if isExec()
+        || (isSelf(uid) && !touchesPrivilegedFields())
+        || (isSelf(uid) && isFounderToken());
       allow delete: if isAdmin();
     }
 

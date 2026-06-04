@@ -15,6 +15,10 @@ import {
 } from '../../services/database';
 import { updateProfile } from '../../services/auth';
 import Screen from '../../components/ui/Screen';
+import { notify } from '../../services/ui';
+import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
+import { getProfile } from '../../services/auth';
+import useAuthStore from '../../store/authStore';
 
 const ROLE_OPTIONS = [
   { key: 'member', label: 'Member', desc: 'Regular volunteer' },
@@ -46,7 +50,11 @@ function roleBadgeLabel(role) {
 }
 
 export default function ManageMembers({ navigation }) {
+  const authUser = useAuthStore((s) => s.user);
+  const setAuthUser = useAuthStore((s) => s.setUser);
   const { isWide } = useBreakpoint();
+  const [needsPromote, setNeedsPromote] = useState(false);
+  const [promoting, setPromoting] = useState(false);
   const [members, setMembers] = useState([]);
   const [chapters, setChapters] = useState([]);
   const [search, setSearch] = useState('');
@@ -77,6 +85,27 @@ export default function ManageMembers({ navigation }) {
   // signup created in another tab shows up without needing a
   // manual reload.
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Founder-only banner (same gating as ManageChapters).
+  useEffect(() => {
+    const role = (authUser?.role || 'member').toLowerCase();
+    const ok = new Set(['executive', 'admin', 'super_admin']);
+    setNeedsPromote(isFounderEmail(authUser?.email) && !ok.has(role));
+  }, [authUser?.role, authUser?.email]);
+
+  async function handlePromoteNow() {
+    if (!authUser?.id) return;
+    setPromoting(true);
+    try {
+      await selfPromoteToExecutive(authUser.id);
+      const fresh = await getProfile(authUser.id);
+      if (fresh && setAuthUser) setAuthUser(fresh);
+      setNeedsPromote(false);
+      notify('Done', "You're now an Executive. Try the edit again.");
+    } catch (e) {
+      notify('Could not upgrade', e?.message || 'Sign out, sign back in, and try again.');
+    } finally { setPromoting(false); }
+  }
 
   function openEdit(member) {
     setEditing(member);
@@ -112,7 +141,23 @@ export default function ManageMembers({ navigation }) {
       setEditing(null);
       load();
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Failed to update member');
+      const code = (e?.code || '').toLowerCase();
+      const msg = e?.message || 'Failed to update member';
+      const isPerm = code.includes('permission-denied') || msg.toLowerCase().includes('missing or insufficient');
+      if (isPerm) {
+        const role = (authUser?.role || 'member').toLowerCase();
+        const ok = new Set(['executive', 'admin', 'super_admin']);
+        if (isFounderEmail(authUser?.email) && !ok.has(role)) {
+          notify(
+            'You\'re not Executive yet',
+            'Editing other members requires Executive role. Scroll up and tap "Make me Executive", then retry.'
+          );
+        } else {
+          notify('Permission denied', 'Only Executives can edit other members\' roles or stats.');
+        }
+      } else {
+        notify('Could not save', msg);
+      }
     }
   }
 
@@ -188,6 +233,18 @@ export default function ManageMembers({ navigation }) {
         <Text style={styles.subtitle}>
           Tap a member to change their role or chapter assignment.
         </Text>
+
+        {needsPromote ? (
+          <View style={styles.promoteBanner}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.promoteTitle}>Heads up — you're not Executive yet</Text>
+              <Text style={styles.promoteBody}>
+                Editing other members' roles requires Executive permission. Tap to upgrade your own account; you can do this because Firestore lets you edit your own profile.
+              </Text>
+            </View>
+            <Button title="Make me Executive" onPress={handlePromoteNow} loading={promoting} style={{ minWidth: 170 }} />
+          </View>
+        ) : null}
 
         <TextInput
           style={styles.search}
@@ -575,6 +632,13 @@ const styles = StyleSheet.create({
     color: Colors.dark,
   },
   count: { ...Type.caption, marginBottom: 8 },
+  promoteBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FFF7ED', borderColor: '#FDBA74', borderWidth: 1,
+    borderRadius: Radius.xl, padding: 16, marginVertical: 14, flexWrap: 'wrap',
+  },
+  promoteTitle: { fontSize: 14, fontWeight: '800', color: '#9A3412' },
+  promoteBody: { fontSize: 12, color: '#9A3412', marginTop: 4, lineHeight: 18 },
   groupLabel: {
     fontSize: 12,
     fontWeight: '700',

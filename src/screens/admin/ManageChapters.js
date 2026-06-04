@@ -29,7 +29,7 @@ import {
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
 import { notify, confirm } from '../../services/ui';
-import { selfPromoteToExecutive } from '../../services/founder';
+import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { getProfile } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
 
@@ -101,8 +101,13 @@ export default function ManageChapters({ navigation }) {
   useEffect(() => {
     const role = (authUser?.role || 'member').toLowerCase();
     const okRoles = new Set(['executive', 'admin', 'super_admin']);
-    setNeedsPromote(!okRoles.has(role));
-  }, [authUser?.role]);
+    // Only founders ever see the self-upgrade banner. Regular
+    // members cannot promote themselves to executive even via the
+    // direct rule path; we gate the UI on email so this isn't even
+    // discoverable.
+    const isFounder = isFounderEmail(authUser?.email);
+    setNeedsPromote(isFounder && !okRoles.has(role));
+  }, [authUser?.role, authUser?.email]);
 
   async function handlePromoteNow() {
     if (!authUser?.id) return;

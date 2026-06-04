@@ -7,7 +7,7 @@ import BrushDivider from '../../components/ui/BrushDivider';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
 import { updateProfile, deleteAccount, getProfile } from '../../services/auth';
-import { selfPromoteToExecutive } from '../../services/founder';
+import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { notify, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
@@ -164,11 +164,17 @@ export default function SettingsScreen({ navigation }) {
         <Text style={styles.linkItem}>Your signed agreements</Text>
       </TouchableOpacity>
 
-      {(user?.role || 'member') !== 'executive' && (user?.role || 'member') !== 'super_admin' ? (
+      {/* Founder-only escape hatch. We gate on the email domain so a
+          regular member can't promote themselves to executive — only
+          BetterNature staff (any @betternatureofficial.org address)
+          can trigger this. Hidden once the role is already executive. */}
+      {isFounderEmail(user?.email)
+        && (user?.role || 'member') !== 'executive'
+        && (user?.role || 'member') !== 'super_admin' ? (
         <TouchableOpacity onPress={handleBecomeExecutive} style={styles.execBtn}>
           <Text style={styles.execBtnTitle}>Become executive</Text>
           <Text style={styles.execBtnHelp}>
-            Use this if you're a BetterNature founder and your role isn't set yet. Lets you create chapters, approve restaurants, etc.
+            Founder-only. Your account isn't marked as Executive in Firestore yet. Tap to fix.
           </Text>
         </TouchableOpacity>
       ) : null}
