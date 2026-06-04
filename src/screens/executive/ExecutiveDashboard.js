@@ -24,6 +24,7 @@ const TOOLS = [
   { key: 'finance', label: 'Donations & Finance', emoji: '\u{1F4B5}', desc: 'Track Apple Pay and recurring donors', screen: 'ExecFinance', color: Colors.green },
   { key: 'metrics', label: 'Impact Metrics', emoji: '\u{1F4C8}', desc: 'Edit org-wide impact numbers', screen: 'ExecMetrics', color: Colors.sage },
   { key: 'bnmap', label: 'BN Map', emoji: '\u{1F5FA}️', desc: 'Food-insecurity heatmap and fridge network', screen: 'BNMap', color: Colors.pink },
+  { key: 'website', label: 'Website content', emoji: '\u{1F310}', desc: 'Edit hero, programs, contact — replaces the old admin.html', screen: 'WebsiteContent', color: Colors.green },
   { key: 'settings', label: 'Org Settings', emoji: '\u2699\uFE0F', desc: 'Brand, contact, legal, integrations', screen: 'Settings', color: Colors.grayMid },
 ];
 

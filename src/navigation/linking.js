@@ -42,6 +42,7 @@ const screens = {
   PickupDetail: 'pickups/:pickupId',
   ChapterChecklist: 'chapter',
   NotificationPreferences: 'notifications/prefs',
+  WebsiteContent: 'admin/website',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',
   Refer: 'refer',

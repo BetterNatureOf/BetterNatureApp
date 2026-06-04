@@ -66,6 +66,7 @@ import CheckInScreen from '../screens/admin/CheckInScreen';
 import BNMap from '../screens/impact/BNMap';
 import MemberApprovalGate from '../components/ui/MemberApprovalGate';
 import NotificationPreferences from '../screens/other/NotificationPreferences';
+import WebsiteContent from '../screens/admin/WebsiteContent';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
 // having to pass params.
@@ -224,6 +225,7 @@ export default function MainNavigator() {
       <Stack.Screen name="EventDetail" component={EventDetailScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferences} />
+      <Stack.Screen name="WebsiteContent" component={WebsiteContent} />
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfile} />

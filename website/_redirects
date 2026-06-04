@@ -1,6 +1,10 @@
-# Cloudflare Pages redirects
-# Cloudflare auto-resolves /admin → /admin.html, /index → /index.html etc.
-# So we don't need redirect rules for those — they'd cause loops.
+# Cloudflare Pages redirects.
+# /admin used to serve admin.html (a localStorage-only editor that
+# never actually published changes). Replaced by the in-app Website
+# Content screen, which writes to Firestore. Old /admin links now
+# bounce visitors to the app sign-in.
+/admin          https://app.betternatureofficial.org/#/admin/website   302
+/admin.html     https://app.betternatureofficial.org/#/admin/website   302
 
 # Friendly hash-anchor short links (no conflict with real files)
 /donate         /#donate         302

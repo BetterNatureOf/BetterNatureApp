@@ -17,8 +17,19 @@
     }
     return b;
   }
+  if (!window.CONTENT) { console.error('CONTENT not loaded'); return; }
+
+  // Pull the live site_content/main doc from Firestore (edited by execs
+  // inside the app's Website Content screen) and merge it over the
+  // static content.js defaults. Best-effort — if Firestore is down we
+  // fall back to whatever shipped in content.js so the page still paints.
+  try {
+    const { applyLiveContent } = await import('./firebase-site-content.js?v=2026-06-04');
+    await applyLiveContent();
+  } catch (e) {
+    console.warn('live site_content unavailable, using static content.js', e);
+  }
   let C = window.CONTENT;
-  if (!C) { console.error('CONTENT not loaded'); return; }
 
   // Referral capture — first visitor with ?ref=CODE has it stashed so it
   // survives the click into signup (or the click into the web app build,
