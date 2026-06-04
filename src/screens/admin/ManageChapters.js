@@ -64,8 +64,10 @@ export default function ManageChapters({ navigation }) {
   const [editing, setEditing]     = useState(null);
   const [saving, setSaving]       = useState(false);
 
-  const blankForm = { name: '', city: '', state: '', country: 'USA', description: '' };
+  const blankForm = { city: '', state: '', country: 'USA', description: '' };
   const [form, setForm] = useState(blankForm);
+  const [needsPromote, setNeedsPromote] = useState(false);
+  const [promoting, setPromoting] = useState(false);
 
   const load = useCallback(async () => {
     // Run each fetch in isolation so one failure (e.g. a permission
@@ -92,6 +94,29 @@ export default function ManageChapters({ navigation }) {
 
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Surface the upgrade prompt the moment the screen loads if the
+  // signed-in user isn't already an executive/admin — so they fix
+  // their role before filling out a doomed form.
+  useEffect(() => {
+    const role = (authUser?.role || 'member').toLowerCase();
+    const okRoles = new Set(['executive', 'admin', 'super_admin']);
+    setNeedsPromote(!okRoles.has(role));
+  }, [authUser?.role]);
+
+  async function handlePromoteNow() {
+    if (!authUser?.id) return;
+    setPromoting(true);
+    try {
+      await selfPromoteToExecutive(authUser.id);
+      const fresh = await getProfile(authUser.id);
+      if (fresh && setAuthUser) setAuthUser(fresh);
+      setNeedsPromote(false);
+      notify('Done', "You're now an Executive. Tap Add chapter again.");
+    } catch (e) {
+      notify('Could not upgrade', e?.message || 'Sign out, sign back in, and try again.');
+    } finally { setPromoting(false); }
+  }
 
   // Whenever the loaded chapter/members data shows that a chapter's
   // denormalized fields (president_name, member_count) are stale, push
@@ -159,6 +184,14 @@ export default function ManageChapters({ navigation }) {
     return result;
   }, [chapters, members, fridges, events, pickups]);
 
+  // Chapter names follow one format only: "BetterNature {City}".
+  // We derive it from the city field at save time so the format is
+  // never wrong and the exec doesn't have to retype it.
+  function chapterNameFor(city) {
+    const c = (city || '').trim();
+    return c ? `BetterNature ${c}` : '';
+  }
+
   function openAdd() {
     setForm(blankForm);
     setEditing(null);
@@ -167,7 +200,6 @@ export default function ManageChapters({ navigation }) {
 
   function openEdit(ch) {
     setForm({
-      name: ch.name || '',
       city: ch.city || '',
       state: ch.state || '',
       country: ch.country || 'USA',
@@ -191,13 +223,13 @@ export default function ManageChapters({ navigation }) {
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.city.trim()) {
-      notify('Required', 'Chapter name and city are required.');
+    if (!form.city.trim()) {
+      notify('Required', 'City is required.');
       return;
     }
     setSaving(true);
     const payload = {
-      name: form.name.trim(),
+      name: chapterNameFor(form.city),
       city: form.city.trim(),
       state: form.state.trim(),
       country: (form.country || 'USA').toUpperCase(),
@@ -287,6 +319,18 @@ export default function ManageChapters({ navigation }) {
             <Text style={styles.addBtnText}>+ Add chapter</Text>
           </TouchableOpacity>
         </View>
+
+        {needsPromote ? (
+          <View style={styles.promoteBanner}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.promoteTitle}>Heads up — you're not Executive yet</Text>
+              <Text style={styles.promoteBody}>
+                Chapter creation is reserved for executives. Tap below to upgrade your own account; you can do this without an exec because Firestore lets you edit your own profile.
+              </Text>
+            </View>
+            <Button title="Make me Executive" onPress={handlePromoteNow} loading={promoting} style={{ minWidth: 170 }} />
+          </View>
+        ) : null}
 
         {loading ? (
           <Text style={styles.empty}>Loading…</Text>
@@ -397,13 +441,15 @@ export default function ManageChapters({ navigation }) {
                 New chapters appear on the website map at betternatureofficial.org immediately after saving.
               </Text>
 
-              <Text style={styles.fieldLabel}>Chapter name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Memphis"
-                value={form.name}
-                onChangeText={(v) => setForm((p) => ({ ...p, name: v }))}
-              />
+              {/* Auto-formatted chapter name preview. We don't accept
+                  a custom name — every chapter is "BetterNature {city}"
+                  so the brand reads the same everywhere. */}
+              <Text style={styles.fieldLabel}>Chapter will be named</Text>
+              <View style={styles.previewBox}>
+                <Text style={styles.previewText}>
+                  {chapterNameFor(form.city) || 'BetterNature [city]'}
+                </Text>
+              </View>
 
               <View style={styles.modalRow2}>
                 <View style={{ flex: 1 }}>
@@ -476,6 +522,13 @@ const styles = StyleSheet.create({
   subtitle: { ...Type.body, color: Colors.gray },
   addBtn: { backgroundColor: Colors.green, paddingVertical: 12, paddingHorizontal: 18, borderRadius: Radius.pill, alignSelf: 'flex-start' },
   addBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  promoteBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FFF7ED', borderColor: '#FDBA74', borderWidth: 1,
+    borderRadius: Radius.xl, padding: 16, marginBottom: 16, flexWrap: 'wrap',
+  },
+  promoteTitle: { fontSize: 14, fontWeight: '800', color: '#9A3412' },
+  promoteBody: { fontSize: 12, color: '#9A3412', marginTop: 4, lineHeight: 18 },
 
   empty: { ...Type.body, color: Colors.gray, marginTop: 20, textAlign: 'center' },
   emptyCard: { backgroundColor: Colors.white, borderRadius: Radius.xl, padding: 24, alignItems: 'center', ...Shadows.card },
@@ -524,6 +577,8 @@ const styles = StyleSheet.create({
   modalHelp: { ...Type.caption, marginTop: 4, marginBottom: 14 },
   fieldLabel: { fontSize: 12, fontWeight: '700', color: Colors.gray, marginTop: 12, marginBottom: 4, letterSpacing: 0.4, textTransform: 'uppercase' },
   input: { borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.dark, backgroundColor: '#FAF8F1' },
+  previewBox: { backgroundColor: '#E8F5EE', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, borderWidth: 1, borderColor: Colors.green },
+  previewText: { fontSize: 16, fontWeight: '800', color: Colors.green },
   modalRow2: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' },
   modalActions: { flexDirection: 'row', marginTop: 18 },
 });
