@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import useAuthStore from '../store/authStore';
 import { onAuthStateChange, getProfile } from '../services/auth';
+import { ensureFounderRole } from '../services/founder';
 import { isFirebaseConfigured } from '../config/firebase';
 
 export default function useAuth() {
@@ -25,7 +26,11 @@ export default function useAuth() {
         // boots into an authed state on reload.
         const uid = session.user.uid || session.user.id;
         try {
-          const profile = await getProfile(uid);
+          let profile = await getProfile(uid);
+          // Founder bootstrap: if the email is on the hard-coded founder
+          // list and their role isn't already executive/admin, promote
+          // them so they can actually create chapters etc. on day one.
+          profile = await ensureFounderRole(profile || { id: uid, email: session.user.email });
           setUser(profile || { id: uid, email: session.user.email });
         } catch {
           setUser({ id: uid, email: session.user.email });

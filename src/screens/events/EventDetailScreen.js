@@ -8,7 +8,9 @@ import ProjectTag from '../../components/ui/ProjectTag';
 import useAuthStore from '../../store/authStore';
 import { signUpForEvent, cancelEventSignup, getUserSignups, fetchEventSignups } from '../../services/database';
 import { scheduleEventReminders } from '../../services/notifications';
+import { exportEventToCalendar } from '../../services/calendar';
 import Screen from '../../components/ui/Screen';
+import { notify } from '../../services/ui';
 
 export default function EventDetailScreen({ navigation, route }) {
   const { event } = route.params;
@@ -52,7 +54,10 @@ export default function EventDetailScreen({ navigation, route }) {
       setSpots((s) => s - 1);
       await scheduleEventReminders(event);
       await loadAttendees(); // refresh list
-      Alert.alert('Signed Up!', "You're in! Check your calendar for reminders.");
+      // Offer to drop it on their calendar right after RSVP — that's
+      // when intent is highest and the device's calendar permission
+      // prompt feels least intrusive.
+      notify('Signed Up!', "You're in. We'll send reminders, and tap 'Add to calendar' below to drop it on your personal calendar.");
     } catch (e) {
       Alert.alert('Error', e.message || 'Failed to sign up');
     } finally {
@@ -203,7 +208,7 @@ export default function EventDetailScreen({ navigation, route }) {
           <Button
             title="Add to Calendar"
             variant="small"
-            onPress={() => Alert.alert('Calendar', 'Calendar sync coming soon!')}
+            onPress={() => exportEventToCalendar(event).catch((e) => notify('Could not export', e?.message || 'Try again.'))}
             style={styles.calendarBtn}
           />
         </View>

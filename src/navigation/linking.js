@@ -41,6 +41,8 @@ const screens = {
   VerifyId: 'profile/verify',
   PickupDetail: 'pickups/:pickupId',
   ChapterChecklist: 'chapter',
+  FindChapter: 'find-chapter',
+  MyTaxReceipts: 'tax-receipts',
   Refer: 'refer',
 
   RestDashboard: 'restaurant',

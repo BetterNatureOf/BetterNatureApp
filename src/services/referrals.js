@@ -21,10 +21,12 @@ export function generateReferralCode(len = 7) {
   return s;
 }
 
-// Build a shareable link. Marketing site picks ?ref=CODE up on first load
-// and persists it to localStorage so it survives the round trip into signup.
+// Build a shareable link. Goes straight to the in-app signup so the
+// invitee skips the marketing-site detour — the route handler in
+// SignupStep1 still reads ?ref= and writes it to localStorage for the
+// roundtrip through the three-step signup form.
 export function referralLink(code) {
-  return `https://betternatureofficial.org/?ref=${encodeURIComponent(code || '')}`;
+  return `https://app.betternatureofficial.org/#/signup?ref=${encodeURIComponent(code || '')}`;
 }
 
 // Look up the user that owns a given code. Returns null if not found.
@@ -87,13 +89,22 @@ export async function getReferralStats(userId) {
   return { code: d.referral_code || null, count: d.referrals_count || 0 };
 }
 
-// Read a ref code from URL (?ref=) on web, or fall back to localStorage.
-// Marketing site stashes it on first visit so it survives signup nav.
+// Read a ref code from URL on web, or fall back to localStorage.
+// Handles both classic query strings (?ref=CODE) and hash-routed
+// query strings (#/signup?ref=CODE) because react-navigation linking
+// puts our routes after the hash.
 export function readPendingReferralCode() {
   if (typeof window === 'undefined') return null;
   try {
     const url = new URL(window.location.href);
-    const fromUrl = url.searchParams.get('ref');
+    let fromUrl = url.searchParams.get('ref');
+    if (!fromUrl && window.location.hash) {
+      const hashQ = window.location.hash.split('?')[1];
+      if (hashQ) {
+        const params = new URLSearchParams(hashQ);
+        fromUrl = params.get('ref');
+      }
+    }
     if (fromUrl) {
       window.localStorage?.setItem('bn_ref', fromUrl);
       return fromUrl.trim().toUpperCase();

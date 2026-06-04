@@ -16,6 +16,8 @@ import Screen from '../../components/ui/Screen';
 
 const MENU_ITEMS = [
   { key: 'refer', label: 'Bring a friend', icon: 'gift', screen: 'Refer' },
+  { key: 'find', label: 'Find / switch chapter', icon: 'pin', screen: 'FindChapter' },
+  { key: 'receipts', label: 'Tax receipts', icon: 'file', screen: 'MyTaxReceipts' },
   { key: 'settings', label: 'Settings', icon: 'settings', screen: 'Settings' },
   { key: 'about', label: 'About BetterNature', icon: 'leaf', screen: 'About' },
   { key: 'slack', label: 'Open Slack', icon: 'message', action: 'slack' },

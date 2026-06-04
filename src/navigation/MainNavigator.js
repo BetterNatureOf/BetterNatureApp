@@ -31,6 +31,8 @@ import VerifyIdScreen from '../screens/other/VerifyIdScreen';
 import PickupDetail from '../screens/projects/PickupDetail';
 
 import ChapterChecklist from '../screens/chapter/ChapterChecklist';
+import FindChapter from '../screens/main/FindChapter';
+import VolunteerTaxReceipts from '../screens/main/VolunteerTaxReceipts';
 
 import RestDashboard from '../screens/restaurant/RestDashboard';
 import ScheduleDonation from '../screens/restaurant/ScheduleDonation';
@@ -229,6 +231,8 @@ export default function MainNavigator() {
       <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
       <Stack.Screen name="PickupDetail" component={PickupDetail} />
       <Stack.Screen name="ChapterChecklist" component={ChapterChecklist} />
+      <Stack.Screen name="FindChapter" component={FindChapter} />
+      <Stack.Screen name="MyTaxReceipts" component={VolunteerTaxReceipts} />
       <Stack.Screen name="Refer" component={ReferScreen} />
       <Stack.Screen name="RestDashboard" component={RestDashboard} />
       <Stack.Screen name="ScheduleDonation" component={ScheduleDonation} />
