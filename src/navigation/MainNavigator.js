@@ -132,18 +132,25 @@ function TabIcon({ label, focused }) {
   );
 }
 
+// Roles that should land on the Executive (org-wide) dashboard.
+// 'admin' and 'super_admin' are seeded by the Google-OAuth bootstrap
+// for staff accounts that predate the role rename — they still need
+// the full Org tab, otherwise super-admins get locked out of every
+// org-management screen the moment they sign in.
+const EXEC_LIKE = ['executive', 'admin', 'super_admin'];
+const PRES_LIKE = ['chapter_president', 'chapter_pres'];
+
 // Choose which dashboard the "Manage" tab opens to based on role.
 function ManageTab(props) {
   const role = useAuthStore((s) => s.role);
   const user = useAuthStore((s) => s.user);
-  if (role === ROLES.EXECUTIVE) return <ExecutiveDashboard {...props} />;
-  if (role === ROLES.PRESIDENT) return <PresidentDashboard {...props} />;
+  if (EXEC_LIKE.includes(role)) return <ExecutiveDashboard {...props} />;
+  if (PRES_LIKE.includes(role)) return <PresidentDashboard {...props} />;
   // Founder safety net — if a founder accidentally switched their
   // role to member, they'd lose the Org tab entirely and have no
   // way to flip back without dev-tools. Render the exec dashboard
   // for founder emails regardless of role.
   if (isFounderEmail(user?.email)) return <ExecutiveDashboard {...props} />;
-  // Fallback — shouldn't render because the tab is hidden otherwise.
   return <DashboardScreen {...props} />;
 }
 
@@ -151,8 +158,10 @@ function MainTabs() {
   const role = useAuthStore((s) => s.role);
   const user = useAuthStore((s) => s.user);
   const isFounder = isFounderEmail(user?.email);
-  const showManage = isFounder || role === ROLES.PRESIDENT || role === ROLES.EXECUTIVE;
-  const manageLabel = (role === ROLES.EXECUTIVE || isFounder) ? 'Org' : 'Chapter';
+  const isExec = EXEC_LIKE.includes(role);
+  const isPres = PRES_LIKE.includes(role);
+  const showManage = isFounder || isExec || isPres;
+  const manageLabel = (isExec || isFounder) ? 'Org' : 'Chapter';
 
   return (
     <Tab.Navigator
