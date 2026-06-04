@@ -134,17 +134,21 @@ export default function ManageMembers({ navigation }) {
     }
   }
 
+  // Restaurants have their own portal + Manage Restaurants screen,
+  // so they shouldn't pollute the members view here.
+  const visible = filtered.filter((m) => (m.role || 'member') !== 'restaurant');
+
   // Pending applications get their own section at the top so the
   // exec sees them on every visit without scrolling.
-  const pending = filtered.filter((m) => m.member_status === 'pending');
+  const pending = visible.filter((m) => m.member_status === 'pending');
   // Group by role for quick scanning
-  const execs = filtered.filter(
+  const execs = visible.filter(
     (m) => m.role === 'executive' && m.member_status !== 'pending'
   );
-  const presidents = filtered.filter(
+  const presidents = visible.filter(
     (m) => (m.role === 'chapter_president' || m.role === 'chapter_pres') && m.member_status !== 'pending'
   );
-  const rest = filtered.filter(
+  const rest = visible.filter(
     (m) =>
       m.role !== 'executive' &&
       m.role !== 'chapter_president' &&
@@ -173,7 +177,7 @@ export default function ManageMembers({ navigation }) {
           onChangeText={setSearch}
         />
 
-        <Text style={styles.count}>{filtered.length} members</Text>
+        <Text style={styles.count}>{visible.length} members</Text>
 
         {pending.length > 0 && (
           <>
