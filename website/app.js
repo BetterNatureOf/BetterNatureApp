@@ -5,7 +5,7 @@
 //  testimonial, partner, press article, etc.
 // ═══════════════════════════════════════════════════════════════════════════
 
-(function () {
+(async function () {
   // Merge any admin overrides saved in localStorage on top of CONTENT defaults.
   // This is how edits from /admin.html show up instantly without rebuilding.
   function deepMerge(a, b) {
@@ -344,26 +344,65 @@
   set('#chaptersEyebrow', C.chapters.eyebrow);
   set('#chaptersTitle', C.chapters.title);
   set('#chaptersBody', C.chapters.body);
-  setHTML('#chaptersGrid', C.chapters.featured.map((ch, i) => `
+  $('#startChapterBtn').href = C.chapters.startChapterUrl;
+
+  // Live chapters from Firestore. The app writes denormalized
+  // president_name + member_count + officers onto each chapter doc
+  // every time someone changes a role, so the marketing site reads
+  // those directly without joining /users.
+  // Falls back to C.chapters.featured (the static list in content.js)
+  // if Firestore is unreachable.
+  let liveChapters = [];
+  try {
+    const { listChapters } = await import('./firebase-chapters.js');
+    liveChapters = await listChapters();
+  } catch (e) {
+    console.warn('Live chapters fetch failed; using static featured list', e);
+  }
+  const renderChapters = liveChapters.length ? liveChapters : C.chapters.featured;
+
+  setHTML('#chaptersGrid', renderChapters.map((ch, i) => {
+    const city = ch.city || '';
+    const state = ch.state || '';
+    const president = ch.president_name || ch.president || '—';
+    const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
+    return `
     <button type="button" class="chapter reveal" data-chapter="${i}">
-      <div class="chapter__city">${ch.city}</div>
-      <div class="chapter__state">${ch.state}</div>
+      <div class="chapter__city">${city}</div>
+      <div class="chapter__state">${state}</div>
       <div class="chapter__meta">
-        <span>President: ${ch.president}</span>
-        ${typeof ch.members === 'number' ? `<span class="chapter__members">${ch.members} member${ch.members === 1 ? '' : 's'}</span>` : ''}
+        <span>President: ${president}</span>
+        ${memberCount != null ? `<span class="chapter__members">${memberCount} member${memberCount === 1 ? '' : 's'}</span>` : ''}
       </div>
       <span class="chapter__more">View chapter →</span>
     </button>
-  `).join(''));
-  $('#startChapterBtn').href = C.chapters.startChapterUrl;
+  `;
+  }).join(''));
 
   // Chapter modal
   const modal = $('#chapterModal');
   const modalBody = $('#chapterModalBody');
   const openChapter = (idx) => {
-    const ch = C.chapters.featured[idx];
+    const ch = renderChapters[idx];
     if (!ch) return;
-    const roster = (ch.roster || []).map(m => `
+    // Officers from the denormalized blob the app writes. Fall back
+    // to the static roster on legacy entries.
+    const off = ch.officers || {};
+    const officerRows = [
+      ['President',            off.president],
+      ['Vice President',       off.vice_president],
+      ['Treasurer',            off.treasurer],
+      ['Volunteer Coordinator', off.volunteer_coordinator],
+      ['Secretary',            off.secretary],
+    ].filter(([, p]) => p && (p.name || p.email)).map(([label, p]) => `
+      <li class="chapter-modal__member">
+        <div>
+          <strong>${p.name || p.email}</strong>
+          <span>${label}</span>
+        </div>
+      </li>
+    `).join('');
+    const staticRoster = (ch.roster || []).map(m => `
       <li class="chapter-modal__member">
         <div>
           <strong>${m.name}</strong>
@@ -373,17 +412,20 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
         </a>` : ''}
       </li>
-    `).join('') || '<li class="chapter-modal__empty">Roster coming soon.</li>';
+    `).join('');
+    const roster = officerRows || staticRoster || '<li class="chapter-modal__empty">Roster coming soon.</li>';
+    const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
+    const president = ch.president_name || ch.president || '—';
     modalBody.innerHTML = `
       <div class="eyebrow eyebrow--pink">Chapter</div>
-      <h3 id="chapterModalTitle" class="chapter-modal__title">${ch.city}, ${ch.state}</h3>
-      ${ch.blurb ? `<p class="chapter-modal__blurb">${ch.blurb}</p>` : ''}
+      <h3 id="chapterModalTitle" class="chapter-modal__title">${ch.city || ''}${ch.state ? ', ' + ch.state : ''}</h3>
+      ${ch.description || ch.blurb ? `<p class="chapter-modal__blurb">${ch.description || ch.blurb}</p>` : ''}
       <div class="chapter-modal__stats">
-        ${typeof ch.members === 'number' ? `<span><strong>${ch.members}</strong> member${ch.members === 1 ? '' : 's'}</span>` : ''}
-        <span>President: <strong>${ch.president}</strong></span>
+        ${memberCount != null ? `<span><strong>${memberCount}</strong> member${memberCount === 1 ? '' : 's'}</span>` : ''}
+        <span>President: <strong>${president}</strong></span>
         ${ch.instagram ? `<a class="chapter-modal__ig" href="${ch.instagram}" target="_blank" rel="noreferrer">@chapter on Instagram ↗</a>` : ''}
       </div>
-      <h4 class="chapter-modal__subhead">Roster</h4>
+      <h4 class="chapter-modal__subhead">Officers</h4>
       <ul class="chapter-modal__roster">${roster}</ul>
     `;
     modal.classList.add('is-open');
@@ -788,6 +830,24 @@
     });
   }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // BN Map (lazy — only mounts after scroll because libs are heavy)
+  const bnmapRoot = document.getElementById('bnmapRoot');
+  if (bnmapRoot && 'IntersectionObserver' in window) {
+    const io3 = new IntersectionObserver(async (entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        io3.disconnect();
+        try {
+          const { mountBnMap } = await import('./bnmap.js');
+          mountBnMap(bnmapRoot);
+        } catch (e) {
+          console.warn('BN Map failed to mount', e);
+          bnmapRoot.innerHTML = '<p style="text-align:center;padding:24px;color:#7A766C">Map couldn\'t load. Refresh the page to retry.</p>';
+        }
+      }
+    }, { rootMargin: '0px 0px 200px 0px' });
+    io3.observe(bnmapRoot);
+  }
 
   // Smooth scroll w/ nav offset
   document.querySelectorAll('a[href^="#"]').forEach(a => {

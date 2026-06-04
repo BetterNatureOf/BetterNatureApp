@@ -28,27 +28,36 @@ import {
   fetchAllMembers, fetchEvents, fetchPickups,
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
+import { updateProfile } from '../../services/auth';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { getProfile } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
 
-const LEAD_ROLES = [
-  { key: 'chapter_president', label: 'President' },
-  { key: 'chapter_pres',      label: 'President' },
-  { key: 'chapter_vp',        label: 'Vice President' },
-  { key: 'chapter_sec',       label: 'Secretary' },
-  { key: 'chapter_treas',     label: 'Treasurer' },
+// Officer slots, in display order. chapter_pres kept as an alias for
+// chapter_president since older accounts used the short form.
+const OFFICER_SLOTS = [
+  { key: 'chapter_president',  label: 'President' },
+  { key: 'chapter_vp',         label: 'Vice President' },
+  { key: 'chapter_treas',      label: 'Treasurer' },
+  { key: 'chapter_vol_coord',  label: 'Volunteer Coordinator' },
+  { key: 'chapter_sec',        label: 'Secretary' },
 ];
+const LEAD_KEYS = new Set([
+  'chapter_president', 'chapter_pres', 'chapter_vp',
+  'chapter_treas', 'chapter_vol_coord', 'chapter_sec',
+]);
 
-function isLead(role) {
-  return LEAD_ROLES.some((r) => r.key === role);
-}
+function isLead(role) { return LEAD_KEYS.has(role); }
 
 function labelForRole(role) {
-  const m = LEAD_ROLES.find((r) => r.key === role);
-  return m ? m.label : 'Member';
+  if (role === 'chapter_pres' || role === 'chapter_president') return 'President';
+  if (role === 'chapter_vp') return 'Vice President';
+  if (role === 'chapter_treas') return 'Treasurer';
+  if (role === 'chapter_vol_coord') return 'Volunteer Coordinator';
+  if (role === 'chapter_sec') return 'Secretary';
+  return 'Member';
 }
 
 export default function ManageChapters({ navigation }) {
@@ -110,6 +119,40 @@ export default function ManageChapters({ navigation }) {
     setNeedsPromote(isFounder && !okRoles.has(role));
   }, [authUser?.role, authUser?.email]);
 
+  // Assign a chapter member to a specific officer slot. Demotes
+  // anyone who already had that slot. Writes go to the user docs;
+  // the auto-sync useEffect on chapters+members re-denormalizes
+  // officers onto the chapter doc.
+  async function assignOfficer(chapter, person, slotKey) {
+    if (!person?.id) return;
+    try {
+      // Demote any current holder of this slot.
+      const current = members.find((u) =>
+        u.chapter_id === chapter.id
+        && (u.role === slotKey || (slotKey === 'chapter_president' && u.role === 'chapter_pres'))
+      );
+      if (current && current.id !== person.id) {
+        await updateProfile(current.id, { role: 'member' });
+      }
+      await updateProfile(person.id, { role: slotKey });
+      load();
+      notify('Officer updated', `${person.name || 'Member'} is now ${labelForRole(slotKey)} of ${chapter.name}.`);
+    } catch (e) {
+      notify('Could not assign', e?.message || 'Try again.');
+    }
+  }
+  async function clearOfficer(chapter, slotKey, team) {
+    const slot = (team || []).find((t) => t.role.key === slotKey);
+    if (!slot?.person) return;
+    try {
+      await updateProfile(slot.person.id, { role: 'member' });
+      load();
+      notify('Officer cleared', `${slot.person.name || 'Member'} is no longer ${labelForRole(slotKey)}.`);
+    } catch (e) {
+      notify('Could not clear', e?.message || 'Try again.');
+    }
+  }
+
   async function handlePromoteNow() {
     if (!authUser?.id) return;
     setPromoting(true);
@@ -133,17 +176,19 @@ export default function ManageChapters({ navigation }) {
     if (!chapters.length || !members.length) return;
     chapters.forEach(async (ch) => {
       const inChapter = members.filter((u) => u.chapter_id === ch.id && (u.role || 'member') !== 'restaurant');
-      const pres = inChapter.find((u) => u.role === 'chapter_president' || u.role === 'chapter_pres');
-      const vp   = inChapter.find((u) => u.role === 'chapter_vp');
-      const sec  = inChapter.find((u) => u.role === 'chapter_sec');
-      const tres = inChapter.find((u) => u.role === 'chapter_treas');
+      const pres   = inChapter.find((u) => u.role === 'chapter_president' || u.role === 'chapter_pres');
+      const vp     = inChapter.find((u) => u.role === 'chapter_vp');
+      const sec    = inChapter.find((u) => u.role === 'chapter_sec');
+      const tres   = inChapter.find((u) => u.role === 'chapter_treas');
+      const volCo  = inChapter.find((u) => u.role === 'chapter_vol_coord');
       // Shape officers as plain { name, email } objects so the
       // marketing site can render them without parsing.
       const nextOfficers = {
-        president:      pres ? { name: pres.name || '', email: pres.email || '' } : null,
-        vice_president: vp   ? { name: vp.name || '',   email: vp.email || ''   } : null,
-        secretary:      sec  ? { name: sec.name || '',  email: sec.email || ''  } : null,
-        treasurer:      tres ? { name: tres.name || '', email: tres.email || '' } : null,
+        president:             pres  ? { name: pres.name  || '', email: pres.email  || '' } : null,
+        vice_president:        vp    ? { name: vp.name    || '', email: vp.email    || '' } : null,
+        treasurer:             tres  ? { name: tres.name  || '', email: tres.email  || '' } : null,
+        volunteer_coordinator: volCo ? { name: volCo.name || '', email: volCo.email || '' } : null,
+        secretary:             sec   ? { name: sec.name   || '', email: sec.email   || '' } : null,
       };
       const nextPres = pres?.name || '';
       const nextCount = inChapter.length;
@@ -180,21 +225,14 @@ export default function ManageChapters({ navigation }) {
       const hours = chapterMembers.reduce((s, u) => s + (u.hours_logged || 0), 0);
       const eventsAttended = chapterMembers.reduce((s, u) => s + (u.events_attended || 0), 0);
 
-      // Group team
-      const leadership = LEAD_ROLES.map((r) => ({
-        role: r,
-        person: chapterMembers.find((m) => m.role === r.key),
-      })).filter((row) => row.person);
-
-      // De-dupe presidents (chapter_pres + chapter_president collide)
-      const seen = new Set();
-      const team = [];
-      leadership.forEach((row) => {
-        if (seen.has(row.person.id)) return;
-        seen.add(row.person.id);
-        team.push(row);
+      // Officer slot → person (or null). Presidents tolerate either
+      // legacy 'chapter_pres' or current 'chapter_president'.
+      const team = OFFICER_SLOTS.map((slot) => {
+        const person = slot.key === 'chapter_president'
+          ? chapterMembers.find((m) => m.role === 'chapter_president' || m.role === 'chapter_pres')
+          : chapterMembers.find((m) => m.role === slot.key);
+        return { role: slot, person };
       });
-
       const roster = chapterMembers.filter((m) => !isLead(m.role));
 
       result[ch.id] = {
@@ -407,26 +445,25 @@ export default function ManageChapters({ navigation }) {
 
                 {isOpen ? (
                   <View style={styles.expanded}>
-                    {/* Main team */}
-                    <Text style={styles.sectionLabel}>Main team</Text>
-                    {(!r.team || r.team.length === 0) ? (
-                      <Text style={styles.muted}>No officers assigned yet.</Text>
+                    {/* Officer assignment. Each row is a slot with a
+                        chip list of every chapter member; tapping a
+                        chip writes that role to the picked user (and
+                        clears it from whoever held it before). */}
+                    <Text style={styles.sectionLabel}>Officers</Text>
+                    {[...(r.roster || []), ...(r.team || []).map((t) => t.person).filter(Boolean)].length === 0 ? (
+                      <Text style={styles.muted}>No one is in this chapter yet — assign members first, then come back here.</Text>
                     ) : (
-                      <View style={styles.teamGrid}>
-                        {r.team.map(({ role, person }) => (
-                          <TouchableOpacity
-                            key={person.id + role.key}
-                            style={styles.teamCard}
-                            onPress={() => navigation.navigate('ManageMembers', { editUserId: person.id })}
-                            activeOpacity={0.85}
-                          >
-                            <Text style={styles.teamRole}>{role.label}</Text>
-                            <Text style={styles.teamName}>{person.name || '(unnamed)'}</Text>
-                            <Text style={styles.teamMeta}>{person.email}</Text>
-                            <Text style={styles.teamEdit}>Tap to edit →</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
+                      <OfficerEditor
+                        chapter={ch}
+                        slots={OFFICER_SLOTS}
+                        team={r.team}
+                        members={[
+                          ...(r.team || []).map((t) => t.person).filter(Boolean),
+                          ...(r.roster || []),
+                        ]}
+                        onAssign={(person, slotKey) => assignOfficer(ch, person, slotKey)}
+                        onClear={(slotKey) => clearOfficer(ch, slotKey, r.team)}
+                      />
                     )}
 
                     {/* Roster */}
@@ -631,4 +668,67 @@ const styles = StyleSheet.create({
   previewText: { fontSize: 16, fontWeight: '800', color: Colors.green },
   modalRow2: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' },
   modalActions: { flexDirection: 'row', marginTop: 18 },
+
+  officerSlot: { marginTop: 10, padding: 12, backgroundColor: '#F7F5EF', borderRadius: 12 },
+  officerSlotHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  officerSlotLabel: { fontSize: 13, fontWeight: '800', color: Colors.green, letterSpacing: 0.4, textTransform: 'uppercase', flex: 1 },
+  officerCurrent: { fontSize: 13, fontWeight: '700', color: Colors.dark },
+  officerCurrentEmpty: { fontSize: 13, fontStyle: 'italic', color: Colors.grayMid },
+  officerClear: { fontSize: 11, fontWeight: '700', color: Colors.pink, paddingVertical: 4, paddingHorizontal: 8 },
+  officerChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  officerChip: { backgroundColor: Colors.white, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: Colors.glassBorder },
+  officerChipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
+  officerChipText: { fontSize: 12, fontWeight: '700', color: Colors.dark },
+  officerChipTextActive: { color: '#FFF' },
 });
+
+function OfficerEditor({ slots, team, members, onAssign, onClear }) {
+  // De-dupe members by id (since team people are also in roster)
+  const uniq = [];
+  const seen = new Set();
+  members.forEach((m) => {
+    if (!m || seen.has(m.id)) return;
+    seen.add(m.id); uniq.push(m);
+  });
+  return (
+    <View>
+      {slots.map((slot) => {
+        const current = team.find((t) => t.role.key === slot.key)?.person;
+        return (
+          <View key={slot.key} style={styles.officerSlot}>
+            <View style={styles.officerSlotHead}>
+              <Text style={styles.officerSlotLabel}>{slot.label}</Text>
+              {current ? (
+                <>
+                  <Text style={styles.officerCurrent}>{current.name || current.email}</Text>
+                  <TouchableOpacity onPress={() => onClear(slot.key)}>
+                    <Text style={styles.officerClear}>Clear</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.officerCurrentEmpty}>unassigned</Text>
+              )}
+            </View>
+            <View style={styles.officerChipRow}>
+              {uniq.map((m) => {
+                const isMe = current?.id === m.id;
+                return (
+                  <TouchableOpacity
+                    key={m.id + slot.key}
+                    style={[styles.officerChip, isMe && styles.officerChipActive]}
+                    onPress={() => onAssign(m, slot.key)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.officerChipText, isMe && styles.officerChipTextActive]}>
+                      {m.name || m.email}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
