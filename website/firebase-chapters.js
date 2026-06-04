@@ -28,6 +28,6 @@ export async function listChapters() {
     return list;
   } catch (e) {
     console.warn('[bn] listChapters failed', e);
-    throw e;
+    return [];
   }
 }

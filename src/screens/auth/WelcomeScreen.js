@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import { siteVal } from '../../services/siteContent';
 import Button from '../../components/ui/Button';
 import Logo from '../../components/ui/Logo';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
@@ -48,7 +49,7 @@ export default function WelcomeScreen({ navigation }) {
           <BrushText variant="heroStat" style={styles.title}>
             BetterNature
           </BrushText>
-          <Text style={styles.tagline}>Food rescue {'\u00B7'} Conservation {'\u00B7'} Clean water</Text>
+          <Text style={styles.tagline}>{siteVal('hero.eyebrow', 'Food rescue \u00B7 Conservation \u00B7 Clean water')}</Text>
 
           {/* Mini stats */}
           <View style={styles.statsRow}>

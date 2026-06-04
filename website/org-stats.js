@@ -3,7 +3,7 @@
 // or a volunteer is checked in. Returns zeroes if the doc doesn't exist
 // yet so we never lie about numbers we haven't earned.
 import { db } from './firebase-auth.js';
-import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
 export async function fetchOrgStats() {
   try {

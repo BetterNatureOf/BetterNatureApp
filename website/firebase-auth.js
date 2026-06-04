@@ -16,16 +16,16 @@
 //  zero build step.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   onAuthStateChanged, signOut, updateProfile,
   GoogleAuthProvider, OAuthProvider, signInWithPopup,
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, updateDoc, addDoc, collection,
   serverTimestamp, query, where, getDocs, orderBy, limit, increment,
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
 // Same Firebase project as the app (see app.json → extra.firebase).
 const firebaseConfig = {

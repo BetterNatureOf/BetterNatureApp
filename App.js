@@ -108,6 +108,16 @@ export default function App() {
   // signup form, so we route them through CompleteProfile first.
   const needsProfile = isAuthenticated && user && user.profile_complete === false;
 
+  // Seed the live site_content cache once at boot. Lets any screen
+  // that wants to honor exec edits (Welcome hero, Projects copy,
+  // About contact info) read from the same Firestore doc the
+  // marketing site is reading.
+  useEffect(() => {
+    import('./src/services/siteContent').then(({ loadSiteContent }) => {
+      loadSiteContent({ force: true }).catch(() => {});
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     async function loadFonts() {
       // We dropped the custom Caveat font in favor of editorial system
