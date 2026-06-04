@@ -94,56 +94,8 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
 // instead of silently falling back to Times New Roman.
 injectWebFonts();
 
-import { Alert } from 'react-native';
-import {
-  initializeOneSignal as bnInitOneSignal,
-  addSubscriptionObserver as bnAddOneSignalObserver,
-  addInAppTrigger as bnAddInAppTrigger,
-  setLogLevel as bnSetOneSignalLog,
-} from './src/services/onesignal';
-
-// One-shot welcome dialog the OneSignal AI prompt requires. Flips
-// the first time the device transitions from no subscription id to a
-// real one, never again.
-let _bnWelcomeShown = false;
-function bnShowWelcome() {
-  if (_bnWelcomeShown) return;
-  _bnWelcomeShown = true;
-  Alert.alert(
-    'Your OneSignal integration is complete!',
-    'Click the button below to trigger your first journey via an in-app message.',
-    [{
-      text: 'Trigger your first journey',
-      onPress: () => bnAddInAppTrigger('ai_implementation_campaign_email_journey', 'true'),
-    }],
-  );
-}
-
 export default function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
-
-  // OneSignal — initialize once at app start. The wrapper is a
-  // no-op on web (web SDK inits lazily on first use); on iOS/Android
-  // it registers the device with OneSignal so push tokens can flow.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await bnInitOneSignal();
-        bnSetOneSignalLog('Warn');
-        await bnAddOneSignalObserver((ev) => {
-          if (cancelled) return;
-          const wasEmpty = !ev?.previous?.id;
-          const nowHasId = !!ev?.current?.id;
-          if (wasEmpty && nowHasId) bnShowWelcome();
-        });
-      } catch (e) {
-        console.warn('OneSignal init failed', e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
   // Subscribe to Firebase auth state so the user is rehydrated on every
   // reload. Without this, refreshing the page always boots back to the
   // login screen even though Firebase still has a valid session.

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import useAuthStore from '../store/authStore';
 import { onAuthStateChange, getProfile } from '../services/auth';
 import { ensureFounderRole } from '../services/founder';
-import { login as oneSignalLogin, logout as oneSignalLogout, setTags as oneSignalSetTags, addEmail as oneSignalAddEmail } from '../services/onesignal';
 import { isFirebaseConfigured } from '../config/firebase';
 
 export default function useAuth() {
@@ -33,25 +32,11 @@ export default function useAuth() {
           // them so they can actually create chapters etc. on day one.
           profile = await ensureFounderRole(profile || { id: uid, email: session.user.email });
           setUser(profile || { id: uid, email: session.user.email });
-          // OneSignal identity — scope notifications to the BN user
-          // across devices, not just to whichever browser is open.
-          oneSignalLogin(uid).catch(() => {});
-          if (profile?.email) oneSignalAddEmail(profile.email).catch(() => {});
-          // Tags so the OneSignal dashboard can segment without us
-          // running a backfill query for every campaign.
-          oneSignalSetTags({
-            role:       profile?.role || 'member',
-            chapter_id: profile?.chapter_id || '',
-            country:    profile?.country || '',
-          }).catch(() => {});
         } catch {
           setUser({ id: uid, email: session.user.email });
         }
       } else {
         setUser(null);
-        // Drop the OneSignal external user id so a future sign-in
-        // doesn't inherit the previous user's segments.
-        oneSignalLogout().catch(() => {});
       }
       setLoading(false);
     });

@@ -65,7 +65,7 @@
         "appId": "1:102288708316:web:d15cda309e77d14b921a19",
         "measurementId": "G-F0YTP6RGJ1"
       },
-      "onesignalAppId": "f21e4ed4-1498-41ad-b8fb-20962763a6dd"
+      "onesignalAppId": ""
     },
     "owner": "betternatureofficial",
     "plugins": [
@@ -78,13 +78,7 @@
         }
       ],
       "expo-image-picker",
-      "expo-asset",
-      [
-        "onesignal-expo-plugin",
-        {
-          "mode": "development"
-        }
-      ]
+      "expo-asset"
     ],
     "updates": {
       "url": "https://u.expo.dev/REPLACE_AFTER_EAS_INIT"

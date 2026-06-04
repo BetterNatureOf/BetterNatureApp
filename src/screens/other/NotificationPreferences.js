@@ -132,26 +132,13 @@ export default function NotificationPreferences({ navigation }) {
           </View>
         </View>
 
-        {/* Web push */}
+        {/* Web push — temporarily disabled. We'll bring this back
+            once OneSignal is wired through the build properly. */}
         <View style={styles.card}>
           <Text style={styles.label}>Browser push notifications</Text>
           <Text style={styles.help}>
-            Real-time alerts in this browser even when the tab isn't open. We use OneSignal — your browser will ask for permission.
+            Coming soon. For now, email + in-app notifications cover the same alerts.
           </Text>
-          <TouchableOpacity
-            style={[styles.pushBtn, prefs.push_enabled && styles.pushBtnOn]}
-            onPress={togglePushEnabled}
-            disabled={pushBusy}
-            activeOpacity={0.85}
-          >
-            {pushBusy ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={[styles.pushBtnText, prefs.push_enabled && styles.pushBtnTextOn]}>
-                {prefs.push_enabled ? 'Push enabled — tap to disable' : 'Enable push notifications'}
-              </Text>
-            )}
-          </TouchableOpacity>
         </View>
 
         {/* Categories */}
