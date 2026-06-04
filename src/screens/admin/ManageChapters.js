@@ -28,6 +28,7 @@ import {
   fetchAllMembers, fetchEvents, fetchPickups,
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
+import { notify } from '../../services/ui';
 
 const LEAD_ROLES = [
   { key: 'chapter_president', label: 'President' },
@@ -62,28 +63,50 @@ export default function ManageChapters({ navigation }) {
   const [form, setForm] = useState(blankForm);
 
   const load = useCallback(async () => {
-    try {
-      const [c, m, f] = await Promise.all([fetchChapters(), fetchAllMembers(), listFridges()]);
-      setChapters(c);
-      setMembers(m);
-      setFridges(f);
-      // Events + pickups across the whole org — we already pull per-chapter
-      // from helpers that accept a chapter id, but for the stats roll-up
-      // we want one query, not N. fetchEvents() returns global events
-      // when no chapter_id is passed.
-      const ev = await fetchEvents();
-      setEvents(ev);
-      const pk = await fetchPickups();
-      setPickups(pk);
-    } catch (e) {
-      console.warn('ManageChapters load failed', e);
-    } finally {
-      setLoading(false);
-    }
+    // Run each fetch in isolation so one failure (e.g. a permission
+    // denial on /pickups for a brand-new exec) doesn't black-hole the
+    // entire chapter list.
+    const safe = (p, fallback) => p.then((v) => v).catch((e) => {
+      console.warn('ManageChapters fetch failed', e);
+      return fallback;
+    });
+    const [c, m, f, ev, pk] = await Promise.all([
+      safe(fetchChapters(), []),
+      safe(fetchAllMembers(), []),
+      safe(listFridges(), []),
+      safe(fetchEvents(), []),
+      safe(fetchPickups(), []),
+    ]);
+    setChapters(c);
+    setMembers(m);
+    setFridges(f);
+    setEvents(ev);
+    setPickups(pk);
+    setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Whenever the loaded chapter/members data shows that a chapter's
+  // denormalized fields (president_name, member_count) are stale, push
+  // the corrected values back to Firestore. The website renders straight
+  // off these fields, so this keeps "Find your chapter" honest without
+  // requiring the marketing site to do a join.
+  useEffect(() => {
+    if (!chapters.length || !members.length) return;
+    chapters.forEach(async (ch) => {
+      const inChapter = members.filter((u) => u.chapter_id === ch.id && (u.role || 'member') !== 'restaurant');
+      const pres = inChapter.find((u) => u.role === 'chapter_president' || u.role === 'chapter_pres');
+      const nextPres = pres?.name || '';
+      const nextCount = inChapter.length;
+      if (ch.president_name !== nextPres || ch.member_count !== nextCount) {
+        try {
+          await updateChapter(ch.id, { president_name: nextPres, member_count: nextCount });
+        } catch {}
+      }
+    });
+  }, [chapters, members]);
 
   // Per-chapter roll-ups computed once when any source changes.
   const rollup = useMemo(() => {
@@ -151,38 +174,52 @@ export default function ManageChapters({ navigation }) {
 
   async function handleSave() {
     if (!form.name.trim() || !form.city.trim()) {
-      Alert.alert('Required', 'Chapter name and city are required.');
+      notify('Required', 'Chapter name and city are required.');
       return;
     }
     setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      city: form.city.trim(),
+      state: form.state.trim(),
+      country: (form.country || 'USA').toUpperCase(),
+      description: form.description.trim(),
+    };
     try {
       if (editing) {
-        await updateChapter(editing.id, {
-          name: form.name.trim(),
-          city: form.city.trim(),
-          state: form.state.trim(),
-          country: (form.country || 'USA').toUpperCase(),
-          description: form.description.trim(),
-        });
+        await updateChapter(editing.id, payload);
       } else {
         // status: 'active' so the website map shows the new pin
         // immediately (the marketing site filters by status).
         await createChapter({
-          name: form.name.trim(),
-          city: form.city.trim(),
-          state: form.state.trim(),
-          country: (form.country || 'USA').toUpperCase(),
-          description: form.description.trim(),
+          ...payload,
           status: 'active',
           founded_at: new Date().toISOString(),
+          // The website's "Find your chapter" card reads these
+          // denormalized fields directly. We refresh them whenever
+          // the president changes — see refreshPresidentName().
+          president_name: '',
+          member_count: 0,
         });
       }
       setShowAdd(false);
-      load();
-    } catch (e) {
-      Alert.alert('Could not save', e?.message || 'Try again.');
-    } finally {
       setSaving(false);
+      // Wait for the load() so the new card is on screen before the
+      // user looks again. Errors here are non-fatal.
+      await load();
+      notify(editing ? 'Saved' : 'Chapter created', editing
+        ? 'Your changes are live on the website.'
+        : 'It now appears on the website and the app map.');
+    } catch (e) {
+      setSaving(false);
+      // Common case: rules denial because the user isn't classified
+      // as 'executive' in their profile. Surface the actual error.
+      const code = e?.code || '';
+      const msg = e?.message || 'Try again.';
+      const help = code.includes('permission-denied')
+        ? '\n\nThis usually means your account isn\'t marked as executive in Firestore. Open Manage Members → tap your name → set role to Executive.'
+        : '';
+      notify('Could not save', msg + help);
     }
   }
 

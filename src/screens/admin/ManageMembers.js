@@ -54,6 +54,11 @@ export default function ManageMembers({ navigation }) {
   const [editing, setEditing] = useState(null); // member being edited
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedChapter, setSelectedChapter] = useState('');
+  // Editable stats so a chapter president can correct a miscount
+  // after an event (e.g. someone forgot to scan in).
+  const [statEvents, setStatEvents] = useState('0');
+  const [statMeals, setStatMeals]   = useState('0');
+  const [statHours, setStatHours]   = useState('0');
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +82,9 @@ export default function ManageMembers({ navigation }) {
     setEditing(member);
     setSelectedRole(member.role || 'member');
     setSelectedChapter(member.chapter_id || member.chapters?.id || '');
+    setStatEvents(String(member.events_attended || 0));
+    setStatMeals(String(member.meals_rescued || 0));
+    setStatHours(String(member.hours_logged || 0));
   }
 
   async function saveEdit() {
@@ -88,6 +96,18 @@ export default function ManageMembers({ navigation }) {
       const currentChapter = editing.chapter_id || '';
       if (selectedChapter !== currentChapter) {
         await updateUserChapter(editing.id, selectedChapter || null);
+      }
+      // Stats — only push the ones that actually changed so we don't
+      // overwrite an in-flight server increment from an event check-in.
+      const updates = {};
+      const ne = parseInt(statEvents, 10);
+      const nm = parseInt(statMeals, 10);
+      const nh = parseFloat(statHours);
+      if (!Number.isNaN(ne) && ne !== (editing.events_attended || 0)) updates.events_attended = ne;
+      if (!Number.isNaN(nm) && nm !== (editing.meals_rescued  || 0)) updates.meals_rescued  = nm;
+      if (!Number.isNaN(nh) && nh !== (editing.hours_logged   || 0)) updates.hours_logged   = nh;
+      if (Object.keys(updates).length) {
+        await updateProfile(editing.id, updates);
       }
       setEditing(null);
       load();
@@ -425,6 +445,42 @@ export default function ManageMembers({ navigation }) {
                 ))}
               </ScrollView>
 
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                Stats (editable by chapter president + execs)
+              </Text>
+              <View style={styles.statEditRow}>
+                <View style={styles.statEditCell}>
+                  <Text style={styles.statEditLabel}>Events</Text>
+                  <TextInput
+                    style={styles.statEditInput}
+                    value={statEvents}
+                    onChangeText={setStatEvents}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                  />
+                </View>
+                <View style={styles.statEditCell}>
+                  <Text style={styles.statEditLabel}>Meals</Text>
+                  <TextInput
+                    style={styles.statEditInput}
+                    value={statMeals}
+                    onChangeText={setStatMeals}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                  />
+                </View>
+                <View style={styles.statEditCell}>
+                  <Text style={styles.statEditLabel}>Hours</Text>
+                  <TextInput
+                    style={styles.statEditInput}
+                    value={statHours}
+                    onChangeText={setStatHours}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                  />
+                </View>
+              </View>
+
               <View style={styles.modalRow}>
                 <Button
                   title="Cancel"
@@ -554,6 +610,14 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, color: Colors.grayMid, marginTop: 2, fontWeight: '600' },
   idImagesRow: { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 12 },
   idImage: { flex: 1, height: 110, borderRadius: 10, backgroundColor: Colors.grayLight },
+  statEditRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  statEditCell: { flex: 1 },
+  statEditLabel: { fontSize: 11, color: Colors.grayMid, fontWeight: '700', marginBottom: 4, letterSpacing: 0.4, textTransform: 'uppercase' },
+  statEditInput: {
+    borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, fontWeight: '700',
+    color: Colors.green, backgroundColor: '#FAF8F1', textAlign: 'center',
+  },
   list: { gap: 8, marginBottom: 8 },
   listWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: {

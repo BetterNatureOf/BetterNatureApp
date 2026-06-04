@@ -9,29 +9,17 @@ export default function LoadingScreen() {
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 1200,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 1200, useNativeDriver: true }),
     ]).start();
   }, []);
 
   return (
     <View style={styles.container}>
-      {/* Logo & Title */}
       <Animated.View
         style={[
-          styles.titleWrap,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          },
+          styles.centerStack,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
         ]}
       >
         <BrushText variant="heroStat" style={styles.title}>
@@ -40,12 +28,8 @@ export default function LoadingScreen() {
         <BrushText variant="sectionHeader" style={styles.tagline}>
           Rescue. Protect. Sustain.
         </BrushText>
+        <ActivityIndicator size="large" color={Colors.pink} style={styles.spinner} />
       </Animated.View>
-
-      {/* Spinner at bottom */}
-      <View style={styles.spinnerWrap}>
-        <ActivityIndicator size="large" color={Colors.pink} />
-      </View>
     </View>
   );
 }
@@ -54,12 +38,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.cream,
-    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
-  },
-  titleWrap: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    ...(Platform.OS === 'web' ? { height: '100vh', minHeight: '100vh' } : null),
+  },
+  centerStack: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     color: Colors.green,
@@ -70,8 +55,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 18,
   },
-  spinnerWrap: {
-    paddingBottom: 80,
-    alignItems: 'center',
+  spinner: {
+    marginTop: 32,
   },
 });
