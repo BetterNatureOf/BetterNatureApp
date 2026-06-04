@@ -63,7 +63,6 @@ import ExecFinance from '../screens/executive/ExecFinance';
 
 import MetricsEditor from '../screens/admin/MetricsEditor';
 import CheckInScreen from '../screens/admin/CheckInScreen';
-import ImpactMap from '../screens/impact/ImpactMap';
 import BNMap from '../screens/impact/BNMap';
 import MemberApprovalGate from '../components/ui/MemberApprovalGate';
 

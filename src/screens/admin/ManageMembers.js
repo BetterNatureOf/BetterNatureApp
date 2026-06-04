@@ -49,7 +49,7 @@ function roleBadgeLabel(role) {
   return 'Member';
 }
 
-export default function ManageMembers({ navigation }) {
+export default function ManageMembers({ navigation, route }) {
   const authUser = useAuthStore((s) => s.user);
   const setAuthUser = useAuthStore((s) => s.setUser);
   const { isWide } = useBreakpoint();
@@ -85,6 +85,16 @@ export default function ManageMembers({ navigation }) {
   // signup created in another tab shows up without needing a
   // manual reload.
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // If we arrived here from Manage Chapters with an editUserId, pop
+  // the edit modal for that member as soon as the roster loads.
+  useEffect(() => {
+    const want = route?.params?.editUserId;
+    if (!want || !members.length) return;
+    const target = members.find((m) => m.id === want);
+    if (target) openEdit(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route?.params?.editUserId, members]);
 
   // Founder-only banner (same gating as ManageChapters).
   useEffect(() => {

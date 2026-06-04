@@ -81,13 +81,34 @@ function WebRobinson({ presence }) {
   const layers = useMemo(() => {
     if (!ready || typeof window === 'undefined' || !window.__bnWorldGeo) return null;
     const { d3, topojson, world, usStates } = window.__bnWorldGeo;
-    // NaturalEarth1 is part of d3-geo (shipped in the d3@7 bundle)
-    // and is visually nearly identical to Robinson — same family of
-    // pseudo-cylindrical thematic projections with curved sides.
-    const projectionFn = typeof d3.geoNaturalEarth1 === 'function'
-      ? d3.geoNaturalEarth1
-      : (typeof d3.geoEqualEarth === 'function' ? d3.geoEqualEarth : d3.geoEquirectangular);
-    const projection = projectionFn().fitSize([size.w, size.h], { type: 'Sphere' });
+    // Inline Robinson — uses d3-geo's geoProjection factory (shipped
+    // in d3@7) with the same lookup table d3-geo-projection's
+    // geoRobinson uses internally. Done this way to avoid depending
+    // on the d3-geo-projection UMD which kept failing to resolve
+    // dependencies across CDN edges.
+    const HALF_PI = Math.PI / 2;
+    const ROBINSON_K = [
+      [0.9986, -0.062], [1.0000, 0.0000], [0.9986, 0.0620],
+      [0.9954, 0.1240], [0.9900, 0.1860], [0.9822, 0.2480],
+      [0.9730, 0.3100], [0.9600, 0.3720], [0.9427, 0.4340],
+      [0.9216, 0.4958], [0.8962, 0.5571], [0.8679, 0.6176],
+      [0.8350, 0.6769], [0.7986, 0.7346], [0.7597, 0.7903],
+      [0.7186, 0.8435], [0.6732, 0.8936], [0.6213, 0.9394],
+      [0.5722, 0.9761], [0.5322, 1.0000],
+    ].map(([a, b]) => [a, b * 1.0144]);
+    function robinsonRaw(lambda, phi) {
+      const absPhi = Math.abs(phi);
+      const i = Math.min(18, absPhi * 36 / Math.PI);
+      const i0 = Math.floor(i);
+      const di = i - i0;
+      const a = ROBINSON_K[i0];
+      const b = ROBINSON_K[Math.min(19, i0 + 1)];
+      const c = ROBINSON_K[Math.min(19, i0 + 2)];
+      const dx = b[0] + di * (c[0] - a[0]) / 2 + di * di * (c[0] - 2 * b[0] + a[0]) / 2;
+      const dy = b[1] + di * (c[1] - a[1]) / 2 + di * di * (c[1] - 2 * b[1] + a[1]) / 2;
+      return [lambda * dx, (phi >= 0 ? HALF_PI : -HALF_PI) * dy];
+    }
+    const projection = d3.geoProjection(robinsonRaw).fitSize([size.w, size.h], { type: 'Sphere' });
     const path = d3.geoPath(projection);
 
     const countries = topojson.feature(world, world.objects.countries).features.map((f) => {

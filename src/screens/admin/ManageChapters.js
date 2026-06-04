@@ -134,11 +134,34 @@ export default function ManageChapters({ navigation }) {
     chapters.forEach(async (ch) => {
       const inChapter = members.filter((u) => u.chapter_id === ch.id && (u.role || 'member') !== 'restaurant');
       const pres = inChapter.find((u) => u.role === 'chapter_president' || u.role === 'chapter_pres');
+      const vp   = inChapter.find((u) => u.role === 'chapter_vp');
+      const sec  = inChapter.find((u) => u.role === 'chapter_sec');
+      const tres = inChapter.find((u) => u.role === 'chapter_treas');
+      // Shape officers as plain { name, email } objects so the
+      // marketing site can render them without parsing.
+      const nextOfficers = {
+        president:      pres ? { name: pres.name || '', email: pres.email || '' } : null,
+        vice_president: vp   ? { name: vp.name || '',   email: vp.email || ''   } : null,
+        secretary:      sec  ? { name: sec.name || '',  email: sec.email || ''  } : null,
+        treasurer:      tres ? { name: tres.name || '', email: tres.email || '' } : null,
+      };
       const nextPres = pres?.name || '';
       const nextCount = inChapter.length;
-      if (ch.president_name !== nextPres || ch.member_count !== nextCount) {
+      // Cheap diff: stringify the officers blob so a name typo
+      // change triggers the sync too.
+      const officersStr = JSON.stringify(nextOfficers);
+      const prevOfficersStr = JSON.stringify(ch.officers || {});
+      if (
+        ch.president_name !== nextPres ||
+        ch.member_count !== nextCount ||
+        officersStr !== prevOfficersStr
+      ) {
         try {
-          await updateChapter(ch.id, { president_name: nextPres, member_count: nextCount });
+          await updateChapter(ch.id, {
+            president_name: nextPres,
+            member_count: nextCount,
+            officers: nextOfficers,
+          });
         } catch {}
       }
     });
@@ -391,11 +414,17 @@ export default function ManageChapters({ navigation }) {
                     ) : (
                       <View style={styles.teamGrid}>
                         {r.team.map(({ role, person }) => (
-                          <View key={person.id + role.key} style={styles.teamCard}>
+                          <TouchableOpacity
+                            key={person.id + role.key}
+                            style={styles.teamCard}
+                            onPress={() => navigation.navigate('ManageMembers', { editUserId: person.id })}
+                            activeOpacity={0.85}
+                          >
                             <Text style={styles.teamRole}>{role.label}</Text>
                             <Text style={styles.teamName}>{person.name || '(unnamed)'}</Text>
                             <Text style={styles.teamMeta}>{person.email}</Text>
-                          </View>
+                            <Text style={styles.teamEdit}>Tap to edit →</Text>
+                          </TouchableOpacity>
                         ))}
                       </View>
                     )}
@@ -406,13 +435,19 @@ export default function ManageChapters({ navigation }) {
                       <Text style={styles.muted}>No general members assigned to this chapter yet.</Text>
                     ) : (
                       r.roster.map((m) => (
-                        <View key={m.id} style={styles.rosterRow}>
+                        <TouchableOpacity
+                          key={m.id}
+                          style={styles.rosterRow}
+                          onPress={() => navigation.navigate('ManageMembers', { editUserId: m.id })}
+                          activeOpacity={0.85}
+                        >
                           <View style={{ flex: 1 }}>
                             <Text style={styles.rosterName}>{m.name || '(unnamed)'}</Text>
                             <Text style={styles.rosterMeta}>{m.email} · {labelForRole(m.role)}</Text>
                           </View>
                           <Text style={styles.rosterStat}>{m.events_attended || 0} ev · {m.meals_rescued || 0} m · {m.hours_logged || 0}h</Text>
-                        </View>
+                          <Text style={styles.rosterChev}>›</Text>
+                        </TouchableOpacity>
                       ))
                     )}
 
@@ -572,11 +607,13 @@ const styles = StyleSheet.create({
   teamRole: { fontSize: 11, fontWeight: '800', color: Colors.pink, letterSpacing: 0.6, textTransform: 'uppercase' },
   teamName: { fontSize: 15, fontWeight: '700', color: Colors.dark, marginTop: 2 },
   teamMeta: { ...Type.caption, marginTop: 2 },
+  teamEdit: { fontSize: 11, color: Colors.pink, fontWeight: '700', marginTop: 8 },
 
-  rosterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.grayLight },
+  rosterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.grayLight },
   rosterName: { fontSize: 14, fontWeight: '700', color: Colors.dark },
   rosterMeta: { ...Type.caption, marginTop: 2 },
   rosterStat: { fontSize: 11, color: Colors.gray, fontWeight: '700' },
+  rosterChev: { fontSize: 20, color: Colors.grayMid, marginLeft: 6 },
 
   fridgeRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.grayLight },
   fridgeName: { fontSize: 14, fontWeight: '700', color: Colors.dark },
