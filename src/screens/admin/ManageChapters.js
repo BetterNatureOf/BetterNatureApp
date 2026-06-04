@@ -24,7 +24,7 @@ import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import {
-  fetchChapters, fetchAllChapters, createChapter, updateChapter,
+  fetchChapters, fetchAllChapters, createChapter, updateChapter, deleteChapter,
   fetchAllMembers, fetchEvents, fetchPickups,
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
@@ -354,6 +354,22 @@ export default function ManageChapters({ navigation }) {
     }
   }
 
+  async function handleDelete(chapter) {
+    const ok = await confirmWithPassword(
+      `Delete ${chapter.name}?`,
+      'This removes the chapter from Firestore permanently — Manage Chapters, the website, the BN Map, and Find Chapter. Members keep their accounts but lose their chapter assignment. Use this only for test or mistaken creates; for real chapters, deactivate instead.',
+      { confirmLabel: 'Delete forever', destructive: true }
+    );
+    if (!ok) return;
+    try {
+      await deleteChapter(chapter.id);
+      load();
+      notify('Chapter deleted', `${chapter.name} is gone for good.`);
+    } catch (e) {
+      notify('Could not delete', e?.message || 'Try again.');
+    }
+  }
+
   async function toggleStatus(chapter) {
     const next = chapter.status === 'inactive' ? 'active' : 'inactive';
     // Deactivation is destructive — gate it behind the user's
@@ -501,15 +517,24 @@ export default function ManageChapters({ navigation }) {
                       ))
                     )}
 
+                    {/* Stored status — useful while we figure out
+                        why a chapter is or isn't on the public site. */}
+                    <Text style={styles.statusDebug}>
+                      Stored status: <Text style={styles.statusDebugVal}>{ch.status || '(none)'}</Text>
+                    </Text>
+
                     {/* Actions */}
                     <View style={styles.actionRow}>
-                      <Button title="Edit chapter" variant="secondary" onPress={() => openEdit(ch)} style={{ flex: 1 }} />
+                      <Button title="Edit" variant="secondary" onPress={() => openEdit(ch)} style={{ flex: 1 }} />
                       <Button
                         title={ch.status === 'inactive' ? 'Reactivate' : 'Deactivate'}
                         onPress={() => toggleStatus(ch)}
                         style={{ flex: 1 }}
                       />
                     </View>
+                    <TouchableOpacity onPress={() => handleDelete(ch)} style={styles.deleteRow}>
+                      <Text style={styles.deleteText}>Delete chapter permanently</Text>
+                    </TouchableOpacity>
                   </View>
                 ) : null}
               </View>
@@ -657,6 +682,10 @@ const styles = StyleSheet.create({
   fridgeMeta: { ...Type.caption, marginTop: 2 },
 
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  statusDebug: { ...Type.caption, marginTop: 8, color: Colors.grayMid },
+  statusDebugVal: { color: Colors.dark, fontWeight: '700' },
+  deleteRow: { alignItems: 'center', paddingVertical: 12, marginTop: 6 },
+  deleteText: { fontSize: 13, fontWeight: '700', color: '#DC2626' },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,28,21,0.45)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalCard: { width: '100%', maxWidth: 540, backgroundColor: Colors.white, borderRadius: Radius.xl, padding: 22 },

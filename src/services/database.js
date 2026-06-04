@@ -107,6 +107,16 @@ export async function updateChapter(id, updates) {
   return { id, ...updates };
 }
 
+// Hard-delete a chapter. Removes the doc entirely so it never
+// reappears anywhere — Manage Chapters, the website grid, the BN
+// Map presence rollup, FindChapter, none of them. Use this only
+// for test chapters / mistaken creates; for real chapters that
+// just need to step back from the public site, deactivate instead.
+export async function deleteChapter(id) {
+  if (useMock()) return;
+  await deleteDoc(doc(db, 'chapters', id));
+}
+
 // ── Events ──
 export async function fetchEvents(chapterId) {
   if (useMock()) {
