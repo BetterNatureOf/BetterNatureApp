@@ -82,7 +82,7 @@ export async function emailAlreadyRegistered(email) {
   }
 }
 
-export async function signUp({ email, password, name, phone, city, zip, role, referralCode }) {
+export async function signUp({ email, password, name, phone, city, state, country, zip, role, referralCode }) {
   if (!isFirebaseConfigured) {
     const user = makeMockUser({ email, name, phone, city, zip, role });
     return { user, session: { user } };
@@ -103,6 +103,8 @@ export async function signUp({ email, password, name, phone, city, zip, role, re
     name: name || '',
     phone: phone || '',
     city: city || '',
+    state: state || '',
+    country: (country || 'USA').toUpperCase(),
     zip: zip || '',
     role: role || 'member',
     chapter_id: null,

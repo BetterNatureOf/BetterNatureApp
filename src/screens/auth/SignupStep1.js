@@ -12,10 +12,12 @@ import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import { TouchableOpacity } from 'react-native';
 import { emailAlreadyRegistered } from '../../services/auth';
 import { phoneAlreadyRegistered } from '../../services/duplicates';
 import { notify } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import CityStateAutocomplete from '../../components/ui/CityStateAutocomplete';
 
 export default function SignupStep1({ navigation }) {
   const [checking, setChecking] = useState(false);
@@ -23,7 +25,10 @@ export default function SignupStep1({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [scope, setScope] = useState('national'); // 'national' | 'international'
   const [city, setCity] = useState('');
+  const [state, setStateVal] = useState('');
+  const [country, setCountry] = useState('USA');
   const [zip, setZip] = useState('');
   const [errors, setErrors] = useState({});
 
@@ -40,6 +45,14 @@ export default function SignupStep1({ navigation }) {
     else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Invalid email';
     if (!password) e.password = 'Password is required';
     else if (password.length < 6) e.password = 'At least 6 characters';
+    // Phone is now required — we use SMS for pickup alerts, event
+    // reminders, and safety dispatch. Mirrors the consent the user
+    // signs at contract time.
+    const digits = (phone || '').replace(/\D/g, '');
+    if (!phone.trim()) e.phone = 'Phone is required';
+    else if (digits.length < 7) e.phone = 'Enter a valid phone number';
+    if (!city.trim()) e.city = 'City is required';
+    if (scope === 'national' && !state.trim()) e.state = 'State is required';
     setErrors(e);
     if (Object.keys(e).length) {
       const first = Object.values(e)[0];
@@ -90,7 +103,7 @@ export default function SignupStep1({ navigation }) {
       setChecking(false);
     }
     setBanner(null);
-    navigation.navigate('SignupStep2', { name, email, password, phone, city, zip });
+    navigation.navigate('SignupStep2', { name, email, password, phone, city, state, country, zip });
   }
 
   return (
@@ -138,29 +151,89 @@ export default function SignupStep1({ navigation }) {
           secureTextEntry
         />
         <Input
-          label="Phone (optional)"
+          label="Phone *"
           placeholder="(555) 123-4567"
           value={phone}
           onChangeText={setPhone}
           error={errors.phone}
           keyboardType="phone-pad"
         />
+
+        {/* National / International toggle. National constrains the
+            city autocomplete to the US and shows the State + ZIP
+            fields; International opens it world-wide and shows the
+            Country chip with a free-form state/region. */}
+        <Text style={styles.label}>Where are you?</Text>
+        <View style={styles.scopeRow}>
+          {[
+            { key: 'national',      label: 'United States' },
+            { key: 'international', label: 'International' },
+          ].map((opt) => {
+            const active = scope === opt.key;
+            return (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.scopeChip, active && styles.scopeChipActive]}
+                onPress={() => {
+                  setScope(opt.key);
+                  // Reset selection when switching scope so a US pick
+                  // doesn't leak into the international tab.
+                  setCity(''); setStateVal('');
+                  setCountry(opt.key === 'national' ? 'USA' : '');
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.scopeChipText, active && styles.scopeChipTextActive]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <CityStateAutocomplete
+          label="City *"
+          value={city}
+          onChangeText={setCity}
+          countryFilter={scope === 'national' ? 'us' : undefined}
+          error={errors.city}
+          onSelect={(p) => {
+            setCity(p.city);
+            setStateVal(p.state);
+            setCountry(p.countryCode || p.country || (scope === 'national' ? 'USA' : ''));
+          }}
+        />
         <View style={styles.row}>
           <Input
-            label="City"
-            placeholder="City"
-            value={city}
-            onChangeText={setCity}
+            label={scope === 'national' ? 'State *' : 'State / region'}
+            placeholder={scope === 'national' ? 'TN' : 'Region'}
+            value={state}
+            onChangeText={setStateVal}
+            error={errors.state}
             containerStyle={styles.halfInput}
+            autoCapitalize="characters"
+            maxLength={scope === 'national' ? 4 : 60}
           />
-          <Input
-            label="ZIP Code"
-            placeholder="ZIP"
-            value={zip}
-            onChangeText={setZip}
-            keyboardType="number-pad"
-            containerStyle={styles.halfInput}
-          />
+          {scope === 'national' ? (
+            <Input
+              label="ZIP code"
+              placeholder="ZIP"
+              value={zip}
+              onChangeText={setZip}
+              keyboardType="number-pad"
+              containerStyle={styles.halfInput}
+            />
+          ) : (
+            <Input
+              label="Country"
+              placeholder="USA / UK / IND…"
+              value={country}
+              onChangeText={setCountry}
+              containerStyle={styles.halfInput}
+              autoCapitalize="characters"
+              maxLength={3}
+            />
+          )}
         </View>
 
         <Button
@@ -192,6 +265,12 @@ const styles = StyleSheet.create({
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
   row: { flexDirection: 'row', gap: 12 },
   halfInput: { flex: 1 },
+  label: { ...Type.label, color: Colors.dark, marginBottom: 6, marginTop: 4 },
+  scopeRow: { flexDirection: 'row', gap: 8, marginBottom: 14, backgroundColor: '#F7F5EF', padding: 4, borderRadius: 999 },
+  scopeChip: { flex: 1, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999, alignItems: 'center' },
+  scopeChipActive: { backgroundColor: Colors.white, shadowColor: '#000', shadowOpacity: 0.06, shadowOffset: { width: 0, height: 1 }, shadowRadius: 3, elevation: 2 },
+  scopeChipText: { fontSize: 13, fontWeight: '700', color: Colors.gray, letterSpacing: 0.3 },
+  scopeChipTextActive: { color: Colors.green },
   btn: { marginTop: 8 },
   loginLink: { textAlign: 'center', marginTop: 20, ...Type.caption },
   loginBold: { color: Colors.pink, fontWeight: '600' },

@@ -59,6 +59,8 @@ export default function SignupStep3({ route }) {
         name: userData.name,
         phone: userData.phone,
         city: userData.city,
+        state: userData.state,
+        country: userData.country,
         zip: userData.zip,
       });
 
