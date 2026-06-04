@@ -42,10 +42,16 @@ service cloud.firestore {
     // only if their auth email is on the BetterNature founder domain.
     // This closes the rule-level hole where a regular member could call
     // setDoc({role:'executive'}) on their own doc via the JS SDK.
+    // EXPLICIT founder allowlist. Mirrors src/services/founder.js.
+    // Anyone NOT on this list — including other @betternatureofficial.org
+    // staff — cannot self-promote and must be promoted by an exec
+    // through Manage Members.
     function isFounderToken() {
       return request.auth != null
         && request.auth.token.email != null
-        && request.auth.token.email.lower().matches('.*@betternatureofficial[.]org');
+        && request.auth.token.email.lower() in [
+             'satvik.koya@betternatureofficial.org',
+           ];
     }
     function touchesPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys()
@@ -54,6 +60,11 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isSignedIn();
       allow create: if isSelf(uid);
+      // Anyone can edit their own non-privileged fields (name, phone,
+      // address, prefs). Privileged fields (role, member_status, etc.)
+      // require an exec, OR the writer being a founder editing their
+      // own doc. Non-founder members literally cannot escalate
+      // themselves no matter what JS they run.
       allow update: if isExec()
         || (isSelf(uid) && !touchesPrivilegedFields())
         || (isSelf(uid) && isFounderToken());

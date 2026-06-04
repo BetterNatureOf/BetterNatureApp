@@ -14,26 +14,19 @@
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 
+// EXPLICIT founder allowlist — no domain wildcard. Most chapter
+// volunteers will eventually have @betternatureofficial.org emails
+// too (chapter presidents, ops folks), and we do NOT want any of
+// them auto-promoted to executive at signup. The only accounts on
+// this list are the people who can self-bootstrap and who skip the
+// approval gate.
 const FOUNDER_EMAILS = [
   'satvik.koya@betternatureofficial.org',
-  'info@betternatureofficial.org',
 ].map((e) => e.toLowerCase());
-
-// Domain match — any @betternatureofficial.org address counts as a
-// founder during the launch window. After the team is fully seeded
-// we'll tighten this to the explicit list above and drop the domain
-// check. Keeps the bootstrap robust against the founder using a
-// different alias (info-, hello-, etc.) than the two hard-coded ones.
-const FOUNDER_DOMAINS = ['betternatureofficial.org'];
 
 export function isFounderEmail(email) {
   if (!email) return false;
-  const e = email.toLowerCase();
-  if (FOUNDER_EMAILS.includes(e)) return true;
-  const at = e.lastIndexOf('@');
-  if (at < 0) return false;
-  const domain = e.slice(at + 1);
-  return FOUNDER_DOMAINS.includes(domain);
+  return FOUNDER_EMAILS.includes(email.toLowerCase());
 }
 
 // Force-write role:'executive' onto the signed-in user's profile.

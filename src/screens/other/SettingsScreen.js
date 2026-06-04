@@ -164,19 +164,43 @@ export default function SettingsScreen({ navigation }) {
         <Text style={styles.linkItem}>Your signed agreements</Text>
       </TouchableOpacity>
 
-      {/* Founder-only escape hatch. We gate on the email domain so a
-          regular member can't promote themselves to executive — only
-          BetterNature staff (any @betternatureofficial.org address)
-          can trigger this. Hidden once the role is already executive. */}
-      {isFounderEmail(user?.email)
-        && (user?.role || 'member') !== 'executive'
-        && (user?.role || 'member') !== 'super_admin' ? (
-        <TouchableOpacity onPress={handleBecomeExecutive} style={styles.execBtn}>
-          <Text style={styles.execBtnTitle}>Become executive</Text>
+      {/* Founder-only role switcher. Explicit allowlist — no
+          @betternatureofficial.org domain wildcard, because most
+          BetterNature staff will get that email too. Lets the
+          founder hop between roles for testing or demote themselves
+          to chapter president etc. when stepping back. */}
+      {isFounderEmail(user?.email) ? (
+        <View style={styles.execCard}>
+          <Text style={styles.execBtnTitle}>Founder role switcher</Text>
           <Text style={styles.execBtnHelp}>
-            Founder-only. Your account isn't marked as Executive in Firestore yet. Tap to fix.
+            Your current role is <Text style={{ fontWeight: '800' }}>{user?.role || 'member'}</Text>.
+            Switch to any role below. Only your account is allowed to do this — Firestore rules block it for everyone else.
           </Text>
-        </TouchableOpacity>
+          <View style={styles.roleSwitchRow}>
+            {['member', 'chapter_president', 'executive'].map((r) => (
+              <TouchableOpacity
+                key={r}
+                style={[styles.roleChip, user?.role === r && styles.roleChipActive]}
+                onPress={async () => {
+                  if (user?.role === r) return;
+                  const ok = await confirm('Switch role?', `Set your role to ${r}?`);
+                  if (!ok) return;
+                  try {
+                    await updateProfile(user.id, { role: r });
+                    if (setUser) setUser({ ...user, role: r });
+                    notify('Role updated', `You're now a ${r}.`);
+                  } catch (e) {
+                    notify('Could not switch', e?.message || 'Try again.');
+                  }
+                }}
+              >
+                <Text style={[styles.roleChipText, user?.role === r && styles.roleChipTextActive]}>
+                  {r.replace('_', ' ')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       ) : null}
       <TouchableOpacity onPress={() => openUrl('https://betternatureofficial.org/privacy')}>
         <Text style={styles.linkItem}>Privacy Policy</Text>
@@ -236,6 +260,19 @@ const styles = StyleSheet.create({
   },
   execBtnTitle: { fontSize: 15, fontWeight: '800', color: Colors.green },
   execBtnHelp: { ...Type.caption, color: Colors.gray, marginTop: 4 },
+  execCard: {
+    marginTop: 12, marginBottom: 4,
+    padding: 14,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.green,
+    backgroundColor: '#E8F5EE',
+  },
+  roleSwitchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  roleChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: Colors.green, backgroundColor: '#FFFFFF' },
+  roleChipActive: { backgroundColor: Colors.green },
+  roleChipText: { fontSize: 12, fontWeight: '700', color: Colors.green, textTransform: 'capitalize' },
+  roleChipTextActive: { color: '#FFF' },
   deleteBtn: {
     alignItems: 'center',
     paddingVertical: 16,
