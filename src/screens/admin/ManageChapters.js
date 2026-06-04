@@ -28,7 +28,10 @@ import {
   fetchAllMembers, fetchEvents, fetchPickups,
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
-import { notify } from '../../services/ui';
+import { notify, confirm } from '../../services/ui';
+import { selfPromoteToExecutive } from '../../services/founder';
+import { getProfile } from '../../services/auth';
+import useAuthStore from '../../store/authStore';
 
 const LEAD_ROLES = [
   { key: 'chapter_president', label: 'President' },
@@ -48,6 +51,8 @@ function labelForRole(role) {
 }
 
 export default function ManageChapters({ navigation }) {
+  const authUser = useAuthStore((s) => s.user);
+  const setAuthUser = useAuthStore((s) => s.setUser);
   const [chapters, setChapters]   = useState([]);
   const [members, setMembers]     = useState([]);
   const [fridges, setFridges]     = useState([]);
@@ -172,6 +177,19 @@ export default function ManageChapters({ navigation }) {
     setShowAdd(true);
   }
 
+  async function attemptSave(payload) {
+    if (editing) return updateChapter(editing.id, payload);
+    return createChapter({
+      ...payload,
+      status: 'active',
+      founded_at: new Date().toISOString(),
+      // Denormalized fields the marketing site reads directly so it
+      // doesn't have to join to the users collection.
+      president_name: '',
+      member_count: 0,
+    });
+  }
+
   async function handleSave() {
     if (!form.name.trim() || !form.city.trim()) {
       notify('Required', 'Chapter name and city are required.');
@@ -185,41 +203,55 @@ export default function ManageChapters({ navigation }) {
       country: (form.country || 'USA').toUpperCase(),
       description: form.description.trim(),
     };
-    try {
-      if (editing) {
-        await updateChapter(editing.id, payload);
-      } else {
-        // status: 'active' so the website map shows the new pin
-        // immediately (the marketing site filters by status).
-        await createChapter({
-          ...payload,
-          status: 'active',
-          founded_at: new Date().toISOString(),
-          // The website's "Find your chapter" card reads these
-          // denormalized fields directly. We refresh them whenever
-          // the president changes — see refreshPresidentName().
-          president_name: '',
-          member_count: 0,
-        });
-      }
+    const finishOk = async () => {
       setShowAdd(false);
       setSaving(false);
-      // Wait for the load() so the new card is on screen before the
-      // user looks again. Errors here are non-fatal.
       await load();
       notify(editing ? 'Saved' : 'Chapter created', editing
         ? 'Your changes are live on the website.'
         : 'It now appears on the website and the app map.');
+    };
+
+    try {
+      await attemptSave(payload);
+      await finishOk();
     } catch (e) {
-      setSaving(false);
-      // Common case: rules denial because the user isn't classified
-      // as 'executive' in their profile. Surface the actual error.
-      const code = e?.code || '';
+      const code = (e?.code || '').toLowerCase();
       const msg = e?.message || 'Try again.';
-      const help = code.includes('permission-denied')
-        ? '\n\nThis usually means your account isn\'t marked as executive in Firestore. Open Manage Members → tap your name → set role to Executive.'
-        : '';
-      notify('Could not save', msg + help);
+      const isPerm = code.includes('permission-denied') || msg.toLowerCase().includes('missing or insufficient');
+      if (!isPerm) {
+        setSaving(false);
+        notify('Could not save', msg);
+        return;
+      }
+
+      // Self-heal: offer to promote the signed-in user to executive
+      // in-place (self-write is allowed by the Firestore rule). If
+      // they accept, retry the save without re-opening the modal.
+      const ok = await confirm(
+        'You don\'t have executive permission yet',
+        'BetterNature chapters can only be created by executives. Promote your account to Executive and retry?'
+      );
+      if (!ok) { setSaving(false); return; }
+      try {
+        await selfPromoteToExecutive(authUser?.id);
+        // Refresh in-memory profile so the rest of the app sees the
+        // new role immediately (the Org tab, ContractGate, etc.).
+        const fresh = await getProfile(authUser?.id);
+        if (fresh && setAuthUser) setAuthUser(fresh);
+      } catch (promoteErr) {
+        setSaving(false);
+        notify('Could not upgrade role', promoteErr?.message || 'Sign out, sign back in, and try again.');
+        return;
+      }
+      // Retry the save with the new role in place.
+      try {
+        await attemptSave(payload);
+        await finishOk();
+      } catch (retryErr) {
+        setSaving(false);
+        notify('Still couldn\'t save', retryErr?.message || 'Try again in a moment.');
+      }
     }
   }
 
