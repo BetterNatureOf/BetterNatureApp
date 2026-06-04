@@ -20,14 +20,17 @@ import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { getProfile } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
 
+// Display order: highest org-wide privilege at the top, then chapter
+// officers in their seniority sequence, then plain Member, then the
+// restaurant-portal role on its own at the bottom.
 const ROLE_OPTIONS = [
-  { key: 'member',             label: 'Member',                desc: 'Regular volunteer' },
+  { key: 'executive',          label: 'Executive',             desc: 'Full org control — all chapters, all tools' },
+  { key: 'chapter_president',  label: 'Chapter President',     desc: 'Leads a chapter, can check in and edit metrics' },
   { key: 'chapter_vp',         label: 'Vice President',        desc: 'Backs up the president for one chapter' },
   { key: 'chapter_treas',      label: 'Treasurer',             desc: 'Tracks chapter finance + receipts' },
   { key: 'chapter_vol_coord',  label: 'Volunteer Coordinator', desc: 'Schedules events + recruits members' },
   { key: 'chapter_sec',        label: 'Secretary',             desc: 'Meeting notes + chapter communication' },
-  { key: 'chapter_president',  label: 'Chapter President',     desc: 'Leads a chapter, can check in and edit metrics' },
-  { key: 'executive',          label: 'Executive',             desc: 'Full org control — all chapters, all tools' },
+  { key: 'member',             label: 'Member',                desc: 'Regular volunteer' },
   { key: 'restaurant',         label: 'Restaurant Partner',    desc: 'Restaurant portal access' },
 ];
 

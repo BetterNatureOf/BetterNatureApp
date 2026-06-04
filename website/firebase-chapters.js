@@ -11,17 +11,23 @@ import { db } from './firebase-auth.js';
 export async function listChapters() {
   try {
     const snap = await getDocs(collection(db, 'chapters'));
-    let list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Log the raw count + every doc's name and status so a curious
+    // user can open the devtools console and see exactly what the
+    // marketing site received from Firestore. This is the fastest
+    // way to tell "deploy is stale" vs "Firestore is empty" vs
+    // "doc was created with a status we're filtering out."
+    console.log(`[bn] chapters raw from Firestore: ${raw.length}`);
+    raw.forEach((c) => console.log(`  - ${c.name || c.id} · status=${c.status || '(none)'}`));
     // Show anything that isn't explicitly deactivated or soft-deleted.
-    // Treats a missing/unknown status the same as 'active' so a chapter
-    // that was created before the status field rolled out still shows.
-    list = list.filter((c) =>
+    const list = raw.filter((c) =>
       !c.deleted_at && c.status !== 'inactive' && c.status !== 'deleted'
     );
     list.sort((a, b) => (a.city || a.name || '').localeCompare(b.city || b.name || ''));
+    console.log(`[bn] chapters after filter: ${list.length}`);
     return list;
   } catch (e) {
-    console.warn('listChapters failed', e);
+    console.warn('[bn] listChapters failed', e);
     throw e;
   }
 }
