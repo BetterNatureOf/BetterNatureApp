@@ -383,18 +383,6 @@
     : C.chapters.featured;
   const liveLoaded = Array.isArray(liveChapters);
 
-  // ── Visible diagnostic strip ────────────────────────────────────
-  // Prints the raw Firestore result inline so we can tell, without
-  // touching devtools, whether the live read is succeeding. Tinted
-  // yellow on purpose — it disappears the moment Orlando shows up.
-  const diag = document.createElement('div');
-  diag.style.cssText = 'background:#FEF9C3;border:1px solid #FDE68A;color:#854D0E;padding:10px 14px;border-radius:10px;font-size:12px;margin-bottom:16px;font-family:-apple-system,Helvetica,Arial,sans-serif';
-  diag.textContent = liveLoaded
-    ? `[debug] Firestore returned ${liveChapters.length} chapter${liveChapters.length === 1 ? '' : 's'}: ${liveChapters.map((c) => c.name || c.city || c.id).join(', ') || '(none)'}. If this isn't current, hard-refresh (Cmd+Shift+R).`
-    : `[debug] Live Firestore read failed; falling back to the static featured list. Console will say why.`;
-  const grid = document.getElementById('chaptersGrid');
-  if (grid && grid.parentNode) grid.parentNode.insertBefore(diag, grid);
-
   if (renderChapters.length === 0) {
     setHTML('#chaptersGrid', `
       <div class="chapter chapter--empty">
