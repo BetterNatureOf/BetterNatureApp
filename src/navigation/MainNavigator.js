@@ -231,6 +231,7 @@ export default function MainNavigator() {
       <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
       <Stack.Screen name="PickupDetail" component={PickupDetail} />
       <Stack.Screen name="ChapterChecklist" component={ChapterChecklist} />
+      <Stack.Screen name="StartChapter" component={require('../screens/chapter/StartChapter').default} />
       <Stack.Screen name="FindChapter" component={FindChapter} />
       <Stack.Screen name="MyTaxReceipts" component={VolunteerTaxReceipts} />
       <Stack.Screen name="Refer" component={ReferScreen} />

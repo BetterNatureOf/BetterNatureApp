@@ -156,21 +156,9 @@ export default function IrisScreen({ navigation }) {
         )}
       </View>
 
-      {/* BN Map link (food insecurity + fridges) */}
-      <TouchableOpacity
-        style={styles.mapCard}
-        activeOpacity={0.8}
-        onPress={() => navigation.navigate('BNMap')}
-      >
-        <View style={styles.mapIconWrap}>
-          <Text style={styles.mapIcon}>{'\u{1F5FA}'}\uFE0F</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.mapTitle}>BN Map</Text>
-          <Text style={styles.mapSubtitle}>Food-insecurity heatmap + the live fridge network</Text>
-        </View>
-        <Text style={styles.mapArrow}>{'\u203A'}</Text>
-      </TouchableOpacity>
+      {/* The 'Open the full BN Map \u2192' CTA inside FridgeLeafletMap
+          already routes to BNMap, so we don't need a second link
+          card here. (Removed per redesign \u2014 was a duplicate.) */}
 
       <BrushDivider color={Colors.sage} />
 

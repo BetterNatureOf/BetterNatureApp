@@ -25,16 +25,49 @@ import Card from '../../components/ui/Card';
 import StatCard from '../../components/ui/StatCard';
 import BrushDivider from '../../components/ui/BrushDivider';
 import useAuthStore from '../../store/authStore';
+import { TextInput } from 'react-native';
 import {
-  ensureReferralCode, getReferralStats, referralLink,
+  ensureReferralCode, getReferralStats, referralLink, applyReferral,
 } from '../../services/referrals';
 import Screen from '../../components/ui/Screen';
+import { notify } from '../../services/ui';
 
 export default function ReferScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const [code, setCode] = useState(user?.referral_code || null);
   const [count, setCount] = useState(user?.referrals_count || 0);
   const [loading, setLoading] = useState(true);
+  // Whether this user has already used someone's code. Once set, the
+  // input is locked — referred_by is one-write-only by design (also
+  // enforced server-side in applyReferral).
+  const [referredBy, setReferredBy] = useState(user?.referred_by || null);
+  const [pendingCode, setPendingCode] = useState('');
+  const [applying, setApplying] = useState(false);
+
+  async function handleApplyCode() {
+    const raw = (pendingCode || '').trim().toUpperCase();
+    if (!raw) { notify('Code required', 'Type the referral code your friend gave you.'); return; }
+    if (raw === code) { notify('That\'s your own code', 'You can\'t use your own code.'); return; }
+    setApplying(true);
+    try {
+      const result = await applyReferral(user.id, raw);
+      if (!result?.ok) {
+        notify('Could not apply', result?.reason === 'no_match'
+          ? 'No one owns that code. Double-check it with your friend.'
+          : result?.reason === 'already_referred'
+          ? 'You already used a referral code on this account.'
+          : 'Could not apply this code.');
+        return;
+      }
+      setReferredBy(result.inviterId || true);
+      setPendingCode('');
+      if (setUser) setUser({ ...user, referred_by: result.inviterId || true });
+      notify('Code applied', 'Thanks! Your friend just got the credit.');
+    } catch (e) {
+      notify('Could not apply', e?.message || 'Try again.');
+    } finally { setApplying(false); }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -109,6 +142,37 @@ export default function ReferScreen({ navigation }) {
 
       <BrushDivider />
 
+      {/* Post-signup code entry — only visible until the user has used
+          one code. After that the input is replaced by a confirmation
+          line so the rule (one code per account) is obvious. */}
+      <Card style={styles.applyCard}>
+        <Text style={styles.applyLabel}>Have a friend's code?</Text>
+        {referredBy ? (
+          <Text style={styles.applyDone}>You've already used a referral code on this account. ✓</Text>
+        ) : (
+          <>
+            <Text style={styles.applyHelp}>
+              You can enter one code on your account — only one, ever. After that, you can only give your code to others.
+            </Text>
+            <View style={styles.applyRow}>
+              <TextInput
+                style={styles.applyInput}
+                value={pendingCode}
+                onChangeText={(v) => setPendingCode(v.toUpperCase())}
+                placeholder="e.g. BN7Q9X4K"
+                placeholderTextColor={Colors.grayMid}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={16}
+              />
+              <Button title="Apply" onPress={handleApplyCode} loading={applying} style={{ minWidth: 100 }} />
+            </View>
+          </>
+        )}
+      </Card>
+
+      <BrushDivider />
+
       <View style={styles.statsRow}>
         <StatCard number={count} label="Friends joined" color={Colors.green} style={styles.stat} />
         <StatCard number={code ? '1' : '0'} label="Active link" color={Colors.pink} style={styles.stat} />
@@ -168,4 +232,14 @@ const styles = StyleSheet.create({
   how: { color: Colors.green, paddingHorizontal: 24, marginBottom: 12 },
   howCard: { marginHorizontal: 24, padding: 18 },
   step: { ...Type.body, color: Colors.dark, marginBottom: 8, lineHeight: 22 },
+  applyCard: { marginHorizontal: 24, marginVertical: 16, padding: 16 },
+  applyLabel: { fontSize: 14, fontWeight: '800', color: Colors.green },
+  applyHelp: { ...Type.caption, color: Colors.gray, marginTop: 6, lineHeight: 18 },
+  applyDone: { ...Type.caption, color: Colors.green, marginTop: 6, fontWeight: '700' },
+  applyRow: { flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'stretch' },
+  applyInput: {
+    flex: 1, borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, fontWeight: '700',
+    letterSpacing: 1.4, color: Colors.green, backgroundColor: '#FAF8F1',
+  },
 });

@@ -81,7 +81,13 @@ function WebRobinson({ presence }) {
   const layers = useMemo(() => {
     if (!ready || typeof window === 'undefined' || !window.__bnWorldGeo) return null;
     const { d3, topojson, world, usStates } = window.__bnWorldGeo;
-    const projection = d3.geoRobinson().fitSize([size.w, size.h], { type: 'Sphere' });
+    // Prefer Robinson; fall back to NaturalEarth1 (built into d3-geo,
+    // no separate package) if the projection plugin failed to load
+    // or its dependency chain didn't resolve.
+    const projectionFn = typeof d3.geoRobinson === 'function'
+      ? d3.geoRobinson
+      : (typeof d3.geoNaturalEarth1 === 'function' ? d3.geoNaturalEarth1 : d3.geoEquirectangular);
+    const projection = projectionFn().fitSize([size.w, size.h], { type: 'Sphere' });
     const path = d3.geoPath(projection);
 
     const countries = topojson.feature(world, world.objects.countries).features.map((f) => {

@@ -113,8 +113,15 @@ export default function VolunteerTaxReceipts({ navigation }) {
           ))
         )}
 
+        <View style={styles.zeffyNote}>
+          <Text style={styles.zeffyTitle}>About Zeffy donations</Text>
+          <Text style={styles.zeffyBody}>
+            Donations made through our Zeffy widget are receipted directly by Zeffy and emailed to you instantly — those receipts are the IRS-valid record. This screen only shows donations our system tracked (chapter-attributed gifts and any future direct processors).
+          </Text>
+        </View>
+
         <Text style={styles.footer}>
-          For an official year-end statement, email info@betternatureofficial.org. We send the consolidated 1098-equivalent by January 31.
+          For a consolidated year-end statement covering everything, email info@betternatureofficial.org. We send 1098-equivalent summaries by January 31.
         </Text>
       </ResponsiveContainer>
     </Screen>
@@ -144,5 +151,8 @@ const styles = StyleSheet.create({
   rowMeta: { ...Type.caption, marginTop: 2 },
   rowRef: { fontSize: 10, color: Colors.grayMid, marginTop: 4, fontFamily: Platform.OS === 'web' ? 'monospace' : 'Courier' },
   rowCta: { fontSize: 12, color: Colors.pink, fontWeight: '700' },
-  footer: { ...Type.caption, marginTop: 22, textAlign: 'center' },
+  footer: { ...Type.caption, marginTop: 12, textAlign: 'center' },
+  zeffyNote: { backgroundColor: '#FEF9C3', borderRadius: 12, padding: 12, marginTop: 18, borderWidth: 1, borderColor: '#FDE68A' },
+  zeffyTitle: { fontSize: 13, fontWeight: '800', color: '#854D0E' },
+  zeffyBody: { fontSize: 12, color: '#854D0E', marginTop: 4, lineHeight: 18 },
 });

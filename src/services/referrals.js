@@ -65,13 +65,16 @@ export async function ensureReferralCode(userId) {
 // Called from signup flows after the new user's profile is written.
 // Idempotent — safe to call multiple times; only the first call attributes.
 export async function applyReferral(newUserId, code) {
-  if (!isFirebaseConfigured || !newUserId || !code) return { ok: false };
+  if (!isFirebaseConfigured || !newUserId || !code) return { ok: false, reason: 'bad_input' };
   const inviter = await findUserByReferralCode(code);
-  if (!inviter || inviter.id === newUserId) return { ok: false };
+  if (!inviter) return { ok: false, reason: 'no_match' };
+  if (inviter.id === newUserId) return { ok: false, reason: 'self' };
 
   const newRef = doc(db, 'users', newUserId);
   const newSnap = await getDoc(newRef);
-  if (newSnap.exists() && newSnap.data().referred_by) return { ok: false };
+  if (newSnap.exists() && newSnap.data().referred_by) {
+    return { ok: false, reason: 'already_referred' };
+  }
 
   await updateDoc(newRef, { referred_by: inviter.id });
   await updateDoc(doc(db, 'users', inviter.id), {
