@@ -10,13 +10,13 @@
 const CDN_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const CDN_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 
-const D3_GEO         = 'https://cdn.jsdelivr.net/npm/d3-geo@3/dist/d3-geo.min.js';
-// d3-geo-projection's UMD reads d3-array off the global d3 namespace.
-// If d3-array isn't there first, geoRobinson() throws
-// "r.geoProjection is not a function" mid-factory. Load array before
-// projection so the projection factory finds everything it expects.
-const D3_ARRAY       = 'https://cdn.jsdelivr.net/npm/d3-array@3/dist/d3-array.min.js';
-const D3_PROJECTION  = 'https://cdn.jsdelivr.net/npm/d3-geo-projection@4/dist/d3-geo-projection.min.js';
+// Use the full d3 v7 UMD bundle. It carries d3-geo (with
+// geoNaturalEarth1, geoEqualEarth, geoProjection, geoPath) baked in,
+// so we don't have to babysit the d3-geo + d3-array + d3-geo-projection
+// dependency chain that kept exploding with "r.geoProjection is not a
+// function" mid-render. NaturalEarth1 looks essentially the same as
+// Robinson for thematic world maps and ships as core d3.
+const D3_BUNDLE      = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
 const TOPOJSON       = 'https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js';
 const WORLD_ATLAS    = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 const US_STATES      = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json';
@@ -45,11 +45,9 @@ export function ensureWorldGeo() {
   if (window.__bnWorldGeo) return Promise.resolve(window.__bnWorldGeo);
   if (window.__bnWorldGeoLoading) return window.__bnWorldGeoLoading;
   window.__bnWorldGeoLoading = (async () => {
-    // Strict order: d3-geo + d3-array first, then geo-projection (which
-    // depends on both), then topojson-client.
-    await loadScriptOnce(D3_GEO);
-    await loadScriptOnce(D3_ARRAY);
-    await loadScriptOnce(D3_PROJECTION);
+    // d3 bundle first (gives us d3.geoNaturalEarth1, d3.geoPath, etc.)
+    // then topojson-client for decoding world-atlas TopoJSON.
+    await loadScriptOnce(D3_BUNDLE);
     await loadScriptOnce(TOPOJSON);
     // Parallel fetch — world borders + US states. The states layer
     // gives the Robinson choropleth real US sub-national outlines so

@@ -81,12 +81,12 @@ function WebRobinson({ presence }) {
   const layers = useMemo(() => {
     if (!ready || typeof window === 'undefined' || !window.__bnWorldGeo) return null;
     const { d3, topojson, world, usStates } = window.__bnWorldGeo;
-    // Prefer Robinson; fall back to NaturalEarth1 (built into d3-geo,
-    // no separate package) if the projection plugin failed to load
-    // or its dependency chain didn't resolve.
-    const projectionFn = typeof d3.geoRobinson === 'function'
-      ? d3.geoRobinson
-      : (typeof d3.geoNaturalEarth1 === 'function' ? d3.geoNaturalEarth1 : d3.geoEquirectangular);
+    // NaturalEarth1 is part of d3-geo (shipped in the d3@7 bundle)
+    // and is visually nearly identical to Robinson — same family of
+    // pseudo-cylindrical thematic projections with curved sides.
+    const projectionFn = typeof d3.geoNaturalEarth1 === 'function'
+      ? d3.geoNaturalEarth1
+      : (typeof d3.geoEqualEarth === 'function' ? d3.geoEqualEarth : d3.geoEquirectangular);
     const projection = projectionFn().fitSize([size.w, size.h], { type: 'Sphere' });
     const path = d3.geoPath(projection);
 
