@@ -27,6 +27,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import useAuthStore from '../../store/authStore';
 import { loadSiteContent, saveSiteContent } from '../../services/siteContent';
+import { DEFAULT_SITE_CONTENT } from '../../data/defaultSiteContent';
 import { notify, confirm } from '../../services/ui';
 
 // All editable section toggles. Matches the SECTION_META array from
@@ -142,7 +143,13 @@ export default function WebsiteContent({ navigation }) {
   const load = useCallback(async () => {
     try {
       const live = await loadSiteContent();
-      setForm(live ? deepMerge(BLANK, live) : BLANK);
+      // Seed order: BLANK shape -> DEFAULT_SITE_CONTENT values
+      // (mirrors website/content.js so the editor opens with the
+      // homepage copy filled in) -> LIVE Firestore overrides. Later
+      // layers win in deepMerge, so user edits take priority over
+      // defaults, and defaults take priority over empty shape.
+      const withDefaults = deepMerge(BLANK, DEFAULT_SITE_CONTENT);
+      setForm(live ? deepMerge(withDefaults, live) : withDefaults);
     } catch (e) {
       console.warn('site content load failed', e);
     } finally {
