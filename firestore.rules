@@ -191,6 +191,17 @@ service cloud.firestore {
       allow delete: if isSelf(resource.data.user_id) || isAdmin();
     }
 
+    // ── notifications_outbox ──
+    // Drained by the Cloudflare dispatcher worker, which sends each
+    // doc out as email/push. Open create so unauth signup-flow
+    // surfaces (chapter applications, partner forms) can drop a
+    // receipt; read/delete reserved for the dispatcher's service
+    // account and execs.
+    match /notifications_outbox/{id} {
+      allow create: if true;
+      allow read, update, delete: if isExec();
+    }
+
     // ── member_activity ──
     match /member_activity/{id} {
       allow read: if isSignedIn();
