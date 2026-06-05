@@ -66,20 +66,53 @@ export default function PickupDetail({ route, navigation }) {
     } finally { setVerifying(false); }
   }
 
+  const [loadError, setLoadError] = useState(null);
+
+  // Re-pull whenever the pickupId in params changes. Previously this
+  // only ran once on mount, so opening a second pickup from the
+  // dashboard kept showing the first one (or got stuck on the
+  // spinner if the initial route had no pickup payload).
   useEffect(() => {
-    if (!pickupId || pickup) return;
+    if (!pickupId) {
+      setLoadError('No pickup id was passed to this screen.');
+      return;
+    }
+    let alive = true;
+    setLoadError(null);
     (async () => {
       try {
         const snap = await getDoc(doc(db, 'pickups', pickupId));
-        if (snap.exists()) setPickup({ id: snap.id, ...snap.data() });
-      } catch (e) { console.warn('pickup load', e); }
+        if (!alive) return;
+        if (snap.exists()) {
+          setPickup({ id: snap.id, ...snap.data() });
+        } else {
+          setLoadError("Couldn't find this pickup — it may have been deleted.");
+        }
+      } catch (e) {
+        console.warn('pickup load', e);
+        if (alive) setLoadError(e?.message || 'Failed to load this pickup.');
+      }
     })();
-  }, [pickupId, pickup]);
+    return () => { alive = false; };
+  }, [pickupId]);
 
+  if (loadError) {
+    return (
+      <View style={styles.loading}>
+        <Text style={{ color: Colors.dark, textAlign: 'center', padding: 24 }}>
+          {loadError}
+        </Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 12 }}>
+          <Text style={{ color: Colors.green, fontWeight: '700' }}>‹ Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
   if (!pickup) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={Colors.green} />
+        <Text style={{ marginTop: 12, color: Colors.grayMid }}>Loading pickup…</Text>
       </View>
     );
   }

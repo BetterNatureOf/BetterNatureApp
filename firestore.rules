@@ -312,7 +312,17 @@ service cloud.firestore {
     // fridges); volunteers and restaurants merely read.
     match /fridges/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      // Exec writes anywhere. A chapter pres can add/edit fridges
+      // ONLY for their own chapter (chapter_id on create/update must
+      // match the writer's user.chapter_id, and the existing chapter
+      // on edits must match too — no moving a fridge into another
+      // chapter from the pres view).
+      allow create: if isExec()
+                    || isPresOfChapter(request.resource.data.chapter_id);
+      allow update: if isExec()
+                    || (isPresOfChapter(resource.data.chapter_id)
+                        && isPresOfChapter(request.resource.data.chapter_id));
+      allow delete: if isAdmin();
     }
 
     // ── admin_invites (website /admin.html) ──

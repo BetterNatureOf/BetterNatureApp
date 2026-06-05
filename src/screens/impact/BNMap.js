@@ -9,15 +9,22 @@
 // Both tabs feed off the same data layers the marketing site uses,
 // so the in-app map and the public map always tell the same story.
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Linking, Platform, TextInput } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
+import Button from '../../components/ui/Button';
 import { POINTS, loadLiveFridges } from '../../data/impactMap';
 import WorldInsecurityMap from '../../components/maps/WorldInsecurityMap';
 import FridgeLeafletMap from '../../components/maps/FridgeLeafletMap';
 import FridgeListView from '../../components/maps/FridgeListView';
+import { createFridge } from '../../services/fridges';
+import { fetchAllChapters } from '../../services/database';
+import useAuthStore from '../../store/authStore';
+import { notify } from '../../services/ui';
+
+const EXEC_LIKE = new Set(['executive', 'admin', 'super_admin', 'chapter_president', 'chapter_pres']);
 
 const TABS = [
   { key: 'insecurity', label: 'Food Insecurity' },
@@ -25,17 +32,30 @@ const TABS = [
 ];
 
 export default function BNMap({ navigation }) {
+  const user = useAuthStore((s) => s.user);
+  const canAddFridge = EXEC_LIKE.has(user?.role);
   const [tab, setTab] = useState('insecurity');
   const [fridgeView, setFridgeView] = useState('map'); // 'map' | 'list'
   const [fridges, setFridges] = useState([]);
+  const [chapters, setChapters] = useState([]);
+  const [showAddFridge, setShowAddFridge] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
   const [geoState, setGeoState] = useState('idle'); // idle | asking | granted | denied | unsupported
+
+  async function reloadFridges() {
+    try {
+      const list = await loadLiveFridges();
+      setFridges(list);
+    } catch {}
+  }
 
   useEffect(() => {
     let alive = true;
     loadLiveFridges()
       .then((list) => { if (alive) setFridges(list); })
       .catch(() => {});
+    // Chapter dropdown for the Add Fridge form.
+    fetchAllChapters().then((cs) => { if (alive) setChapters(cs); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -139,6 +159,30 @@ export default function BNMap({ navigation }) {
                 ) : null}
               </View>
 
+              {canAddFridge ? (
+                <View style={{ marginBottom: 14 }}>
+                  <TouchableOpacity
+                    style={styles.addFridgeBtn}
+                    onPress={() => setShowAddFridge((v) => !v)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.addFridgeBtnText}>
+                      {showAddFridge ? 'Close' : '+ Add a fridge'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showAddFridge ? (
+                    <AddFridgeForm
+                      chapters={chapters}
+                      onCreated={async () => {
+                        setShowAddFridge(false);
+                        await reloadFridges();
+                        notify('Fridge added', 'It will appear on the map within a few seconds.');
+                      }}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
+
               {fridgeView === 'map' && Platform.OS === 'web' ? (
                 <FridgeLeafletMap fridges={fridges} userLocation={userLocation} height={580} />
               ) : (
@@ -169,6 +213,100 @@ export default function BNMap({ navigation }) {
         ) : null}
       </ResponsiveContainer>
     </Screen>
+  );
+}
+
+// Geocode a free-text address via OSM's Nominatim. Best-effort; if
+// it 429s we still save the fridge — exec can edit lat/lng later.
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!Array.isArray(json) || !json.length) return null;
+    const r = json[0];
+    return { lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
+  } catch { return null; }
+}
+
+function AddFridgeForm({ chapters, onCreated }) {
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [hours, setHours] = useState('Open 24/7');
+  const [capacity, setCapacity] = useState('medium');
+  const [chapterId, setChapterId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!name.trim() || !address.trim() || !city.trim()) {
+      notify('Required', 'Name, address, and city are required.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const fullAddr = `${address.trim()}, ${city.trim()}${state.trim() ? ', ' + state.trim() : ''}`;
+      const coords = await geocodeAddress(fullAddr);
+      await createFridge({
+        name: name.trim(),
+        address: fullAddr,
+        city: city.trim(),
+        state: state.trim() || null,
+        hours: hours.trim() || null,
+        capacity,
+        chapter_id: chapterId || null,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+        active: true,
+      });
+      onCreated && onCreated();
+    } catch (e) {
+      notify('Could not save', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <View style={styles.fridgeForm}>
+      <Text style={styles.formHeading}>New community fridge</Text>
+      <TextInput style={styles.input} placeholder="Fridge name (e.g. Cooper-Young Fridge)" value={name} onChangeText={setName} placeholderTextColor={Colors.grayMid} />
+      <TextInput style={styles.input} placeholder="Street address" value={address} onChangeText={setAddress} placeholderTextColor={Colors.grayMid} />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TextInput style={[styles.input, { flex: 2 }]} placeholder="City" value={city} onChangeText={setCity} placeholderTextColor={Colors.grayMid} />
+        <TextInput style={[styles.input, { flex: 1 }]} placeholder="State / region" value={state} onChangeText={setState} placeholderTextColor={Colors.grayMid} />
+      </View>
+      <TextInput style={styles.input} placeholder="Hours (e.g. 7am – 9pm)" value={hours} onChangeText={setHours} placeholderTextColor={Colors.grayMid} />
+
+      <Text style={styles.formLabel}>Chapter</Text>
+      <View style={styles.chipRow}>
+        {chapters.map((c) => {
+          const active = c.id === chapterId;
+          return (
+            <TouchableOpacity key={c.id} onPress={() => setChapterId(c.id)} style={[styles.chip, active && styles.chipActive]} activeOpacity={0.85}>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{c.name || c.city}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <Text style={styles.formLabel}>Capacity</Text>
+      <View style={styles.chipRow}>
+        {['low', 'medium', 'high'].map((k) => {
+          const active = capacity === k;
+          return (
+            <TouchableOpacity key={k} onPress={() => setCapacity(k)} style={[styles.chip, active && styles.chipActive]} activeOpacity={0.85}>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{k}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <Button title={busy ? 'Saving…' : 'Save fridge'} onPress={submit} loading={busy} style={{ marginTop: 12 }} />
+      <Text style={styles.formNote}>
+        We'll geocode the address automatically. If we can't find it, the fridge still saves and you can fix the coordinates later in Settings.
+      </Text>
+    </View>
   );
 }
 
@@ -219,4 +357,36 @@ const styles = StyleSheet.create({
   locateBtnText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
   locateState: { ...Type.caption, color: Colors.grayMid },
   locateStateOn: { fontSize: 12, color: Colors.green, fontWeight: '700' },
+
+  addFridgeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.green,
+    paddingVertical: 10, paddingHorizontal: 16,
+    borderRadius: Radius.pill,
+  },
+  addFridgeBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
+
+  fridgeForm: {
+    marginTop: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: Radius.lg,
+    padding: 16,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+  },
+  formHeading: { fontSize: 16, fontWeight: '800', color: Colors.green, marginBottom: 10 },
+  input: {
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+    paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: Colors.dark,
+    marginBottom: 8,
+  },
+  formLabel: { fontSize: 12, fontWeight: '700', color: Colors.gray, marginTop: 6, marginBottom: 6, letterSpacing: 0.4 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: Radius.pill, backgroundColor: '#FFF', borderWidth: 1, borderColor: Colors.glassBorder },
+  chipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
+  chipText: { fontSize: 12, fontWeight: '600', color: Colors.dark },
+  chipTextActive: { color: '#FFF' },
+  formNote: { ...Type.caption, color: Colors.grayMid, marginTop: 8, lineHeight: 16 },
 });
