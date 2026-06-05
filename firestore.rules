@@ -93,9 +93,28 @@ service cloud.firestore {
     }
 
     // ── pickups ──
+    // Restaurants create their own pickups when they post surplus.
+    // Volunteers update them as they claim / arrive / deliver.
+    // Execs can do anything for the org-wide queue management.
+    function isRestaurantUser() {
+      return isSignedIn() && role() == 'restaurant';
+    }
     match /pickups/{id} {
       allow read: if isSignedIn();
-      allow create, update: if isExec();
+      // Restaurant creates a pickup whose restaurant_id matches
+      // either their own uid or their linked restaurant_id, and
+      // status starts at 'available'. Execs can also seed pickups.
+      allow create: if isExec() || (
+        isRestaurantUser()
+        && request.resource.data.restaurant_id in [request.auth.uid, get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id]
+        && request.resource.data.status == 'available'
+      );
+      // Volunteer state transitions are scoped to the claimer.
+      // Restaurant can update their own pickups (cancel, edit photo).
+      // Execs override either.
+      allow update: if isExec()
+        || (isSignedIn() && resource.data.restaurant_id in [request.auth.uid, get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id])
+        || (isSignedIn() && (resource.data.claimed_by == request.auth.uid || request.resource.data.claimed_by == request.auth.uid));
       allow delete: if isAdmin();
     }
 
