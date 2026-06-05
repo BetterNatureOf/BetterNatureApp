@@ -77,6 +77,32 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── chapter_applications ──
+    // Submitted from the signup-flow "Start a chapter" screen, which
+    // means the writer is often NOT yet authenticated. Allow open
+    // create with the required shape; exec reviews and approves to
+    // materialize the real /chapters/{id} doc.
+    match /chapter_applications/{id} {
+      allow read: if isExec();
+      allow create: if request.resource.data.status == 'pending'
+                    && request.resource.data.proposed_name is string
+                    && request.resource.data.city is string;
+      allow update, delete: if isExec();
+    }
+
+    // ── chapter_join_requests ──
+    // Existing users asking to switch into / join a chapter. Set on
+    // the user's request; exec approves which then flips
+    // users/{uid}.chapter_id and marks the request approved.
+    match /chapter_join_requests/{id} {
+      allow read: if isExec()
+                  || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if isSignedIn()
+                    && request.resource.data.user_id == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      allow update, delete: if isExec();
+    }
+
     // ── events ──
     match /events/{id} {
       allow read: if true;

@@ -34,6 +34,7 @@ import { confirmWithPassword } from '../../services/passwordConfirm';
 import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { getProfile } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
+import ChapterApprovals from './ChapterApprovals';
 
 // Officer slots, in display order. chapter_pres kept as an alias for
 // chapter_president since older accounts used the short form.
@@ -409,6 +410,8 @@ export default function ManageChapters({ navigation }) {
             <Text style={styles.addBtnText}>+ Add chapter</Text>
           </TouchableOpacity>
         </View>
+
+        <ChapterApprovals onApproved={load} />
 
         {needsPromote ? (
           <View style={styles.promoteBanner}>

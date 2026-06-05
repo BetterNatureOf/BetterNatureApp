@@ -12,6 +12,8 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import { fetchChapters } from '../../services/database';
 import { updateProfile } from '../../services/auth';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import useAuthStore from '../../store/authStore';
 import { notify, confirm } from '../../services/ui';
 
@@ -46,19 +48,47 @@ export default function FindChapter({ navigation }) {
     }
     const switching = !!user?.chapter_id;
     const ok = await confirm(
-      switching ? 'Switch chapter?' : 'Join chapter?',
+      switching ? 'Request to switch chapter?' : 'Request to join chapter?',
       switching
-        ? `Move from your current chapter to ${chapter.name}? Your history stays with you.`
-        : `Add yourself to the ${chapter.name} roster?`
+        ? `Submit a request to move from your current chapter to ${chapter.name}? An executive will review and approve before the switch takes effect.`
+        : `Submit a request to join ${chapter.name}? An executive will review and approve before you're added to the roster.`
     );
     if (!ok) return;
     setSaving(chapter.id);
     try {
-      await updateProfile(user.id, { chapter_id: chapter.id });
-      if (setUser) setUser({ ...user, chapter_id: chapter.id, chapter: { id: chapter.id, name: chapter.name } });
-      notify('Done', `You're on the ${chapter.name} roster.`);
+      // Approval-gated. Write a join request — exec approves it from
+      // ManageChapters, which is what actually flips the user's
+      // chapter_id. The user retains current access until approved.
+      await addDoc(collection(db, 'chapter_join_requests'), {
+        user_id: user.id,
+        user_name: user.full_name || user.name || user.email || null,
+        user_email: user.email || null,
+        from_chapter_id: user.chapter_id || null,
+        to_chapter_id: chapter.id,
+        to_chapter_name: chapter.name,
+        kind: switching ? 'switch' : 'join',
+        status: 'pending',
+        created_at: serverTimestamp(),
+      });
+      // Mark the user as having a pending chapter change so other UI
+      // can show the "Pending approval" state.
+      await updateProfile(user.id, {
+        pending_chapter_id: chapter.id,
+        pending_chapter_name: chapter.name,
+        chapter_request_status: 'pending',
+      });
+      if (setUser) setUser({
+        ...user,
+        pending_chapter_id: chapter.id,
+        pending_chapter_name: chapter.name,
+        chapter_request_status: 'pending',
+      });
+      notify(
+        'Request submitted',
+        `Your request to ${switching ? 'switch to' : 'join'} ${chapter.name} is under review. We'll notify you once approved.`
+      );
     } catch (e) {
-      notify('Could not join', e?.message || 'Try again.');
+      notify('Could not submit', e?.message || 'Try again.');
     } finally { setSaving(null); }
   }
 
@@ -86,6 +116,8 @@ export default function FindChapter({ navigation }) {
         ) : (
           filtered.map((c) => {
             const isMine = user?.chapter_id === c.id;
+            const isPending = user?.pending_chapter_id === c.id
+              && user?.chapter_request_status === 'pending';
             return (
               <View key={c.id} style={styles.card}>
                 <View style={{ flex: 1 }}>
@@ -96,9 +128,11 @@ export default function FindChapter({ navigation }) {
                 </View>
                 {isMine ? (
                   <View style={styles.mineBadge}><Text style={styles.mineBadgeText}>Your chapter</Text></View>
+                ) : isPending ? (
+                  <View style={styles.mineBadge}><Text style={styles.mineBadgeText}>Pending review</Text></View>
                 ) : (
                   <Button
-                    title={user?.chapter_id ? 'Switch' : 'Join'}
+                    title={user?.chapter_id ? 'Request switch' : 'Request to join'}
                     onPress={() => join(c)}
                     loading={saving === c.id}
                     style={{ minWidth: 110 }}
