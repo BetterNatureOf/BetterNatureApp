@@ -812,6 +812,9 @@ export async function completePickup(pickupId, actualWeightLbs) {
       pk.completed_at = new Date().toISOString();
       const weight = actualWeightLbs || pk.estimated_weight_lbs || 0;
       const meals = Math.round(weight * 1.2);
+      const claimedAtMs = pk.claimed_at ? new Date(pk.claimed_at).getTime() : Date.now();
+      const elapsedH = (Date.now() - claimedAtMs) / 3600000;
+      const hoursEarned = Math.max(0.25, Math.min(12, +elapsedH.toFixed(2)));
       if (pk.claimed_by) {
         mockMemberActivity.push({
           id: `a-pk-${Date.now()}`,
@@ -819,7 +822,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
           date: new Date().toISOString().split('T')[0],
           project: 'iris',
           meals,
-          hours: 1,
+          hours: hoursEarned,
           events: 0,
           raised: 0,
           source_type: 'pickup_complete',
@@ -828,7 +831,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
         const member = mockMembers.find((m) => m.id === pk.claimed_by);
         if (member) {
           member.meals_rescued = (member.meals_rescued || 0) + meals;
-          member.hours_logged = (member.hours_logged || 0) + 1;
+          member.hours_logged = (member.hours_logged || 0) + hoursEarned;
         }
       }
     }
@@ -844,10 +847,22 @@ export async function completePickup(pickupId, actualWeightLbs) {
   const meals = Math.round(weight * 1.2);
   const now = new Date().toISOString();
 
+  // Volunteer earns the actual elapsed time between claiming the
+  // pickup and marking it delivered — that's how long they spent on
+  // the run. Clamped to [0.25h, 12h]: a quick neighborhood drop still
+  // counts as 15 min, and a forgotten/stuck pickup can't grant a
+  // full day of hours.
+  const claimedAtMs = pk.claimed_at?.toDate
+    ? pk.claimed_at.toDate().getTime()
+    : pk.claimed_at ? new Date(pk.claimed_at).getTime() : Date.now();
+  const elapsedH = (Date.now() - claimedAtMs) / 3600000;
+  const hoursEarned = Math.max(0.25, Math.min(12, +elapsedH.toFixed(2)));
+
   await updateDoc(pkRef, {
     status: 'completed',
     actual_weight_lbs: weight,
     completed_at: now,
+    hours_earned: hoursEarned,
   });
 
   if (pk.claimed_by) {
@@ -858,7 +873,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
       project: 'iris',
       meals,
       lbs: weight,
-      hours: 1,
+      hours: hoursEarned,
       events: 1, // a completed pickup counts as an activity event
       points: 10 + mealBonusForLog,
       raised: 0,
@@ -881,7 +896,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
         await updateDoc(userRef, {
           meals_rescued: (p.meals_rescued || 0) + meals,
           lbs_rescued:   (p.lbs_rescued   || 0) + weight,
-          hours_logged:  (p.hours_logged  || 0) + 1,
+          hours_logged:  (p.hours_logged  || 0) + hoursEarned,
           events_attended: (p.events_attended || 0) + 1,
           leaderboard_score: (p.leaderboard_score || 0) + points,
           pickups_completed: (p.pickups_completed || 0) + 1,
@@ -898,7 +913,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
     // read. We also bump events:1 so the 'events run' counter ticks
     // forward per rescue.
     try {
-      await bumpOrgStats({ lbs: weight, hours: 1, events: 1 });
+      await bumpOrgStats({ lbs: weight, hours: hoursEarned, events: 1 });
     } catch (e) { console.warn('org stats bump (pickup)', e); }
 
     await addDoc(collection(db, 'notifications'), {
