@@ -6,25 +6,23 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 (async function () {
-  // Merge any admin overrides saved in localStorage on top of CONTENT defaults.
-  // This is how edits from /admin.html show up instantly without rebuilding.
-  function deepMerge(a, b) {
-    if (Array.isArray(b)) return b;
-    if (b && typeof b === 'object') {
-      const out = { ...a };
-      for (const k in b) out[k] = deepMerge(a?.[k], b[k]);
-      return out;
-    }
-    return b;
-  }
   if (!window.CONTENT) { console.error('CONTENT not loaded'); return; }
+
+  // Burn the old admin.html localStorage cache. That editor wrote
+  // to 'betternature.content.overrides' and got deep-merged on top
+  // of content.js — over time visitors accumulated stale entries
+  // (empty arrays from blank tabs, etc.) that wiped sections of
+  // the homepage. The CMS moved to the app's Website Content
+  // screen + Firestore weeks ago; we want every visitor reading
+  // from a clean slate now.
+  try { localStorage.removeItem('betternature.content.overrides'); } catch {}
 
   // Pull the live site_content/main doc from Firestore (edited by execs
   // inside the app's Website Content screen) and merge it over the
   // static content.js defaults. Best-effort — if Firestore is down we
   // fall back to whatever shipped in content.js so the page still paints.
   try {
-    const { applyLiveContent } = await import('./firebase-site-content.js?v=2026-06-05a');
+    const { applyLiveContent } = await import('./firebase-site-content.js?v=2026-06-05b');
     await applyLiveContent();
   } catch (e) {
     console.warn('live site_content unavailable, using static content.js', e);
@@ -37,10 +35,6 @@
   try {
     const refCode = new URL(window.location.href).searchParams.get('ref');
     if (refCode) localStorage.setItem('bn_ref', refCode.trim().toUpperCase());
-  } catch (e) {}
-  try {
-    const overrides = JSON.parse(localStorage.getItem('betternature.content.overrides') || 'null');
-    if (overrides) C = deepMerge(C, overrides);
   } catch (e) {}
 
   const $ = (sel) => document.querySelector(sel);
