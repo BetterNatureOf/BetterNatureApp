@@ -256,6 +256,16 @@ export default function PickupDetail({ route, navigation }) {
             <Text style={styles.verifiedText}>✓ Volunteer pickup verified by you.</Text>
           </View>
         ) : null}
+        {/* Volunteer-side milestone — once the restaurant confirms,
+            the volunteer sees a clear "half-way" banner so they know
+            the handoff is proven and only the drop remains. */}
+        {!userIsRestaurant && pickup.verified_by_restaurant_at && pickup.status !== 'completed' ? (
+          <View style={styles.verifiedNote}>
+            <Text style={styles.verifiedText}>
+              ✓ {pickup.restaurant_name || 'Restaurant'} confirmed pickup. Head to the drop and mark it delivered.
+            </Text>
+          </View>
+        ) : null}
 
         {needsFridge ? (
           <View style={styles.section}>

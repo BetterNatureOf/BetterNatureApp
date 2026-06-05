@@ -24,8 +24,9 @@ function timeAgo(ts) {
   return `${d}d ago`;
 }
 
-function statusTone(status) {
-  if (status === 'enroute') return { bg: '#FFE9CD', fg: '#B8651B', label: 'En route' };
+function statusTone(p) {
+  if (p.verified_by_restaurant_at) return { bg: '#E8E1F4', fg: '#5B3A8E', label: '✓ Picked up' };
+  if (p.status === 'enroute') return { bg: '#FFE9CD', fg: '#B8651B', label: 'En route' };
   return { bg: '#E5EEF7', fg: '#2E5984', label: 'Claimed' };
 }
 
@@ -97,7 +98,7 @@ export default function LiveOps({ chapterId = null, navigation }) {
         pickups.map((p) => {
           const vol = members[p.claimed_by];
           const rest = restaurants[p.restaurant_id];
-          const tone = statusTone(p.status);
+          const tone = statusTone(p);
           return (
             <TouchableOpacity
               key={p.id}

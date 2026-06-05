@@ -738,10 +738,28 @@ export async function cancelPickup(pickupId, reason = '') {
 // the volunteer arrives.
 export async function verifyPickupByRestaurant(pickupId, verifierUid) {
   if (useMock()) return;
-  await updateDoc(doc(db, 'pickups', pickupId), {
+  const ref = doc(db, 'pickups', pickupId);
+  await updateDoc(ref, {
     verified_by_restaurant_at: serverTimestamp(),
     verified_by_restaurant_uid: verifierUid || null,
   });
+  // Ping the volunteer that the restaurant confirmed pickup. Gives
+  // them a visible "half-way" milestone — the restaurant has signed
+  // off, all that's left is the drop.
+  try {
+    const snap = await getDoc(ref);
+    const pk = snap.exists() ? snap.data() : null;
+    if (pk?.claimed_by) {
+      await addDoc(collection(db, 'notifications'), {
+        user_id: pk.claimed_by,
+        title: 'Pickup confirmed by restaurant',
+        body: `${pk.restaurant_name || 'The restaurant'} just confirmed you picked up the food. Drop it off to finish the run.`,
+        data: { type: 'pickup_verified', pickupId },
+        read: false,
+        created_at: serverTimestamp(),
+      });
+    }
+  } catch (e) { console.warn('verify notify volunteer', e); }
 }
 
 // pre-select one — we copy the fridge's address/coords onto the pickup

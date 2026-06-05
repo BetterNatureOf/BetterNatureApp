@@ -24,7 +24,7 @@ import DonationCTA from '../../components/donate/DonationCTA';
 import ContractGate from '../../components/ui/ContractGate';
 import RestaurantApprovalGate from '../../components/ui/RestaurantApprovalGate';
 import {
-  fetchDonationHistory, fetchPickupsByRestaurant,
+  fetchDonationHistory, fetchPickupsByRestaurant, verifyPickupByRestaurant,
 } from '../../services/database';
 import { requireVerifiedId } from '../../services/idGate';
 import { notify, notifyThen, confirm } from '../../services/ui';
@@ -40,6 +40,17 @@ const STATUS_TONE = {
   completed: { bg: '#DFF1E2', fg: '#2E7D32', label: 'Delivered' },
   cancelled: { bg: '#F8DADA', fg: '#8E1B1B', label: 'Cancelled' },
 };
+
+// The verified-by-restaurant flag is the "half-way point" — the
+// volunteer has physically picked the food up from the restaurant
+// and is now on their way to the drop. Surfacing it as its own pill
+// makes it obvious to the restaurant that the handoff happened.
+const VERIFIED_TONE = { bg: '#E8E1F4', fg: '#5B3A8E', label: '✓ Picked up — heading to drop-off' };
+function toneFor(p) {
+  if (p.status === 'completed' || p.status === 'cancelled') return STATUS_TONE[p.status];
+  if (p.verified_by_restaurant_at) return VERIFIED_TONE;
+  return STATUS_TONE[p.status] || STATUS_TONE.available;
+}
 
 function prettyTime(p) {
   // Best-effort: Firestore Timestamp → JS Date → relative-ish label.
@@ -62,6 +73,30 @@ export default function RestDashboard({ navigation }) {
   const [history, setHistory] = useState([]);
   const [pickups, setPickups] = useState([]);
   const [meals, setMeals] = useState(0);
+  const [verifyingId, setVerifyingId] = useState(null);
+
+  // Confirm pickup directly from the dashboard so the restaurant
+  // doesn't have to drill into a detail screen to mark the handoff.
+  async function handleConfirmPickup(p) {
+    const ok = await confirm(
+      'Confirm pickup?',
+      `Confirm that the volunteer has picked up the food from your restaurant. This marks the half-way point — they'll mark it delivered once they drop it off.`
+    );
+    if (!ok) return;
+    setVerifyingId(p.id);
+    try {
+      await verifyPickupByRestaurant(p.id, user?.id);
+      // Optimistically reflect the verification so the card flips to
+      // the "Picked up" pill immediately instead of waiting on a
+      // refetch.
+      setPickups((prev) => prev.map((pk) =>
+        pk.id === p.id ? { ...pk, verified_by_restaurant_at: new Date().toISOString() } : pk
+      ));
+      notify('Pickup confirmed', 'The volunteer is now en route to the drop-off.');
+    } catch (e) {
+      notify('Could not confirm', e?.message || 'Try again.');
+    } finally { setVerifyingId(null); }
+  }
   const [refreshing, setRefreshing] = useState(false);
 
   // Restaurant identifier — we treat the user uid as the restaurant_id
@@ -235,8 +270,14 @@ export default function RestDashboard({ navigation }) {
         ) : (
           <View style={{ gap: 10, marginBottom: 28 }}>
             {pickups.map((p) => {
-              const tone = STATUS_TONE[p.status] || STATUS_TONE.available;
+              const tone = toneFor(p);
               const isDelivered = p.status === 'completed';
+              // Restaurant can confirm the volunteer is on-site once
+              // somebody claims it, but before it's delivered. Hide
+              // the button once we've already stamped the verification.
+              const canConfirmPickup =
+                (p.status === 'claimed' || p.status === 'enroute')
+                && !p.verified_by_restaurant_at;
               return (
                 <View key={p.id}>
                   <AnimatedPressable
@@ -256,6 +297,18 @@ export default function RestDashboard({ navigation }) {
                     </View>
                     <Icon name="chevron" size={18} color={Colors.grayMid} />
                   </AnimatedPressable>
+                  {canConfirmPickup ? (
+                    <TouchableOpacity
+                      onPress={() => handleConfirmPickup(p)}
+                      disabled={verifyingId === p.id}
+                      activeOpacity={0.85}
+                      style={styles.confirmPickupBtn}
+                    >
+                      <Text style={styles.confirmPickupBtnText}>
+                        {verifyingId === p.id ? 'Confirming…' : '✓ Confirm volunteer picked up food'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                   {isDelivered && p.tax_receipt_url ? (
                     <TouchableOpacity
                       style={styles.receiptLink}
@@ -429,6 +482,14 @@ const styles = StyleSheet.create({
   },
   receiptLinkText: { color: '#065F46', fontWeight: '800', fontSize: 13 },
   receiptLinkTextMuted: { color: '#6B7280', fontStyle: 'italic', fontSize: 12 },
+
+  confirmPickupBtn: {
+    marginTop: 6, paddingVertical: 12, paddingHorizontal: 14,
+    backgroundColor: '#5B3A8E',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  confirmPickupBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 
   zeffyCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
