@@ -22,26 +22,39 @@ import { db, isFirebaseConfigured } from '../config/firebase';
 
 const STATS_DOC = 'org_stats/global';
 
-// Pull current totals. Returns zeroes when the doc doesn't exist yet so
-// the website renders a real "we're just starting" state, not fake numbers.
+// Baseline totals we report publicly (chapter-reported through the
+// reporting dashboard). The Firestore counter increments above this
+// floor on every pickup/event so the Impact screen never regresses
+// below the totals we already published on the website.
+//
+// Updated 2026-06-05.
+const BASELINE = {
+  meals: 6963,
+  individuals: 6963,
+  lbs: 2780,
+  co2: 10564,
+  water: 486500,
+  events: 0,
+  hours: 0,
+  volunteers: 0,
+};
+
+// Pull current totals. Floors every counter at the baseline so the
+// Impact screen always reflects our public reporting — even before
+// org_stats/global has been seeded in Firestore.
 export async function getOrgStats() {
-  if (!isFirebaseConfigured) {
-    return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0, volunteers: 0 };
-  }
+  if (!isFirebaseConfigured) return { ...BASELINE };
   const snap = await getDoc(doc(db, 'org_stats', 'global'));
-  if (!snap.exists()) {
-    return { meals: 0, lbs: 0, individuals: 0, co2: 0, water: 0, events: 0, hours: 0, volunteers: 0 };
-  }
-  const d = snap.data();
+  const d = snap.exists() ? snap.data() : {};
   return {
-    meals: d.meals || 0,
-    lbs: d.lbs || 0,
-    individuals: d.individuals || 0,
-    co2: d.co2 || 0,
-    water: d.water || 0,
-    events: d.events || 0,
-    hours: d.hours || 0,
-    volunteers: d.volunteers || 0,
+    meals:       Math.max(BASELINE.meals,       d.meals       || 0),
+    lbs:         Math.max(BASELINE.lbs,         d.lbs         || 0),
+    individuals: Math.max(BASELINE.individuals, d.individuals || 0),
+    co2:         Math.max(BASELINE.co2,         d.co2         || 0),
+    water:       Math.max(BASELINE.water,       d.water       || 0),
+    events:      Math.max(BASELINE.events,      d.events      || 0),
+    hours:       Math.max(BASELINE.hours,       d.hours       || 0),
+    volunteers:  Math.max(BASELINE.volunteers,  d.volunteers  || 0),
   };
 }
 

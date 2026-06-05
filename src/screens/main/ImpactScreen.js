@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Platform } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
@@ -17,9 +18,12 @@ export default function ImpactScreen() {
   const user = useAuthStore((s) => s.user);
   const [org, setOrg] = useState({ meals: 0, lbs: 0, water: 0, co2: 0, events: 0 });
 
-  useEffect(() => {
+  // Reload every time the screen is focused so a pickup completed in
+  // the same session reflects immediately when the user pops back to
+  // the Impact tab — not just on initial mount.
+  useFocusEffect(useCallback(() => {
     getOrgStats().then(setOrg).catch(() => {});
-  }, []);
+  }, []));
 
   return (
     <Screen contentStyle={styles.content}>
@@ -128,7 +132,7 @@ export default function ImpactScreen() {
       </BrushText>
       <Text style={styles.leaderIntro}>
         See who's making the biggest impact. Filter by time, project, or sort
-        by meals, hours, events, or dollars raised.
+        by lbs, hours, events, or dollars raised.
       </Text>
       <LeaderboardBody embedded />
      </ResponsiveContainer>
