@@ -10,7 +10,7 @@
 // starting state matches what visitors actually see.
 export const DEFAULT_SITE_CONTENT = {
   sections: {
-    mission: true, impact: true, programs: true, impactmap: true, bnmap: true,
+    mission: true, impact: true, programs: true, bnmap: true,
     how: true, chapters: true, partners: true, testimonials: true, team: true,
     events: true, press: true, donate: true, getapp: true, signup: true,
   },

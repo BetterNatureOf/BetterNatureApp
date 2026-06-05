@@ -36,7 +36,6 @@ const SECTION_META = [
   { key: 'mission',      label: 'Mission',          sub: 'Three-pillar mission statement' },
   { key: 'impact',       label: 'Impact stats',     sub: 'The big pink numbers' },
   { key: 'programs',     label: 'Programs',         sub: 'IRIS / Evergreen / Hydro cards' },
-  { key: 'impactmap',    label: 'Impact map',       sub: 'Interactive chapter + gap map' },
   { key: 'bnmap',        label: 'BN Map',           sub: 'World choropleth + fridge tabs' },
   { key: 'how',          label: 'Get Involved',     sub: 'Volunteer / Donate / Partner tabs' },
   { key: 'chapters',     label: 'Chapters',         sub: 'Chapter directory grid' },

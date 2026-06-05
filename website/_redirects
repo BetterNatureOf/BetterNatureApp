@@ -9,4 +9,4 @@
 # Friendly hash-anchor short links (no conflict with real files)
 /donate         /#donate         302
 /signup         /#signup         302
-/map            /#impactmap      302
+/map            /#bnmap          302

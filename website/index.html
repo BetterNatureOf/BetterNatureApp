@@ -29,7 +29,7 @@
     <a href="#mission">Mission</a>
     <a href="#impact">Impact</a>
     <a href="#programs">Programs</a>
-    <a href="#impactmap">Map</a>
+    <a href="#bnmap">Map</a>
     <a href="#how">Get Involved</a>
     <a href="#chapters">Chapters</a>
     <a href="#partners">Partner</a>
@@ -120,36 +120,9 @@
   </div>
 </section>
 
-<section class="impactmap" id="impactmap">
-  <div class="container">
-    <div class="impactmap__head">
-      <div class="eyebrow eyebrow--pink" id="impactmapEyebrow"></div>
-      <h2 class="impactmap__title" id="impactmapTitle"></h2>
-      <p class="impactmap__body" id="impactmapBody"></p>
-    </div>
-
-    <div class="impactmap__legend" id="impactmapLegend"></div>
-
-    <div class="impactmap__layout">
-      <div class="impactmap__map" id="impactmapCanvas"></div>
-
-      <aside class="impactmap__side">
-        <div class="impactmap__gap">
-          <div class="impactmap__gapLabel">The gap we're closing</div>
-          <div class="impactmap__gapNum" id="impactmapGapCount">—</div>
-          <div class="impactmap__gapSub" id="impactmapGapSub">cities with high need and no chapter yet</div>
-          <a class="btn btn--pink" href="#signup" id="impactmapGapCta">Start a chapter here</a>
-        </div>
-
-        <div class="impactmap__live" id="impactmapLive"></div>
-
-        <div class="impactmap__selected" id="impactmapSelected">
-          <div class="impactmap__selectedHint">Click any pin on the map to see the story.</div>
-        </div>
-      </aside>
-    </div>
-  </div>
-</section>
+<!-- Impact Map section removed — BN Map (above) is the replacement.
+     Old impactmap JS is now a no-op because none of these IDs exist
+     on the page anymore. -->
 
 <!-- ══════════════════════════ HOW IT WORKS -->
 <section class="how" id="how">
@@ -340,7 +313,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="content.js"></script>
 <script defer src="animate.js"></script>
-<script src="impact-map-data.js"></script>
 <script src="app.js"></script>
 <script type="module" src="live-stats.js"></script>
 <script type="module">
