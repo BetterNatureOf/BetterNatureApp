@@ -202,7 +202,7 @@ export function LeaderboardBody({ embedded = false }) {
       )}
 
       <Text style={styles.footnote}>
-        Overall score = meals + hours{'\u00D7'}8 + events{'\u00D7'}25 + dollars raised. Pickups,
+        Overall score = lbs + hours{'\u00D7'}8 + events{'\u00D7'}25 + dollars raised. Pickups,
         event check-ins, and donations all count automatically.
       </Text>
     </View>
@@ -320,7 +320,7 @@ function LeaderboardRow({ row, sortBy, isMe, wide }) {
       <View style={styles.rowStats}>
         <Text style={styles.rowValue}>{metricValue(row, sortBy)}</Text>
         <Text style={styles.rowSub}>
-          {fmt(row.meals)}m {'\u00B7'} {fmt(row.hours)}h {'\u00B7'} {fmtMoney(row.raised)}
+          {fmt(row.lbs)} lbs {'\u00B7'} {fmt(row.hours)}h {'\u00B7'} {fmtMoney(row.raised)}
         </Text>
       </View>
     </View>

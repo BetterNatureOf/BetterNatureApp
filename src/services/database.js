@@ -496,6 +496,62 @@ export async function fetchPickups(chapterId) {
   return snapToList(snap);
 }
 
+// All in-flight pickups org-wide (or scoped to a chapter). "In-flight"
+// = a volunteer has claimed it but hasn't dropped it off yet. Used by
+// the exec + chapter-pres live-ops dashboard to see who's out doing
+// runs right now.
+export async function fetchActivePickups({ chapterId } = {}) {
+  if (useMock()) {
+    const all = mockPickups || [];
+    return all.filter((p) =>
+      ['claimed', 'enroute'].includes(p.status)
+      && (!chapterId || p.chapter_id === chapterId)
+    );
+  }
+  try {
+    const constraints = [where('status', 'in', ['claimed', 'enroute'])];
+    if (chapterId) constraints.push(where('chapter_id', '==', chapterId));
+    const snap = await getDocs(query(collection(db, 'pickups'), ...constraints));
+    return snapToList(snap);
+  } catch (e) {
+    console.warn('fetchActivePickups failed', e);
+    return [];
+  }
+}
+
+// Pickups completed in the last N hours (default 24). Used on the
+// leader dashboards so execs + chapter presidents see proof of drops
+// the moment volunteers mark them delivered.
+export async function fetchRecentlyCompletedPickups({ chapterId = null, hours = 24 } = {}) {
+  if (useMock()) {
+    const all = mockPickups || [];
+    const cutoff = Date.now() - hours * 3600 * 1000;
+    return all.filter((p) =>
+      p.status === 'completed'
+      && (!chapterId || p.chapter_id === chapterId)
+      && p.completed_at && new Date(p.completed_at).getTime() >= cutoff
+    );
+  }
+  try {
+    const constraints = [where('status', '==', 'completed')];
+    if (chapterId) constraints.push(where('chapter_id', '==', chapterId));
+    const snap = await getDocs(query(collection(db, 'pickups'), ...constraints));
+    const cutoff = Date.now() - hours * 3600 * 1000;
+    return snapToList(snap).filter((p) => {
+      const t = p.completed_at?.toDate ? p.completed_at.toDate().getTime()
+              : p.completed_at ? new Date(p.completed_at).getTime() : 0;
+      return t >= cutoff;
+    }).sort((a, b) => {
+      const ta = a.completed_at?.toDate ? a.completed_at.toDate().getTime() : new Date(a.completed_at || 0).getTime();
+      const tb = b.completed_at?.toDate ? b.completed_at.toDate().getTime() : new Date(b.completed_at || 0).getTime();
+      return tb - ta;
+    });
+  } catch (e) {
+    console.warn('fetchRecentlyCompletedPickups failed', e);
+    return [];
+  }
+}
+
 // Pickups posted by a specific restaurant, newest first. Used by the
 // restaurant dashboard so partners see real-time status of their own
 // donations (available → claimed → enroute → completed) without having
@@ -1304,7 +1360,11 @@ export async function createOrgMetric(metric) {
 }
 
 // ── Leaderboard ──
-const SCORE_WEIGHTS = { meals: 1, hours: 8, events: 25, raised: 1 };
+// Overall leaderboard score formula. We track impact in pounds now
+// (not meals), so every lb rescued = 1 point. Hours/events keep their
+// historical weights so a single big-haul pickup doesn't drown out
+// volunteers who show up every weekend.
+const SCORE_WEIGHTS = { lbs: 1, hours: 8, events: 25, raised: 1 };
 
 function leaderboardCutoff(timeRange) {
   const now = new Date();
@@ -1370,7 +1430,7 @@ export async function fetchLeaderboard({
     if (!member) continue;
     if (chapterId && member.chapter_id && member.chapter_id !== chapterId) continue;
     const score =
-      stats.meals * SCORE_WEIGHTS.meals +
+      stats.lbs   * SCORE_WEIGHTS.lbs +
       stats.hours * SCORE_WEIGHTS.hours +
       stats.events * SCORE_WEIGHTS.events +
       stats.raised * SCORE_WEIGHTS.raised;

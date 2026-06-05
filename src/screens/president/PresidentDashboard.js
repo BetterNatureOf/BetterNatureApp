@@ -13,6 +13,7 @@ import Icon from '../../components/ui/Icon';
 import { confirm } from '../../services/ui';
 import ContractGate from '../../components/ui/ContractGate';
 import Screen from '../../components/ui/Screen';
+import LiveOps from '../admin/LiveOps';
 
 const ACTIONS = [
   { key: 'events', label: 'Manage Events', icon: 'calendar', desc: 'Create and edit chapter events', screen: 'PresEvents', color: Colors.green },
@@ -83,6 +84,10 @@ export default function PresidentDashboard({ navigation }) {
           <StatCard number={String(events.length)} label="Events" color={Colors.green} style={styles.stat} />
           <StatCard number={String(pickups.length)} label="Pickups" color={Colors.pink} style={styles.stat} />
         </View>
+
+        {/* Live operations — every pickup currently in motion for
+            this chapter, every volunteer currently out. */}
+        <LiveOps chapterId={user?.chapter_id} navigation={navigation} />
 
         {/* Tools */}
         <BrushText variant="sectionHeader" style={styles.sectionHeader}>

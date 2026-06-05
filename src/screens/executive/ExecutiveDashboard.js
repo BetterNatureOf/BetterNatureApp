@@ -13,6 +13,7 @@ import { signOut } from '../../services/auth';
 import { confirm } from '../../services/ui';
 import ContractGate from '../../components/ui/ContractGate';
 import Screen from '../../components/ui/Screen';
+import LiveOps from '../admin/LiveOps';
 
 const TOOLS = [
   { key: 'chapters', label: 'Manage Chapters', emoji: '\u{1F4CD}', desc: 'Approve, edit, or close chapters', screen: 'ManageChapters', color: Colors.sage },
@@ -126,6 +127,10 @@ export default function ExecutiveDashboard({ navigation }) {
             <Text style={styles.kpiCaption}>in the last 30 days</Text>
           </LinearGradient>
         </View>
+
+        {/* Live operations — every pickup currently in motion, every
+            volunteer currently out on a route. Org-wide for execs. */}
+        <LiveOps navigation={navigation} />
 
         {/* Tools */}
         <BrushText variant="sectionHeader" style={styles.sectionHeader}>
