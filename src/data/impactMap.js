@@ -33,7 +33,12 @@ export const COPY = {
 // ISO 3166-1 alpha-3 (USA, IND, GBR, ...) so the world choropleth
 // can roll BN presence up by country without a name-matching mess.
 export const POINTS = [
-  { kind: 'chapter', city: 'Memphis', state: 'TN', country: 'USA', lat: 35.1495, lng: -90.0490 },
+  { kind: 'chapter', city: 'Memphis',        state: 'TN',        country: 'USA', lat:  35.1495, lng:  -90.0490 },
+  { kind: 'chapter', city: 'Santiago',       state: 'RM',        country: 'CHL', lat: -33.4489, lng:  -70.6693 },
+  { kind: 'chapter', city: 'Valparaíso',     state: 'Valparaíso',country: 'CHL', lat: -33.0472, lng:  -71.6127 },
+  { kind: 'chapter', city: 'Guatemala City', state: 'Guatemala', country: 'GTM', lat:  14.6349, lng:  -90.5069 },
+  { kind: 'chapter', city: 'Cuenca',         state: 'Azuay',     country: 'ECU', lat:  -2.9001, lng:  -79.0059 },
+  { kind: 'chapter', city: 'Montevideo',     state: 'Montevideo',country: 'URY', lat: -34.9011, lng:  -56.1645 },
 
   // The Gap — high food-insecurity cities we haven't covered yet.
   // Insecurity figures: Feeding America's Map the Meal Gap (US),
@@ -59,7 +64,6 @@ export const POINTS = [
   { kind: 'gap', city: 'Lagos',          state: 'Lagos',     country: 'NGA', lat:  6.5244, lng:   3.3792, insecurity: 70.7 },
   { kind: 'gap', city: 'Sanaa',          state: 'Amanat',    country: 'YEM', lat: 15.3694, lng:  44.1910, insecurity: 80.0 },
   { kind: 'gap', city: 'Caracas',        state: 'Capital',   country: 'VEN', lat: 10.4806, lng: -66.9036, insecurity: 78.0 },
-  { kind: 'gap', city: 'Guatemala City', state: 'Guatemala', country: 'GTM', lat: 14.6349, lng: -90.5069, insecurity: 53.0 },
   { kind: 'gap', city: 'Manila',         state: 'NCR',       country: 'PHL', lat: 14.5995, lng: 120.9842, insecurity: 51.0 },
   { kind: 'gap', city: 'Dhaka',          state: 'Dhaka',     country: 'BGD', lat: 23.8103, lng:  90.4125, insecurity: 32.0 },
   { kind: 'gap', city: 'Kabul',          state: 'Kabul',     country: 'AFG', lat: 34.5553, lng:  69.2075, insecurity: 40.0 },

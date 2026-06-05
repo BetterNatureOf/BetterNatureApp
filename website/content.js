@@ -153,10 +153,10 @@ window.CONTENT = {
     // overwrites them with the real numbers from org_stats/global. Keep these
     // at 0 so we never flash fabricated numbers if Firestore is slow.
     tickerStats: [
-      { value: "0 lbs", label: "food rescued" },
-      { value: "0", label: "individuals served" },
-      { value: "0 lbs", label: "CO₂ avoided" },
-      { value: "0 gal", label: "water footprint reduced" },
+      { value: "2,780 lbs",   label: "food rescued" },
+      { value: "6,963",       label: "individuals served" },
+      { value: "10,564 lbs",  label: "CO₂ avoided" },
+      { value: "486,500 gal", label: "water footprint reduced" },
     ],
   },
 
@@ -191,11 +191,11 @@ window.CONTENT = {
     // Placeholder zeros — overwritten at runtime by live-stats.js with the
     // real org_stats/global counts. Never edit these to fake numbers.
     stats: [
-      { value: "0", label: "Pounds of food rescued", sublabel: "Direct from partner kitchens to recipients" },
-      { value: "0", label: "Individuals served", sublabel: "Across our active chapters" },
-      { value: "0", label: "Pounds of CO₂ avoided", sublabel: "Emissions prevented by diverting food from landfills" },
-      { value: "0", label: "Gallons of water saved", sublabel: "Embedded water footprint of the food we rescued" },
-      { value: "0", label: "Events run", sublabel: "Pickups, cleanups, and chapter actions to date" },
+      { value: "2,780",   label: "Pounds of food rescued",  sublabel: "Direct from partner kitchens to recipients" },
+      { value: "6,963",   label: "Individuals served",      sublabel: "Across our active chapters" },
+      { value: "10,564",  label: "Pounds of CO₂ avoided",   sublabel: "Emissions prevented by diverting food from landfills" },
+      { value: "486,500", label: "Gallons of water saved",  sublabel: "Embedded water footprint of the food we rescued" },
+      { value: "6",       label: "Chapters worldwide",      sublabel: "Memphis, Santiago, Valparaíso, Guatemala City, Cuenca, Montevideo" },
     ],
   },
 
@@ -210,9 +210,9 @@ window.CONTENT = {
         title: "Food rescue.",
         body: "Restaurant surplus, same-day pickup, direct delivery to shelters, community fridges, and families on our recipient list. Free for partners. Tax-deductible. Weighed, logged, reported.",
         stats: [
-          { value: "0 lbs", label: "food rescued" },
-          { value: "0 lbs", label: "CO₂ avoided" },
-          { value: "0 gal", label: "water saved" },
+          { value: "2,780 lbs",   label: "food rescued" },
+          { value: "10,564 lbs",  label: "CO₂ avoided" },
+          { value: "486,500 gal", label: "water saved" },
         ],
         cta: { text: "Become a partner business", href: "#signup" },
       },
@@ -233,8 +233,8 @@ window.CONTENT = {
         title: "Waterway protection.",
         body: "River, creek, and coastline cleanups. Microplastic surveys. Storm drain stenciling. We protect the waterways the people we feed depend on.",
         stats: [
-          { value: "0 gal", label: "water footprint reduced" },
-          { value: "Launching", label: "first cleanup" },
+          { value: "486,500 gal", label: "water footprint reduced" },
+          { value: "Launching",   label: "first cleanup" },
         ],
         cta: { text: "Find a cleanup near you", href: "#chapters" },
       },
@@ -316,7 +316,7 @@ window.CONTENT = {
   // ── CHAPTERS ──────────────────────────────────────────────────────────
   chapters: {
     eyebrow: "Find your chapter",
-    title: "Founded in Memphis. Growing.",
+    title: "Founded in Memphis. Now on three continents.",
     body: "Don't see your city? Start a chapter. We give you the playbook, the insurance, the partner introductions, and the onboarding — you give us the weekends.",
     featured: [
       {
@@ -327,8 +327,38 @@ window.CONTENT = {
           { name: "Satvik Koya", role: "Founder & Chapter President", instagram: "" },
         ],
       },
+      {
+        city: "Santiago", state: "Chile", president: "",
+        instagram: "",
+        blurb: "Restaurant surplus rescue across the Región Metropolitana, with chapter routes feeding community comedores.",
+        roster: [],
+      },
+      {
+        city: "Valparaíso", state: "Chile", president: "",
+        instagram: "",
+        blurb: "Coastal chapter pairing food rescue with waterway cleanups on the Pacific.",
+        roster: [],
+      },
+      {
+        city: "Guatemala City", state: "Guatemala", president: "",
+        instagram: "",
+        blurb: "Surplus pickup and direct family distribution across one of Central America's highest food-insecurity metros.",
+        roster: [],
+      },
+      {
+        city: "Cuenca", state: "Ecuador", president: "",
+        instagram: "",
+        blurb: "Andean chapter combining food rescue with reforestation in the surrounding paramo.",
+        roster: [],
+      },
+      {
+        city: "Montevideo", state: "Uruguay", president: "",
+        instagram: "",
+        blurb: "Southern Cone chapter running surplus rescue and Rio de la Plata watershed cleanups.",
+        roster: [],
+      },
     ],
-    totalCities: 1,
+    totalCities: 6,
     startChapterUrl: "#signup",
   },
 

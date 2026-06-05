@@ -56,6 +56,12 @@ function repaintProgramStats(s) {
 (async () => {
   try {
     const stats = await fetchOrgStats();
+    // If Firestore returns an empty doc (all zeros), leave the static
+    // CONTENT numbers in place — content.js already carries our real
+    // reporting totals and we never want to flash "0" over them.
+    const total = (stats.meals || 0) + (stats.lbs || 0) + (stats.individuals || 0)
+                + (stats.co2 || 0) + (stats.water || 0);
+    if (total === 0) return;
     repaintTicker(statsToTicker(stats));
     repaintImpactGrid(statsToImpactCards(stats));
     repaintProgramStats(stats);
