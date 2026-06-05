@@ -93,28 +93,41 @@ service cloud.firestore {
     }
 
     // ── pickups ──
-    // Restaurants create their own pickups when they post surplus.
-    // Volunteers update them as they claim / arrive / deliver.
-    // Execs can do anything for the org-wide queue management.
-    function isRestaurantUser() {
-      return isSignedIn() && role() == 'restaurant';
+    // Restaurants create their own pickups when they post surplus;
+    // volunteers progress them through the claim/enroute/complete
+    // states; execs can do anything for org-wide queue management.
+    //
+    // Helper: does the signed-in user own this restaurant_id? True
+    // if the rid equals their auth uid OR matches the restaurant_id
+    // we stamped on their user doc at signup. We re-fetch the user
+    // doc inside the rule so even brand-new restaurant accounts
+    // work without a fresh sign-in.
+    function pickupRid() { return request.resource.data.restaurant_id; }
+    function existingRid() { return resource.data.restaurant_id; }
+    function userRid() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id;
     }
     match /pickups/{id} {
       allow read: if isSignedIn();
-      // Restaurant creates a pickup whose restaurant_id matches
-      // either their own uid or their linked restaurant_id, and
-      // status starts at 'available'. Execs can also seed pickups.
+
+      // Create: exec OR any signed-in user whose auth uid (or
+      // mirrored restaurant_id) matches the pickup's restaurant_id.
+      // We deliberately don't require role=='restaurant' on the rule
+      // — the role string can drift during signup (member ->
+      // restaurant migration etc.). The id-match is the real check.
       allow create: if isExec() || (
-        isRestaurantUser()
-        && request.resource.data.restaurant_id in [request.auth.uid, get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id]
-        && request.resource.data.status == 'available'
+        isSignedIn() && pickupRid() != null
+        && (pickupRid() == request.auth.uid || pickupRid() == userRid())
       );
-      // Volunteer state transitions are scoped to the claimer.
-      // Restaurant can update their own pickups (cancel, edit photo).
-      // Execs override either.
+
+      // Update: exec, original poster, or the volunteer who's
+      // currently claimed the pickup.
       allow update: if isExec()
-        || (isSignedIn() && resource.data.restaurant_id in [request.auth.uid, get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id])
-        || (isSignedIn() && (resource.data.claimed_by == request.auth.uid || request.resource.data.claimed_by == request.auth.uid));
+        || (isSignedIn() && existingRid() != null
+            && (existingRid() == request.auth.uid || existingRid() == userRid()))
+        || (isSignedIn() && resource.data.claimed_by == request.auth.uid)
+        || (isSignedIn() && request.resource.data.claimed_by == request.auth.uid);
+
       allow delete: if isAdmin();
     }
 
