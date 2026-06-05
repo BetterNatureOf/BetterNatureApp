@@ -795,13 +795,15 @@ export async function completePickup(pickupId, actualWeightLbs) {
   });
 
   if (pk.claimed_by) {
+    const mealBonusForLog = Math.min(50, meals);
     await addDoc(collection(db, 'member_activity'), {
       user_id: pk.claimed_by,
       date: now.split('T')[0],
       project: 'iris',
       meals,
       hours: 1,
-      events: 0,
+      events: 1, // a completed pickup counts as an activity event
+      points: 10 + mealBonusForLog,
       raised: 0,
       source_type: 'pickup_complete',
       source_id: pickupId,
@@ -813,17 +815,32 @@ export async function completePickup(pickupId, actualWeightLbs) {
       const profile = await getDoc(userRef);
       if (profile.exists()) {
         const p = profile.data();
+        // Award 10 leaderboard points per completed pickup, plus
+        // a 1-point-per-meal bonus capped at 50. So a tiny salad
+        // is +10 and a 50lb load of produce is +60 — proportionate
+        // to impact without snowballing into runaway leaders.
+        const mealBonus = Math.min(50, meals);
+        const points = 10 + mealBonus;
         await updateDoc(userRef, {
           meals_rescued: (p.meals_rescued || 0) + meals,
-          hours_logged: (p.hours_logged || 0) + 1,
+          hours_logged:  (p.hours_logged  || 0) + 1,
+          events_attended: (p.events_attended || 0) + 1,
+          leaderboard_score: (p.leaderboard_score || 0) + points,
+          pickups_completed: (p.pickups_completed || 0) + 1,
         });
+        // Mirror the points into the activity row so the
+        // leaderboard's points view picks them up too.
       }
     } catch (e) { console.warn('user stat bump', e); }
 
-    // Bump the org-wide live counters that drive the website ticker
-    // and in-app impact screen. Real lbs in → real numbers out.
+    // Bump the org-wide live counters that drive the website ticker,
+    // the Welcome screen on the app, and the Exec dashboard.
+    // bumpOrgStats derives meals/co2/water from lbs automatically, so
+    // every completed pickup propagates everywhere those numbers are
+    // read. We also bump events:1 so the 'events run' counter ticks
+    // forward per rescue.
     try {
-      await bumpOrgStats({ lbs: weight, hours: 1 });
+      await bumpOrgStats({ lbs: weight, hours: 1, events: 1 });
     } catch (e) { console.warn('org stats bump (pickup)', e); }
 
     await addDoc(collection(db, 'notifications'), {
@@ -1327,13 +1344,14 @@ export async function fetchLeaderboard({
   for (const a of filtered) {
     const cur = byUser.get(a.user_id) || {
       user_id: a.user_id,
-      meals: 0, hours: 0, events: 0, raised: 0,
+      meals: 0, hours: 0, events: 0, raised: 0, points: 0,
       iris: 0, evergreen: 0, hydro: 0,
     };
     cur.meals += a.meals || 0;
     cur.hours += a.hours || 0;
     cur.events += a.events || 0;
     cur.raised += a.raised || 0;
+    cur.points += a.points || 0;
     if (a.project === 'iris') cur.iris += (a.meals || 0) + (a.hours || 0);
     if (a.project === 'evergreen') cur.evergreen += a.hours || 0;
     if (a.project === 'hydro') cur.hydro += a.hours || 0;

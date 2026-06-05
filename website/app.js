@@ -24,7 +24,7 @@
   // static content.js defaults. Best-effort — if Firestore is down we
   // fall back to whatever shipped in content.js so the page still paints.
   try {
-    const { applyLiveContent } = await import('./firebase-site-content.js?v=2026-06-04');
+    const { applyLiveContent } = await import('./firebase-site-content.js?v=2026-06-05a');
     await applyLiveContent();
   } catch (e) {
     console.warn('live site_content unavailable, using static content.js', e);
