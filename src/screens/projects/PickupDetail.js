@@ -23,6 +23,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant } from '../../services/database';
 import { openInMaps, openDirections, getCurrentPosition, milesBetween } from '../../services/maps';
+import { requireVerifiedId } from '../../services/idGate';
 import { notify, notifyThen, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 import { Image, TouchableOpacity } from 'react-native';
@@ -89,10 +90,20 @@ export default function PickupDetail({ route, navigation }) {
   }
 
   async function handleClaim() {
+    // ID gate fires on commit (claim), not on preview. The volunteer
+    // can see every detail of the pickup before being asked to
+    // verify; only the actual claim requires an approved ID.
+    if (!requireVerifiedId(user, navigation)) return;
+    const ok = await confirm(
+      'Claim this pickup?',
+      `You're committing to picking this up${pickup.pickup_window_until ? ' by ' + new Date(pickup.pickup_window_until).toLocaleString() : ''}. Releasing a claimed pickup costs leaderboard points — only claim if you can make the run.`
+    );
+    if (!ok) return;
     setBusy(true);
     try {
       await claimPickup(pickup.id, user.id);
       await refresh();
+      notify('Claimed', "You're on the hook. Directions and 'On my way' are below.");
     } catch (e) {
       notify('Could not claim', e?.message || 'Try again.');
     } finally { setBusy(false); }
@@ -160,6 +171,15 @@ export default function PickupDetail({ route, navigation }) {
           <Text style={styles.backText}>Back</Text>
         </AnimatedPressable>
         <BrushText variant="screenTitle" style={styles.title}>Pickup</BrushText>
+
+        {pickup.status === 'available' ? (
+          <View style={styles.previewBanner}>
+            <Text style={styles.previewBannerTitle}>Preview · not claimed yet</Text>
+            <Text style={styles.previewBannerBody}>
+              Look at the photo, address, distance, and notes below. When you're ready, tap “Claim pickup” to commit — releasing a claim later costs leaderboard points.
+            </Text>
+          </View>
+        ) : null}
 
         <PickupCard pickup={pickup} cta={cta} />
 
@@ -329,4 +349,10 @@ const styles = StyleSheet.create({
   verifyBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
   verifiedNote: { marginTop: 14, padding: 14, backgroundColor: '#E8F5EE', borderRadius: 14 },
   verifiedText: { color: Colors.green, fontWeight: '700' },
+  previewBanner: {
+    backgroundColor: '#FEF9C3', borderColor: '#FDE68A', borderWidth: 1,
+    borderRadius: 12, padding: 14, marginBottom: 14,
+  },
+  previewBannerTitle: { fontSize: 12, fontWeight: '800', color: '#854D0E', letterSpacing: 0.5, textTransform: 'uppercase' },
+  previewBannerBody: { fontSize: 13, color: '#854D0E', marginTop: 4, lineHeight: 18 },
 });

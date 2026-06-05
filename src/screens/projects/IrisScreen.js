@@ -184,9 +184,18 @@ export default function IrisScreen({ navigation }) {
               <PickupCard
                 pickup={pickup}
                 cta={{
-                  label: pickup.status === 'claimed' ? 'Open' : 'Claim pickup',
+                  // Volunteers preview the pickup (photo, exact
+                  // address, distance, weight, notes) on the detail
+                  // screen BEFORE the claim button is reachable.
+                  // 'View details' makes that clear; 'Claim pickup'
+                  // on the card incorrectly implied tapping locked
+                  // them into a run.
+                  label: pickup.status === 'claimed'
+                    ? (pickup.claimed_by === user?.id ? 'Open' : 'Already claimed')
+                    : 'View details',
                   onPress: () => {
-                    if (pickup.status === 'available' && !requireVerifiedId(user, navigation)) return;
+                    // ID gate still applies to claim — but the
+                    // preview is open to anyone signed in.
                     navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup });
                   },
                 }}
