@@ -814,7 +814,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
       const meals = Math.round(weight * 1.2);
       const claimedAtMs = pk.claimed_at ? new Date(pk.claimed_at).getTime() : Date.now();
       const elapsedH = (Date.now() - claimedAtMs) / 3600000;
-      const hoursEarned = Math.max(0.25, Math.min(12, +elapsedH.toFixed(2)));
+      const hoursEarned = Math.max(0.25, Math.min(3, +elapsedH.toFixed(2)));
       if (pk.claimed_by) {
         mockMemberActivity.push({
           id: `a-pk-${Date.now()}`,
@@ -849,14 +849,14 @@ export async function completePickup(pickupId, actualWeightLbs) {
 
   // Volunteer earns the actual elapsed time between claiming the
   // pickup and marking it delivered — that's how long they spent on
-  // the run. Clamped to [0.25h, 12h]: a quick neighborhood drop still
-  // counts as 15 min, and a forgotten/stuck pickup can't grant a
-  // full day of hours.
+  // the run. Clamped to [0.25h, 3h]: a quick neighborhood drop still
+  // counts as 15 min, and even a long route caps at 3 hours per
+  // pickup so a forgotten/stuck pickup can't grant runaway hours.
   const claimedAtMs = pk.claimed_at?.toDate
     ? pk.claimed_at.toDate().getTime()
     : pk.claimed_at ? new Date(pk.claimed_at).getTime() : Date.now();
   const elapsedH = (Date.now() - claimedAtMs) / 3600000;
-  const hoursEarned = Math.max(0.25, Math.min(12, +elapsedH.toFixed(2)));
+  const hoursEarned = Math.max(0.25, Math.min(3, +elapsedH.toFixed(2)));
 
   await updateDoc(pkRef, {
     status: 'completed',
