@@ -12,7 +12,7 @@
 //   4. Every dialog uses the cross-platform notify/confirm helpers so
 //      onPress callbacks fire on web too.
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, Platform, Linking } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import StatCard from '../../components/ui/StatCard';
@@ -236,25 +236,46 @@ export default function RestDashboard({ navigation }) {
           <View style={{ gap: 10, marginBottom: 28 }}>
             {pickups.map((p) => {
               const tone = STATUS_TONE[p.status] || STATUS_TONE.available;
+              const isDelivered = p.status === 'completed';
               return (
-                <AnimatedPressable
-                  key={p.id}
-                  scaleTo={0.99}
-                  onPress={() => navigation.navigate('PickupDetail', { pickupId: p.id, pickup: p })}
-                  style={styles.pickupRow}
-                >
-                  <View style={{ flex: 1 }}>
-                    <View style={[styles.pill, { backgroundColor: tone.bg }]}>
-                      <Text style={[styles.pillText, { color: tone.fg }]}>{tone.label}</Text>
+                <View key={p.id}>
+                  <AnimatedPressable
+                    scaleTo={0.99}
+                    onPress={() => navigation.navigate('PickupDetail', { pickupId: p.id, pickup: p })}
+                    style={styles.pickupRow}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={[styles.pill, { backgroundColor: tone.bg }]}>
+                        <Text style={[styles.pillText, { color: tone.fg }]}>{tone.label}</Text>
+                      </View>
+                      <Text style={styles.pickupSummary} numberOfLines={1}>
+                        {p.estimated_weight_lbs || '?'} lb · ~{Math.round((p.estimated_weight_lbs || 0) * 1.2)} meals
+                        {p.fridge_name ? ` → ${p.fridge_name}` : ''}
+                      </Text>
+                      <Text style={styles.pickupMeta}>{prettyTime(p)}</Text>
                     </View>
-                    <Text style={styles.pickupSummary} numberOfLines={1}>
-                      {p.estimated_weight_lbs || '?'} lb · ~{Math.round((p.estimated_weight_lbs || 0) * 1.2)} meals
-                      {p.fridge_name ? ` → ${p.fridge_name}` : ''}
-                    </Text>
-                    <Text style={styles.pickupMeta}>{prettyTime(p)}</Text>
-                  </View>
-                  <Icon name="chevron" size={18} color={Colors.grayMid} />
-                </AnimatedPressable>
+                    <Icon name="chevron" size={18} color={Colors.grayMid} />
+                  </AnimatedPressable>
+                  {isDelivered && p.tax_receipt_url ? (
+                    <TouchableOpacity
+                      style={styles.receiptLink}
+                      onPress={() => {
+                        if (typeof window !== 'undefined' && window.open) {
+                          window.open(p.tax_receipt_url, '_blank', 'noopener,noreferrer');
+                        } else {
+                          Linking.openURL(p.tax_receipt_url).catch(() => {});
+                        }
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.receiptLinkText}>📄 Tax receipt ready — open & save as PDF</Text>
+                    </TouchableOpacity>
+                  ) : isDelivered ? (
+                    <View style={styles.receiptLink}>
+                      <Text style={styles.receiptLinkTextMuted}>Tax receipt is being generated…</Text>
+                    </View>
+                  ) : null}
+                </View>
               );
             })}
           </View>
@@ -401,6 +422,13 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   pickupSummary: { fontSize: 14, fontWeight: '600', color: Colors.dark },
   pickupMeta: { ...Type.caption, marginTop: 2 },
+  receiptLink: {
+    marginTop: 6, paddingVertical: 10, paddingHorizontal: 14,
+    backgroundColor: '#E8F5EE', borderRadius: 10, borderWidth: 1, borderColor: '#A7F3D0',
+    alignItems: 'center',
+  },
+  receiptLinkText: { color: '#065F46', fontWeight: '800', fontSize: 13 },
+  receiptLinkTextMuted: { color: '#6B7280', fontStyle: 'italic', fontSize: 12 },
 
   zeffyCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,

@@ -865,26 +865,39 @@ export async function completePickup(pickupId, actualWeightLbs) {
       } catch (e) { console.warn('restaurant delivered notify', e); }
     }
 
-    // Mint the restaurant's tax receipt and email them the link.
-    // Best-effort — never blocks completion.
+    // Mint the restaurant's tax receipt and surface the link to them
+    // through every channel: app bell, push, email. Never blocks
+    // completion if any one channel fails.
     try {
-      const { issueReceiptForPickup, emailReceiptLink } = await import('./taxReceipts');
-      // Pull volunteer + restaurant names for the receipt body.
+      const { issueReceiptForPickup, receiptUrl } = await import('./taxReceipts');
+      // Pull volunteer name for the receipt body.
       let volunteerName = '';
       try {
         const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
         if (vSnap.exists()) volunteerName = vSnap.data().name || '';
       } catch {}
+      // Resolve the restaurant email + linked user uid. Try the
+      // restaurants doc first; fall back to the linked user's email
+      // if the restaurants doc has no email field.
       let restaurantEmail = '';
+      let restaurantUserUid = pk.restaurant_user_id || null;
       if (pk.restaurant_id) {
         try {
           const rSnap = await getDoc(doc(db, 'restaurants', pk.restaurant_id));
           if (rSnap.exists()) {
             const r = rSnap.data();
             restaurantEmail = r.email || r.contact_email || '';
+            restaurantUserUid = restaurantUserUid || r.user_id || null;
           }
         } catch {}
       }
+      if (!restaurantEmail && restaurantUserUid) {
+        try {
+          const uSnap = await getDoc(doc(db, 'users', restaurantUserUid));
+          if (uSnap.exists()) restaurantEmail = uSnap.data().email || '';
+        } catch {}
+      }
+
       const receipt = await issueReceiptForPickup({
         pickupId,
         restaurantId: pk.restaurant_id || null,
@@ -896,13 +909,35 @@ export async function completePickup(pickupId, actualWeightLbs) {
         volunteerName,
         chapterName: pk.chapter_name || '',
       });
-      if (receipt && restaurantEmail) {
-        emailReceiptLink({
-          to: restaurantEmail,
-          restaurantName: pk.restaurant_name || '',
-          weightLbs: weight,
-          receiptId: receipt.id,
-        }).catch(() => {});
+
+      // Stamp the receipt id back onto the pickup doc so the
+      // restaurant dashboard can deep-link without a join.
+      if (receipt?.id) {
+        try {
+          await updateDoc(doc(db, 'pickups', pickupId), {
+            tax_receipt_id: receipt.id,
+            tax_receipt_url: receiptUrl(receipt.id),
+            delivered_visible_to_restaurant: true,
+          });
+        } catch {}
+      }
+
+      // Send the receipt through the unified notification dispatcher.
+      // Drops an in-app bell + queues an email via Resend (once the
+      // dispatcher worker is deployed). Replaces the old FormSubmit
+      // hop, which was rate-limited and silently failing.
+      if (receipt?.id && restaurantUserUid) {
+        try {
+          const { enqueueNotification } = await import('./notify');
+          await enqueueNotification({
+            recipients: [restaurantUserUid],
+            kind: 'general',
+            title: `Your tax receipt for ${weight} lbs is ready`,
+            body: `BetterNature has minted receipt #${receipt.receipt_no || '0001'} for your donation. Open it to print or save as PDF for your records.`,
+            url: receiptUrl(receipt.id),
+            data: { type: 'tax_receipt', pickupId, receiptId: receipt.id },
+          });
+        } catch (e) { console.warn('receipt notify failed', e); }
       }
     } catch (e) { console.warn('tax receipt issue failed', e); }
   }
