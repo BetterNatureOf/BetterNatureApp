@@ -801,6 +801,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
       date: now.split('T')[0],
       project: 'iris',
       meals,
+      lbs: weight,
       hours: 1,
       events: 1, // a completed pickup counts as an activity event
       points: 10 + mealBonusForLog,
@@ -823,6 +824,7 @@ export async function completePickup(pickupId, actualWeightLbs) {
         const points = 10 + mealBonus;
         await updateDoc(userRef, {
           meals_rescued: (p.meals_rescued || 0) + meals,
+          lbs_rescued:   (p.lbs_rescued   || 0) + weight,
           hours_logged:  (p.hours_logged  || 0) + 1,
           events_attended: (p.events_attended || 0) + 1,
           leaderboard_score: (p.leaderboard_score || 0) + points,
@@ -1344,10 +1346,11 @@ export async function fetchLeaderboard({
   for (const a of filtered) {
     const cur = byUser.get(a.user_id) || {
       user_id: a.user_id,
-      meals: 0, hours: 0, events: 0, raised: 0, points: 0,
+      meals: 0, lbs: 0, hours: 0, events: 0, raised: 0, points: 0,
       iris: 0, evergreen: 0, hydro: 0,
     };
     cur.meals += a.meals || 0;
+    cur.lbs   += a.lbs   || (a.meals ? Math.round((a.meals || 0) / 1.2) : 0);
     cur.hours += a.hours || 0;
     cur.events += a.events || 0;
     cur.raised += a.raised || 0;

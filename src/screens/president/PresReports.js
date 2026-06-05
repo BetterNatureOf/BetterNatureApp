@@ -19,7 +19,7 @@ export default function PresReports({ navigation }) {
     events: 0,
     pickups: 0,
     members: 0,
-    mealsRescued: 0,
+    lbsRescued: 0,
     animals: 0,
     volunteerHours: 0,
     waterSites: 0,
@@ -40,17 +40,17 @@ export default function PresReports({ navigation }) {
           (m) => m.chapters?.name?.toLowerCase().includes('memphis')
         );
         const animalCount = animals.reduce((sum, a) => sum + (a.count || 0), 0);
-        const meals = metrics.find((m) => m.key === 'meals_rescued_memphis');
+        const lbsMetric = metrics.find((m) => m.key === 'lbs_rescued_memphis');
         const water = metrics.find((m) => m.key === 'water_sites_tested');
-        const fallbackMeals = pickups.reduce(
-          (sum, p) => sum + Math.round((p.estimated_weight_lbs || 0) * 1.2),
+        const fallbackLbs = pickups.reduce(
+          (sum, p) => sum + (p.actual_weight_lbs || p.estimated_weight_lbs || 0),
           0
         );
         setData({
           events: events.length,
           pickups: pickups.length,
           members: chapterMembers.length || 6,
-          mealsRescued: meals?.value ?? fallbackMeals,
+          lbsRescued: lbsMetric?.value ?? fallbackLbs,
           animals: animalCount,
           volunteerHours: events.length * 18,
           waterSites: water?.value || 0,
@@ -71,8 +71,8 @@ export default function PresReports({ navigation }) {
       <Text style={styles.subtitle}>Your impact this month</Text>
 
       <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>Meals Rescued</Text>
-        <Text style={styles.heroValue}>{data.mealsRescued.toLocaleString()}</Text>
+        <Text style={styles.heroLabel}>Pounds of food rescued</Text>
+        <Text style={styles.heroValue}>{Math.round(data.lbsRescued).toLocaleString()}</Text>
         <Text style={styles.heroCaption}>across {data.pickups} pickups</Text>
       </View>
 
@@ -87,7 +87,7 @@ export default function PresReports({ navigation }) {
         Project Breakdown
       </BrushText>
 
-      <ProjectRow name="IRIS · Food Rescue" value={`${data.mealsRescued.toLocaleString()} meals`} color={Colors.sage} />
+      <ProjectRow name="IRIS · Food Rescue" value={`${Math.round(data.lbsRescued).toLocaleString()} lbs`} color={Colors.sage} />
       <ProjectRow name="Evergreen · Conservation" value={`${data.animals} animals helped`} color={Colors.green} />
       <ProjectRow name="Hydro · Clean Water" value={`${data.waterSites} sites tested`} color={Colors.skyDark} />
 

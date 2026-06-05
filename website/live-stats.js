@@ -40,9 +40,9 @@ function repaintProgramStats(s) {
   const irisCard = document.querySelector('[data-program="iris"] .program__stats');
   if (irisCard) {
     irisCard.innerHTML = `
-      <div class="program__stat"><strong>${fmt(s.meals)}</strong><span>meal kits</span></div>
       <div class="program__stat"><strong>${fmt(s.lbs)} lbs</strong><span>food rescued</span></div>
       <div class="program__stat"><strong>${fmt(s.co2)} lbs</strong><span>CO₂ avoided</span></div>
+      <div class="program__stat"><strong>${fmt(s.water)} gal</strong><span>water saved</span></div>
     `;
   }
   const hydroCard = document.querySelector('[data-program="hydro"] .program__stats');

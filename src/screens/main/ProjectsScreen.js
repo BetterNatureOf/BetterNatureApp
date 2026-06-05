@@ -20,8 +20,8 @@ function buildProjects(stats) {
       description:
         'Rescue surplus food from local restaurants and deliver it to communities in need. Every meal saved is a step toward zero food waste.',
       color: Colors.pink,
-      stat: fmt(stats.meals),
-      statLabel: 'meals rescued',
+      stat: fmt(stats.lbs || Math.round((stats.meals || 0) / 1.2)),
+      statLabel: 'lbs of food rescued',
     },
     {
       key: 'Evergreen',

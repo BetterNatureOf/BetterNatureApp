@@ -41,7 +41,6 @@ function fmt(n) {
 export function statsToTicker(s) {
   return [
     { value: fmt(s.volunteers), label: 'volunteers' },
-    { value: fmt(s.meals), label: 'meal kits delivered' },
     { value: `${fmt(s.lbs)} lbs`, label: 'food rescued' },
     { value: fmt(s.individuals), label: 'individuals served' },
     { value: `${fmt(s.co2)} lbs`, label: 'CO₂ avoided' },
@@ -53,7 +52,6 @@ export function statsToTicker(s) {
 export function statsToImpactCards(s) {
   return [
     { value: fmt(s.volunteers), label: 'Volunteers', sublabel: 'Active members across every chapter' },
-    { value: fmt(s.meals), label: 'Meal kits delivered', sublabel: 'From rescued surplus to neighbors who need them' },
     { value: fmt(s.lbs), label: 'Pounds of food rescued', sublabel: 'Direct from partner kitchens to recipients' },
     { value: fmt(s.individuals), label: 'Individuals served', sublabel: 'Across our active chapters' },
     { value: fmt(s.co2), label: 'Pounds of CO₂ avoided', sublabel: 'Emissions prevented by diverting food from landfills' },

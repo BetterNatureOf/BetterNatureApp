@@ -153,7 +153,6 @@ window.CONTENT = {
     // overwrites them with the real numbers from org_stats/global. Keep these
     // at 0 so we never flash fabricated numbers if Firestore is slow.
     tickerStats: [
-      { value: "0", label: "meal kits delivered" },
       { value: "0 lbs", label: "food rescued" },
       { value: "0", label: "individuals served" },
       { value: "0 lbs", label: "CO₂ avoided" },
@@ -192,7 +191,6 @@ window.CONTENT = {
     // Placeholder zeros — overwritten at runtime by live-stats.js with the
     // real org_stats/global counts. Never edit these to fake numbers.
     stats: [
-      { value: "0", label: "Meal kits delivered", sublabel: "From rescued surplus to neighbors who need them" },
       { value: "0", label: "Pounds of food rescued", sublabel: "Direct from partner kitchens to recipients" },
       { value: "0", label: "Individuals served", sublabel: "Across our active chapters" },
       { value: "0", label: "Pounds of CO₂ avoided", sublabel: "Emissions prevented by diverting food from landfills" },
@@ -212,9 +210,9 @@ window.CONTENT = {
         title: "Food rescue.",
         body: "Restaurant surplus, same-day pickup, direct delivery to shelters, community fridges, and families on our recipient list. Free for partners. Tax-deductible. Weighed, logged, reported.",
         stats: [
-          { value: "0", label: "meal kits delivered" },
           { value: "0 lbs", label: "food rescued" },
           { value: "0 lbs", label: "CO₂ avoided" },
+          { value: "0 gal", label: "water saved" },
         ],
         cta: { text: "Become a partner business", href: "#signup" },
       },

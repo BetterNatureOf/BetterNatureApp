@@ -25,7 +25,7 @@ const PROJECT_FILTERS = [
 
 const SORT_FILTERS = [
   { key: 'overall', label: 'Overall' },
-  { key: 'meals', label: 'Meals' },
+  { key: 'lbs',   label: 'Lbs rescued' },
   { key: 'hours', label: 'Hours' },
   { key: 'events', label: 'Events' },
   { key: 'raised', label: 'Raised' },
@@ -48,6 +48,7 @@ function metricValue(row, sortBy) {
 function metricLabel(sortBy) {
   if (sortBy === 'overall') return 'pts';
   if (sortBy === 'raised') return '';
+  if (sortBy === 'lbs') return 'lbs';
   return sortBy;
 }
 

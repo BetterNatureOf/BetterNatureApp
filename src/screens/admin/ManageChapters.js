@@ -221,7 +221,7 @@ export default function ManageChapters({ navigation }) {
       const chapterEvents  = events.filter((e) => e.chapter_id === ch.id);
       const chapterPickups = pickups.filter((p) => p.chapter_id === ch.id);
 
-      const meals = chapterMembers.reduce((s, u) => s + (u.meals_rescued || 0), 0);
+      const lbs = chapterMembers.reduce((s, u) => s + (u.lbs_rescued || Math.round((u.meals_rescued || 0) / 1.2)), 0);
       const hours = chapterMembers.reduce((s, u) => s + (u.hours_logged || 0), 0);
       const eventsAttended = chapterMembers.reduce((s, u) => s + (u.events_attended || 0), 0);
 
@@ -240,7 +240,7 @@ export default function ManageChapters({ navigation }) {
         fridgesCount: chapterFridges.length,
         eventsCount: chapterEvents.length,
         pickupsCount: chapterPickups.length,
-        meals,
+        lbs,
         hours,
         eventsAttended,
         team,
@@ -455,7 +455,7 @@ export default function ManageChapters({ navigation }) {
                   <Stat n={r.membersCount} l="members" />
                   <Stat n={r.fridgesCount} l="fridges" />
                   <Stat n={r.eventsCount}  l="events"  />
-                  <Stat n={r.meals}        l="meals"   />
+                  <Stat n={r.lbs}          l="lbs"    />
                   <Stat n={`${r.hours || 0}h`} l="hours" />
                 </View>
 
@@ -498,7 +498,7 @@ export default function ManageChapters({ navigation }) {
                             <Text style={styles.rosterName}>{m.name || '(unnamed)'}</Text>
                             <Text style={styles.rosterMeta}>{m.email} · {labelForRole(m.role)}</Text>
                           </View>
-                          <Text style={styles.rosterStat}>{m.events_attended || 0} ev · {m.meals_rescued || 0} m · {m.hours_logged || 0}h</Text>
+                          <Text style={styles.rosterStat}>{m.events_attended || 0} ev · {m.lbs_rescued || Math.round((m.meals_rescued || 0) / 1.2)} lbs · {m.hours_logged || 0}h</Text>
                           <Text style={styles.rosterChev}>›</Text>
                         </TouchableOpacity>
                       ))

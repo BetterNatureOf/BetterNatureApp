@@ -74,7 +74,7 @@ export default function DashboardScreen({ navigation }) {
   const stats = (
     <View style={styles.statsRow}>
       <StatCard number={user?.events_attended || 0} label="Events" color={Colors.green} style={styles.statItem} />
-      <StatCard number={user?.meals_rescued || 0} label="Meals Rescued" color={Colors.sage} style={styles.statItem} />
+      <StatCard number={user?.lbs_rescued || Math.round((user?.meals_rescued || 0) / 1.2)} label="Lbs of food rescued" color={Colors.sage} style={styles.statItem} />
       <StatCard number={`${user?.hours_logged || 0}h`} label="Hours" color={Colors.pink} style={styles.statItem} />
     </View>
   );
@@ -120,7 +120,7 @@ export default function DashboardScreen({ navigation }) {
               contentDesktop already handles it. */}
           <View style={[styles.statsRow, styles.flushH]}>
             <StatCard number={user?.events_attended || 0} label="Events" color={Colors.green} style={styles.statItem} />
-            <StatCard number={user?.meals_rescued || 0} label="Meals Rescued" color={Colors.sage} style={styles.statItem} />
+            <StatCard number={user?.lbs_rescued || Math.round((user?.meals_rescued || 0) / 1.2)} label="Lbs of food rescued" color={Colors.sage} style={styles.statItem} />
             <StatCard number={`${user?.hours_logged || 0}h`} label="Hours" color={Colors.pink} style={styles.statItem} />
           </View>
 

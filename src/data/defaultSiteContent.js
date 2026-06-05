@@ -22,7 +22,6 @@ export const DEFAULT_SITE_CONTENT = {
     primaryCta:   { text: 'Read our mission',       href: '#mission' },
     secondaryCta: { text: 'Partner your business',  href: '#signup'  },
     tickerStats: [
-      { value: '0',     label: 'meal kits delivered' },
       { value: '0 lbs', label: 'food rescued' },
       { value: '0',     label: 'individuals served' },
       { value: '0 lbs', label: 'CO₂ avoided' },
@@ -33,7 +32,6 @@ export const DEFAULT_SITE_CONTENT = {
     eyebrow: 'The receipts',
     title: 'Real numbers. Real neighbors. Real forests.',
     stats: [
-      { value: '0', label: 'Meal kits delivered',        sublabel: 'From rescued surplus to neighbors who need them' },
       { value: '0', label: 'Pounds of food rescued',     sublabel: 'Direct from partner kitchens to recipients' },
       { value: '0', label: 'Individuals served',         sublabel: 'Across our active chapters' },
       { value: '0', label: 'Pounds of CO₂ avoided',      sublabel: 'Emissions prevented by diverting food from landfills' },

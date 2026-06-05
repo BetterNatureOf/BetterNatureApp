@@ -92,8 +92,8 @@ export default function ProfileScreen({ navigation }) {
           style={styles.statItem}
         />
         <StatCard
-          number={user?.meals_rescued || 0}
-          label="Meals"
+          number={user?.lbs_rescued || Math.round((user?.meals_rescued || 0) / 1.2)}
+          label="Lbs rescued"
           color={Colors.sage}
           style={styles.statItem}
         />

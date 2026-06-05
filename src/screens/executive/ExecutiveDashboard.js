@@ -37,7 +37,7 @@ export default function ExecutiveDashboard({ navigation }) {
   const clearAuth = useAuthStore((s) => s.signOut);
   const { isWide, isDesktop } = useBreakpoint();
   const [stats, setStats] = useState({ chapters: 0, members: 0, restaurants: 0 });
-  const [finance, setFinance] = useState({ raised: 0, mealsRescued: 0 });
+  const [finance, setFinance] = useState({ raised: 0, lbsRescued: 0 });
 
   const load = useCallback(async () => {
     try {
@@ -54,10 +54,15 @@ export default function ExecutiveDashboard({ navigation }) {
         members: members.length,
         restaurants: restaurants.length,
       });
-      const meals = metrics.find((m) => m.key === 'meals_rescued_org');
+      const lbsMetric = metrics.find((m) => m.key === 'lbs_rescued_org')
+        || metrics.find((m) => m.key === 'meals_rescued_org');
+      // If the only metric we have is the legacy meals one, divide
+      // by 1.2 to surface as pounds.
+      const isLegacyMeals = lbsMetric?.key === 'meals_rescued_org';
+      const lbsValue = lbsMetric ? (isLegacyMeals ? Math.round(lbsMetric.value / 1.2) : lbsMetric.value) : 0;
       setFinance({
         raised: donations.reduce((s, d) => s + (d.amount || 0), 0),
-        mealsRescued: meals?.value || 0,
+        lbsRescued: lbsValue,
       });
     } catch (e) {}
   }, []);
@@ -116,8 +121,8 @@ export default function ExecutiveDashboard({ navigation }) {
             end={{ x: 1, y: 1 }}
             style={styles.kpi}
           >
-            <Text style={styles.kpiLabel}>Meals rescued</Text>
-            <Text style={styles.kpiValue}>{finance.mealsRescued.toLocaleString()}</Text>
+            <Text style={styles.kpiLabel}>Pounds of food rescued</Text>
+            <Text style={styles.kpiValue}>{finance.lbsRescued.toLocaleString()}</Text>
             <Text style={styles.kpiCaption}>in the last 30 days</Text>
           </LinearGradient>
         </View>

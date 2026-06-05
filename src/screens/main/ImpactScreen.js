@@ -40,8 +40,8 @@ export default function ImpactScreen() {
           style={styles.gridItem}
         />
         <StatCard
-          number={user?.meals_rescued || 0}
-          label="Meals Rescued"
+          number={user?.lbs_rescued || Math.round((user?.meals_rescued || 0) / 1.2)}
+          label="Lbs of food rescued"
           color={Colors.sage}
           style={styles.gridItem}
         />
@@ -75,16 +75,16 @@ export default function ImpactScreen() {
         <View style={styles.orgHeroRow}>
           <View style={styles.orgStat}>
             <BrushText variant="heroStat" style={styles.orgNumber}>
-              {fmt(org.meals)}
+              {fmt(org.lbs)}
             </BrushText>
-            <Text style={styles.orgLabel}>Meals Rescued</Text>
+            <Text style={styles.orgLabel}>Pounds of food rescued</Text>
           </View>
           <View style={styles.orgDivider} />
           <View style={styles.orgStat}>
             <BrushText variant="heroStat" style={styles.orgNumber}>
-              {fmt(org.lbs)}
+              {fmt(org.co2)}
             </BrushText>
-            <Text style={styles.orgLabel}>Pounds Rescued</Text>
+            <Text style={styles.orgLabel}>Lbs CO₂ avoided</Text>
           </View>
         </View>
       </LinearGradient>

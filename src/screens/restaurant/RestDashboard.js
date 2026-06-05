@@ -78,10 +78,10 @@ export default function RestDashboard({ navigation }) {
       ]);
       setHistory(hist);
       setPickups(pks);
-      const totalMeals = pks
+      const totalLbs = pks
         .filter((p) => p.status === 'completed')
-        .reduce((sum, p) => sum + Math.round((p.actual_weight_lbs || p.estimated_weight_lbs || 0) * 1.2), 0);
-      setMeals(totalMeals);
+        .reduce((sum, p) => sum + (p.actual_weight_lbs || p.estimated_weight_lbs || 0), 0);
+      setMeals(Math.round(totalLbs));
     } catch {}
   }, [restaurantId]);
 
@@ -203,7 +203,7 @@ export default function RestDashboard({ navigation }) {
         {/* Quick stats */}
         <View style={styles.statsRow}>
           <StatCard number={String(history.length)} label="Donations" color={Colors.sage} style={styles.stat} />
-          <StatCard number={String(meals)} label="Meals rescued" color={Colors.green} style={styles.stat} />
+          <StatCard number={String(meals)} label="Lbs of food rescued" color={Colors.green} style={styles.stat} />
           <StatCard number={String(pickups.filter(p => p.status !== 'completed' && p.status !== 'cancelled').length)} label="Active posts" color={Colors.pink} style={styles.stat} />
         </View>
 

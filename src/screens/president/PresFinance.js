@@ -78,7 +78,7 @@ export default function PresFinance({ navigation }) {
     })
     .reduce((s, d) => s + (Number(d.amount) || 0), 0);
   const lifetime = donations.reduce((s, d) => s + (Number(d.amount) || 0), 0);
-  const totalMeals = members.reduce((s, u) => s + (u.meals_rescued || 0), 0);
+  const totalLbs = members.reduce((s, u) => s + (u.lbs_rescued || Math.round((u.meals_rescued || 0) / 1.2)), 0);
   const totalHours = members.reduce((s, u) => s + (u.hours_logged || 0), 0);
 
   const recentDonations = useMemo(() => [...donations]
@@ -90,14 +90,14 @@ export default function PresFinance({ navigation }) {
     .slice(0, 10), [donations]);
 
   function exportRoster() {
-    const header = ['Name', 'Email', 'Phone', 'Role', 'Events', 'Meals', 'Hours'];
+    const header = ['Name', 'Email', 'Phone', 'Role', 'Events', 'Lbs', 'Hours'];
     const rows = members.map((m) => [
       m.name || '',
       m.email || '',
       m.phone || '',
       m.role || 'member',
       m.events_attended || 0,
-      m.meals_rescued || 0,
+      m.lbs_rescued || Math.round((m.meals_rescued || 0) / 1.2),
       m.hours_logged || 0,
     ].map(csvEscape).join(','));
     const csv = [header.join(','), ...rows].join('\n');
@@ -148,7 +148,7 @@ export default function PresFinance({ navigation }) {
         <View style={styles.kpis}>
           <Kpi label={`Raised ${thisYear}`} value={fmtMoney(ytd)} />
           <Kpi label="Lifetime raised" value={fmtMoney(lifetime)} />
-          <Kpi label="Meals rescued" value={totalMeals.toLocaleString('en-US')} />
+          <Kpi label="Pounds of food rescued" value={totalLbs.toLocaleString('en-US')} />
           <Kpi label="Volunteer hours" value={`${totalHours.toLocaleString('en-US')}h`} />
         </View>
 

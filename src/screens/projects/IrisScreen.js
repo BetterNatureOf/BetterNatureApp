@@ -124,7 +124,7 @@ export default function IrisScreen({ navigation }) {
 
       {/* Stats */}
       <View style={styles.statsRow}>
-        <StatCard number={fmt(stats.meals)} label="Meals Rescued" color={Colors.sage} style={styles.stat} />
+        <StatCard number={fmt(stats.lbs || Math.round((stats.meals || 0) / 1.2))} label="Lbs of food rescued" color={Colors.sage} style={styles.stat} />
         <StatCard number={fmt(partners)} label="Partners" color={Colors.sage} style={styles.stat} />
         <StatCard number={fmt(volunteers)} label="Volunteers" color={Colors.sage} style={styles.stat} />
       </View>

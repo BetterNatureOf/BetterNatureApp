@@ -99,10 +99,10 @@ export default function MyPickups({ pickups = [], userId, onPickupPress, onClaim
                 </View>
               </View>
               <View style={styles.detailItem}>
-                <Text style={styles.detailIcon}>{'\u{1F372}'}</Text>
+                <Text style={styles.detailIcon}>{'\u{2696}️'}</Text>
                 <View>
-                  <Text style={styles.detailLabel}>Est. Meals</Text>
-                  <Text style={styles.detailValue}>~{Math.round(pickup.estimated_weight_lbs * 1.2)}</Text>
+                  <Text style={styles.detailLabel}>Lbs of food</Text>
+                  <Text style={styles.detailValue}>{pickup.estimated_weight_lbs} lbs</Text>
                 </View>
               </View>
             </View>

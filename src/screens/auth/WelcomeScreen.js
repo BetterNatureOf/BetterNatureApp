@@ -54,8 +54,8 @@ export default function WelcomeScreen({ navigation }) {
           {/* Mini stats */}
           <View style={styles.statsRow}>
             <View style={styles.miniStat}>
-              <Text style={styles.miniStatNum}>{fmt(stats.meals)}</Text>
-              <Text style={styles.miniStatLabel}>Meals Rescued</Text>
+              <Text style={styles.miniStatNum}>{fmt(stats.lbs || Math.round((stats.meals || 0) / 1.2))}</Text>
+              <Text style={styles.miniStatLabel}>Pounds rescued</Text>
             </View>
             <View style={styles.miniDivider} />
             <View style={styles.miniStat}>

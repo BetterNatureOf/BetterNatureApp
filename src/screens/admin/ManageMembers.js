@@ -422,8 +422,8 @@ export default function ManageMembers({ navigation, route }) {
                   <Text style={styles.statLabel}>Events</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statBig}>{editing?.meals_rescued || 0}</Text>
-                  <Text style={styles.statLabel}>Meals</Text>
+                  <Text style={styles.statBig}>{editing?.lbs_rescued || Math.round((editing?.meals_rescued || 0) / 1.2)}</Text>
+                  <Text style={styles.statLabel}>Lbs</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBig}>{editing?.hours_logged || 0}h</Text>
@@ -543,7 +543,7 @@ export default function ManageMembers({ navigation, route }) {
                   />
                 </View>
                 <View style={styles.statEditCell}>
-                  <Text style={styles.statEditLabel}>Meals</Text>
+                  <Text style={styles.statEditLabel}>Lbs</Text>
                   <TextInput
                     style={styles.statEditInput}
                     value={statMeals}
