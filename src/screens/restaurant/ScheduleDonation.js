@@ -41,8 +41,11 @@ export default function ScheduleDonation({ navigation }) {
   const [photoUri, setPhotoUri] = useState(null);
   const [weight, setWeight] = useState(20);
   const [windowKey, setWindowKey] = useState('3h');
-  // Optional: schedule a pickup for a future date instead of using the
-  // "within X hours" chips. When set, this overrides the window chip.
+  // The two timing options are mutually exclusive — either a quick
+  // "within X hrs" window OR a specific future date/time. Picking
+  // one clears the other so a posted pickup never has ambiguous
+  // intent. Default is window mode.
+  const [timingMode, setTimingMode] = useState('window'); // 'window' | 'date'
   const [scheduledFor, setScheduledFor] = useState(null);
   const [notes, setNotes] = useState('');
   const [posting, setPosting] = useState(false);
@@ -91,19 +94,27 @@ export default function ScheduleDonation({ navigation }) {
       );
       return;
     }
-    if (scheduledFor && scheduledFor.getTime() < Date.now() - 60000) {
-      notify('Pick a future time', 'The scheduled date you chose has already passed.');
-      return;
+    if (timingMode === 'date') {
+      if (!scheduledFor) {
+        notify('Pick a date & time', 'Specific-date mode is selected but no time was chosen.');
+        return;
+      }
+      if (scheduledFor.getTime() < Date.now() - 60000) {
+        notify('Pick a future time', 'The scheduled date you chose has already passed.');
+        return;
+      }
     }
     setPosting(true);
     try {
       const restaurantId = user?.restaurant_id || user?.id;
       const photoUrl = await uploadPickupPhoto(restaurantId, photoUri).catch(() => null);
       const w = WINDOW_CHIPS.find(x => x.key === windowKey) || WINDOW_CHIPS[1];
-      // If the restaurant picked a future date, use that as the deadline
-      // instead of the chip-based "within X hours" window.
-      const until = scheduledFor ? scheduledFor.toISOString() : inHours(w.hours);
-      const hoursOut = scheduledFor
+      // Either mode — never both. The other field is forced to null
+      // so downstream code (restaurant feed sort, SMS dispatcher,
+      // pickup card 'pickup by' line) reads one canonical source.
+      const useDate = timingMode === 'date';
+      const until = useDate ? scheduledFor.toISOString() : inHours(w.hours);
+      const hoursOut = useDate
         ? Math.max(1, Math.round((scheduledFor.getTime() - Date.now()) / 3600000))
         : w.hours;
       await createPickup({
@@ -116,7 +127,8 @@ export default function ScheduleDonation({ navigation }) {
         meals_estimate: Math.round(weight * 1.2),
         pickup_window_hours: hoursOut,
         pickup_window_until: until,
-        scheduled_for: scheduledFor ? scheduledFor.toISOString() : null,
+        scheduled_for: useDate ? scheduledFor.toISOString() : null,
+        timing_mode: useDate ? 'date' : 'window',
         fridge_id: fridgeId || null,
         fridge_name: fridgeName || '',
         notes: notes.trim(),
@@ -203,38 +215,59 @@ export default function ScheduleDonation({ navigation }) {
           ≈ {Math.round(weight * 1.2)} meals · {Math.round(weight * 3.8)} lbs CO₂ avoided
         </Text>
 
-        {/* Window chips */}
-        <Text style={styles.sectionLabel}>Pickup window</Text>
-        <View style={styles.chipsCol}>
-          {WINDOW_CHIPS.map(w => (
-            <TouchableOpacity
-              key={w.key}
-              style={[styles.windowChip, windowKey === w.key && styles.chipOn]}
-              onPress={() => setWindowKey(w.key)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.chipText, windowKey === w.key && styles.chipTextOn]}>
-                {w.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Pickup timing — mutually exclusive modes */}
+        <Text style={styles.sectionLabel}>When can volunteers pick this up?</Text>
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeOpt, timingMode === 'window' && styles.modeOptOn]}
+            onPress={() => { setTimingMode('window'); setScheduledFor(null); }}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.modeOptText, timingMode === 'window' && styles.modeOptTextOn]}>
+              Pickup window
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeOpt, timingMode === 'date' && styles.modeOptOn]}
+            onPress={() => setTimingMode('date')}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.modeOptText, timingMode === 'date' && styles.modeOptTextOn]}>
+              Specific date
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Specific date (optional, overrides window) */}
-        <Text style={styles.sectionLabel}>
-          Or pick a specific date <Text style={styles.optional}>(optional)</Text>
-        </Text>
-        <DatePicker
-          value={scheduledFor}
-          onChange={setScheduledFor}
-          mode="datetime"
-          minDate={new Date()}
-          placeholder="Tap to choose date & time"
-        />
-        {scheduledFor && (
-          <TouchableOpacity onPress={() => setScheduledFor(null)} style={styles.retake}>
-            <Text style={styles.retakeText}>Clear date</Text>
-          </TouchableOpacity>
+        {timingMode === 'window' ? (
+          <View style={styles.chipsCol}>
+            {WINDOW_CHIPS.map(w => (
+              <TouchableOpacity
+                key={w.key}
+                style={[styles.windowChip, windowKey === w.key && styles.chipOn]}
+                onPress={() => setWindowKey(w.key)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.chipText, windowKey === w.key && styles.chipTextOn]}>
+                  {w.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <>
+            <DatePicker
+              value={scheduledFor}
+              onChange={setScheduledFor}
+              mode="datetime"
+              minDate={new Date()}
+              placeholder="Tap to choose date & time"
+            />
+            {scheduledFor && (
+              <TouchableOpacity onPress={() => setScheduledFor(null)} style={styles.retake}>
+                <Text style={styles.retakeText}>Clear date</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
 
         {/* Drop-off destination — community fridge network */}
@@ -335,6 +368,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chipOn: { backgroundColor: Colors.green, borderColor: Colors.green },
+  modeToggle: {
+    flexDirection: 'row', gap: 6, padding: 4,
+    backgroundColor: '#F7F5EF', borderRadius: 999, marginBottom: 12,
+  },
+  modeOpt: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 999, alignItems: 'center' },
+  modeOptOn: { backgroundColor: Colors.white, shadowColor: '#000', shadowOpacity: 0.06, shadowOffset: { width: 0, height: 1 }, shadowRadius: 3, elevation: 2 },
+  modeOptText: { fontSize: 13, fontWeight: '700', color: Colors.gray, letterSpacing: 0.3 },
+  modeOptTextOn: { color: Colors.green },
   chipText: { fontSize: 15, fontWeight: '600', color: Colors.dark },
   chipTextOn: { color: Colors.white },
   preview: { ...Type.caption, marginTop: 10, color: Colors.gray },
