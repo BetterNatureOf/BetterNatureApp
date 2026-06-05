@@ -14,26 +14,33 @@ function looksLikeMember(u) {
   return (u.role || 'member').toLowerCase() !== 'restaurant';
 }
 
-export async function sendBroadcast({ title, message, audience, sentBy }) {
+export async function sendBroadcast({ title, message, audience, sentBy, chapterId = null }) {
   if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
   if (!title?.trim() || !message?.trim()) return { ok: false, reason: 'missing_content' };
 
-  // 1) Persistent announcement row for the in-app archive.
+  // 1) Persistent announcement row for the in-app archive. chapter_id
+  // stamped when a president sent it so firestore.rules can verify
+  // the writer was president of THIS chapter, not someone else's.
   await addDoc(collection(db, 'announcements'), {
     title: title.trim(),
     message: message.trim(),
     target: audience,
+    chapter_id: chapterId,
     sent_by: sentBy || null,
     created_at: serverTimestamp(),
   });
 
-  // 2) Recipient uids.
+  // 2) Recipient uids. If chapterId is set, only members of that
+  // chapter receive — a president cannot broadcast to other chapters.
   const recipients = [];
   if (audience === 'bn' || audience === 'all') {
     const usnap = await getDocs(collection(db, 'users'));
     usnap.docs.forEach((d) => {
       const u = { id: d.id, ...d.data() };
-      if (!u.deleted_at && looksLikeMember(u)) recipients.push(u.id);
+      if (!u.deleted_at && looksLikeMember(u)
+          && (!chapterId || u.chapter_id === chapterId)) {
+        recipients.push(u.id);
+      }
     });
   }
   if (audience === 'restaurants' || audience === 'all') {
@@ -41,6 +48,7 @@ export async function sendBroadcast({ title, message, audience, sentBy }) {
     rsnap.docs.forEach((d) => {
       const r = { id: d.id, ...d.data() };
       if (r.status !== 'approved') return;
+      if (chapterId && r.chapter_id !== chapterId) return;
       // Restaurants live in `users` too (signup creates a Firebase Auth
       // user). r.user_id is stamped at signup; fall back to r.id if not.
       recipients.push(r.user_id || r.id);

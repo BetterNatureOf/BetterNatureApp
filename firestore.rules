@@ -34,6 +34,23 @@ service cloud.firestore {
       return isSignedIn() && role() in ['executive', 'super_admin'];
     }
 
+    // The signed-in user's chapter_id (from their user doc). Used to
+    // enforce that a chapter president can only edit objects in their
+    // own chapter — not another chapter's events/announcements/etc.
+    function myChapterId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.chapter_id;
+    }
+    // True when the writer is a president AND the chapterId in
+    // question matches their own chapter. Execs bypass — they can
+    // act across all chapters.
+    function isPresOfChapter(chapterId) {
+      return isExec()
+        || (isSignedIn()
+            && role() in ['chapter_president', 'chapter_pres']
+            && chapterId != null
+            && chapterId == myChapterId());
+    }
+
     // ── users ──
     // Anyone signed in can read member profiles (for leaderboard, signups).
     // The user themselves can update non-privileged fields. Privileged
@@ -72,9 +89,17 @@ service cloud.firestore {
     }
 
     // ── chapters ──
+    // Execs can create/delete any chapter and edit any chapter. A
+    // chapter president can ONLY edit their own chapter doc (the one
+    // whose id matches their user.chapter_id) — never a sibling
+    // chapter's name, location, or status.
     match /chapters/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isExec()
+        || (isSignedIn()
+            && role() in ['chapter_president', 'chapter_pres']
+            && id == myChapterId());
     }
 
     // ── chapter_applications ──
@@ -104,10 +129,19 @@ service cloud.firestore {
     }
 
     // ── events ──
+    // Exec creates/edits/deletes anything; chapter pres creates and
+    // edits ONLY events stamped with their own chapter_id, and
+    // cannot reassign an event from their chapter to another by
+    // changing chapter_id on update.
     match /events/{id} {
       allow read: if true;
-      allow create, update: if isExec();
-      allow delete: if isAdmin();
+      allow create: if isPresOfChapter(request.resource.data.chapter_id);
+      allow update: if isPresOfChapter(resource.data.chapter_id)
+                    && isPresOfChapter(request.resource.data.chapter_id);
+      allow delete: if isAdmin()
+                    || (isSignedIn()
+                        && role() in ['chapter_president', 'chapter_pres']
+                        && resource.data.chapter_id == myChapterId());
     }
 
     // ── event_signups ──
@@ -209,9 +243,19 @@ service cloud.firestore {
     }
 
     // ── announcements ──
+    // Exec broadcasts org-wide; chapter pres can broadcast ONLY to
+    // their own chapter (must stamp chapter_id matching their user
+    // doc on create, and can only edit/delete their own chapter's
+    // announcements).
     match /announcements/{id} {
       allow read: if isSignedIn();
-      allow write: if isExec();
+      allow create: if isPresOfChapter(request.resource.data.chapter_id);
+      allow update: if isPresOfChapter(resource.data.chapter_id)
+                    && isPresOfChapter(request.resource.data.chapter_id);
+      allow delete: if isAdmin()
+                    || (isSignedIn()
+                        && role() in ['chapter_president', 'chapter_pres']
+                        && resource.data.chapter_id == myChapterId());
     }
 
     // ── org_metrics ──

@@ -18,6 +18,11 @@ const AUDIENCES = [
 
 export default function BroadcastScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  // Execs (and super_admins) broadcast org-wide. A chapter pres
+  // can ONLY broadcast to their own chapter — chapter_id stamped on
+  // the announcement + recipient filter enforces scoping.
+  const isExecLike = ['executive', 'admin', 'super_admin'].includes(user?.role);
+  const presChapterId = !isExecLike ? (user?.chapter_id || null) : null;
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [audience, setAudience] = useState('bn');
@@ -39,6 +44,7 @@ export default function BroadcastScreen({ navigation }) {
       const result = await sendBroadcast({
         title, message, audience,
         sentBy: user?.id || null,
+        chapterId: presChapterId, // null for execs (org-wide)
       });
       if (!result?.ok) {
         notify('Could not send', result?.reason || 'Something went wrong. Try again.');
@@ -60,7 +66,9 @@ export default function BroadcastScreen({ navigation }) {
         <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
         <BrushText variant="screenTitle" style={styles.title}>Broadcast</BrushText>
         <Text style={styles.subtitle}>
-          Sends an in-app notification AND a text message to everyone in the chosen audience who opted in to SMS.
+          {presChapterId
+            ? `Goes to your chapter only — every other chapter stays untouched.`
+            : `Sends an in-app notification + email to everyone in the chosen audience.`}
         </Text>
 
         <Text style={styles.label}>Audience</Text>
