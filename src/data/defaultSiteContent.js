@@ -56,9 +56,9 @@ export const DEFAULT_SITE_CONTENT = {
         blurb: 'Restaurant surplus, same-day pickup, direct delivery to shelters, community fridges, and families on our recipient list. Free for partners. Tax-deductible. Weighed, logged, reported.',
         stat: '',
         stats: [
-          { value: '0',     label: 'meal kits delivered' },
-          { value: '0 lbs', label: 'food rescued' },
-          { value: '0 lbs', label: 'CO₂ avoided' },
+          { value: '2,780 lbs',   label: 'food rescued' },
+          { value: '10,564 lbs',  label: 'CO₂ avoided' },
+          { value: '486,500 gal', label: 'water saved' },
         ],
       },
       {

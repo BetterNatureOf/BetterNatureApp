@@ -112,35 +112,47 @@
     hydro: '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M32 6 C 20 24, 16 34, 16 42 a 16 16 0 0 0 32 0 C 48 34, 44 24, 32 6 Z"/><path d="M24 42 a 8 8 0 0 0 8 8"/></svg>',
   };
 
-  setHTML('#programsList', C.programs.items.map((p, i) => `
-    <div class="program reveal ${i % 2 === 1 ? 'program--reverse' : ''}">
+  // Defensive: editor saves may leave per-item fields missing. Fall
+  // back to safe values so one bad item never aborts the whole
+  // section render (and therefore every section beneath it).
+  setHTML('#programsList', (C.programs.items || []).map((p, i) => {
+    const key  = p?.key  || `program-${i}`;
+    const code = p?.code || '';
+    const title = p?.title || '';
+    const body = p?.body || p?.blurb || '';
+    const stats = Array.isArray(p?.stats) ? p.stats : [];
+    const cta  = p?.cta && p.cta.href
+      ? `<a href="${p.cta.href}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>`
+      : '';
+    return `
+    <div class="program reveal ${i % 2 === 1 ? 'program--reverse' : ''}" data-program="${key}">
       <div class="program__inner">
-        <div class="program__code">${p.code}</div>
-        <h3 class="program__title">${p.title}</h3>
-        <p class="program__body">${p.body}</p>
+        <div class="program__code">${code}</div>
+        <h3 class="program__title">${title}</h3>
+        <p class="program__body">${body}</p>
         <div class="program__stats">
-          ${p.stats.map(s => `
+          ${stats.map(s => `
             <div>
-              <div class="program__stat-value">${s.value}</div>
-              <div class="program__stat-label">${s.label}</div>
+              <div class="program__stat-value">${s?.value ?? ''}</div>
+              <div class="program__stat-label">${s?.label ?? ''}</div>
             </div>
           `).join('')}
         </div>
-        ${p.cta && p.cta.href ? `<a href="${p.cta.href}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>` : ''}
+        ${cta}
       </div>
-      <div class="program__visual program__visual--${p.key}">
+      <div class="program__visual program__visual--${key}">
         <!-- Real project logo. Falls back gracefully to the SVG icon
              beneath it if the PNG isn't deployed yet. -->
         <img
-          src="projects/${p.key}.png"
-          alt="${p.title}"
+          src="projects/${key}.png"
+          alt="${title}"
           class="program__logo"
           onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='block');"
         />
-        <div class="program__logoFallback" style="display:none">${icons[p.key] || ''}</div>
+        <div class="program__logoFallback" style="display:none">${icons[key] || ''}</div>
       </div>
     </div>
-  `).join(''));
+  `; }).join(''));
 
   // ── HOW IT WORKS ────────────────────────────────────────────────────
   set('#howEyebrow', C.howItWorks.eyebrow);
