@@ -14,6 +14,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { createRestaurant, updateRestaurant } from '../../services/database';
 import { signUp, updateProfile } from '../../services/auth';
+import { notify, notifyThen } from '../../services/ui';
 import useAuthStore, { ROLES } from '../../store/authStore';
 import Screen from '../../components/ui/Screen';
 
@@ -37,11 +38,11 @@ export default function RestaurantSignup({ navigation }) {
 
   async function handleSubmit() {
     if (!form.name.trim() || !form.email.trim() || !form.password) {
-      Alert.alert('Required', 'Please fill in restaurant name, email, and password.');
+      notify('Required', 'Please fill in restaurant name, email, and password.');
       return;
     }
     if (form.password.length < 6) {
-      Alert.alert('Password too short', 'Use at least 6 characters.');
+      notify('Password too short', 'Use at least 6 characters.');
       return;
     }
 
@@ -91,12 +92,16 @@ export default function RestaurantSignup({ navigation }) {
         });
       }
 
-      Alert.alert(
+      notifyThen(
         'Application received',
-        "Thanks! A BetterNature executive will review your application in the app. You'll see your dashboard unlock as soon as you're approved."
+        "Thanks! A BetterNature executive will review your application in the app. You'll see your dashboard unlock as soon as you're approved.",
+        () => {}, // setUser above already routes them to the awaiting-approval gate
       );
     } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to submit');
+      // Surface the real reason instead of the generic 'Failed to submit'
+      // so we can tell duplicate-email from rule-denied from network.
+      const msg = e?.message || e?.code || 'Failed to submit';
+      notify('Could not submit', msg + '\n\nIf this keeps happening, email info@betternatureofficial.org with what you tried.');
     } finally {
       setLoading(false);
     }

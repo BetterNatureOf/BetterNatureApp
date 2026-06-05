@@ -100,9 +100,15 @@ service cloud.firestore {
     }
 
     // ── restaurants ──
+    // A new restaurant signup creates their own doc (with
+    // status:'pending' and user_id matching their auth uid) so the
+    // approval queue picks it up. Execs manage everything else.
     match /restaurants/{id} {
       allow read: if true;
-      allow write: if isExec();
+      allow create: if isSignedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isExec();
     }
 
     // ── donations ──
