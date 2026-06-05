@@ -22,7 +22,7 @@
   // static content.js defaults. Best-effort — if Firestore is down we
   // fall back to whatever shipped in content.js so the page still paints.
   try {
-    const { applyLiveContent } = await import('./firebase-site-content.js?v=2026-06-05b');
+    const { applyLiveContent } = await import('./firebase-site-content.js?v=2026-06-05c');
     await applyLiveContent();
   } catch (e) {
     console.warn('live site_content unavailable, using static content.js', e);
@@ -126,7 +126,7 @@
             </div>
           `).join('')}
         </div>
-        <a href="${p.cta.href}" class="btn btn--forest">${p.cta.text}</a>
+        ${p.cta && p.cta.href ? `<a href="${p.cta.href}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>` : ''}
       </div>
       <div class="program__visual program__visual--${p.key}">
         <!-- Real project logo. Falls back gracefully to the SVG icon

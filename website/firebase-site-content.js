@@ -10,12 +10,38 @@ import { db } from './firebase-auth.js';
 // it's actually meaningful. Empty strings, empty arrays, null, and
 // undefined are all skipped so an accidentally-saved blank field in
 // the editor cannot wipe out the homepage copy that's currently live.
+//
+// Arrays-of-objects are merged per index so that an item the editor
+// saved without (e.g. programs.items[].cta) inherits the base's
+// value for that field. This matters because the editor's seed only
+// covers the fields IT lets the user edit; everything else must be
+// preserved from content.js.
 function deepMerge(base, patch) {
   if (!patch || typeof patch !== 'object') return base;
-  // If patch is an empty array, keep the base array as-is. An empty
-  // array on the editor side (no team members entered yet, etc.)
-  // must not erase the values that content.js shipped with.
-  if (Array.isArray(patch)) return patch.length ? patch : base;
+  if (Array.isArray(patch)) {
+    if (patch.length === 0) return base;
+    // Per-index merge when base has matching slots. This preserves
+    // base fields (like 'cta', 'instagram', etc.) that the editor
+    // doesn't expose.
+    if (Array.isArray(base)) {
+      const out = [];
+      const len = Math.max(base.length, patch.length);
+      for (let i = 0; i < len; i++) {
+        const b = base[i];
+        const p = patch[i];
+        if (p == null) { if (b != null) out.push(b); continue; }
+        if (b == null) { out.push(p); continue; }
+        if (typeof p === 'object' && typeof b === 'object'
+            && !Array.isArray(p) && !Array.isArray(b)) {
+          out.push(deepMerge(b, p));
+        } else {
+          out.push(p);
+        }
+      }
+      return out;
+    }
+    return patch;
+  }
   const out = Array.isArray(base) ? [...base] : { ...(base || {}) };
   for (const k of Object.keys(patch)) {
     const v = patch[k];
@@ -24,6 +50,8 @@ function deepMerge(base, patch) {
     if (Array.isArray(v) && v.length === 0) continue;        // empty array
     if (typeof v === 'object' && !Array.isArray(v)) {
       out[k] = deepMerge(base?.[k], v);                      // recurse
+    } else if (Array.isArray(v)) {
+      out[k] = deepMerge(base?.[k], v);                      // array path
     } else {
       out[k] = v;
     }
