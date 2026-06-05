@@ -14,6 +14,8 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import useAuthStore from '../../store/authStore';
 import { createPickup } from '../../services/database';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
 import { requireVerifiedId } from '../../services/idGate';
 import { notify, notifyThen } from '../../services/ui';
@@ -107,7 +109,6 @@ export default function ScheduleDonation({ navigation }) {
     setPosting(true);
     try {
       const restaurantId = user?.restaurant_id || user?.id;
-      const photoUrl = await uploadPickupPhoto(restaurantId, photoUri).catch(() => null);
       const w = WINDOW_CHIPS.find(x => x.key === windowKey) || WINDOW_CHIPS[1];
       // Either mode — never both. The other field is forced to null
       // so downstream code (restaurant feed sort, SMS dispatcher,
@@ -117,12 +118,19 @@ export default function ScheduleDonation({ navigation }) {
       const hoursOut = useDate
         ? Math.max(1, Math.round((scheduledFor.getTime() - Date.now()) / 3600000))
         : w.hours;
-      await createPickup({
+
+      // Post the pickup IMMEDIATELY without waiting for the photo
+      // upload. Volunteers see it on the feed; the photo gets
+      // patched onto the doc when the upload finishes (usually a
+      // couple seconds later). This is the difference between
+      // "Post" responding in 0.5s vs 8s on a slow connection.
+      const created = await createPickup({
         restaurant_id: restaurantId,
         restaurant_name: user?.business_name || user?.name || 'Restaurant',
         chapter_id: user?.chapter_id || null,
         chapter_name: user?.chapter_name || '',
-        photo_url: photoUrl || null,
+        photo_url: null,
+        photo_uploading: !!photoUri,
         estimated_weight_lbs: weight,
         meals_estimate: Math.round(weight * 1.2),
         pickup_window_hours: hoursOut,
@@ -133,11 +141,28 @@ export default function ScheduleDonation({ navigation }) {
         fridge_name: fridgeName || '',
         notes: notes.trim(),
       });
+
+      // Toast and dismiss right away.
       notifyThen(
         'Posted!',
-        `Volunteers nearby just got notified. ~${Math.round(weight * 1.2)} meals worth — pickup window ${w.label.toLowerCase()}.`,
+        `Volunteers nearby just got notified. ~${Math.round(weight * 1.2)} meals worth — pickup ${useDate ? 'on the scheduled date' : 'window ' + w.label.toLowerCase()}.`,
         () => navigation.goBack(),
       );
+
+      // Fire-and-forget photo upload + patch. If it fails the
+      // pickup still exists, just without a thumbnail; restaurant
+      // can re-upload from the pickup detail screen.
+      if (photoUri && created?.id) {
+        uploadPickupPhoto(restaurantId, photoUri)
+          .then((photoUrl) => {
+            if (!photoUrl) return;
+            return updateDoc(doc(db, 'pickups', created.id), {
+              photo_url: photoUrl,
+              photo_uploading: false,
+            });
+          })
+          .catch((e) => console.warn('photo upload (post-create)', e));
+      }
     } catch (e) {
       console.error('createPickup failed:', e);
       notify('Could not post', e?.message || 'Try again.');
