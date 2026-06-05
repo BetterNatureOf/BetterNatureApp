@@ -105,6 +105,24 @@ export default function ProfileScreen({ navigation }) {
         />
       </View>
 
+      {/* Pickup reliability — completed vs dropped. Surfaces the
+          `pickups_dropped` counter bumped when a volunteer releases
+          a claimed pickup, alongside `pickups_completed`. */}
+      <View style={styles.statsRow}>
+        <StatCard
+          number={user?.pickups_completed || 0}
+          label="Pickups done"
+          color={Colors.green}
+          style={styles.statItem}
+        />
+        <StatCard
+          number={user?.pickups_dropped || 0}
+          label="Pickups dropped"
+          color={Colors.pink}
+          style={styles.statItem}
+        />
+      </View>
+
       <BrushDivider />
 
       {/* Menu */}
