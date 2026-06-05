@@ -12,6 +12,23 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'rea
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import { fetchActivePickups, fetchAllMembers, fetchRestaurants, fetchRecentlyCompletedPickups } from '../../services/database';
 
+// Start of the local day in ms. LiveOps resets at midnight — every
+// morning the leader sees a clean board, the prior day's runs move
+// to history.
+function startOfTodayMs() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// Lift a Firestore timestamp / ISO / Date to ms. Returns 0 if absent.
+function toMs(t) {
+  if (!t) return 0;
+  if (t?.toDate) return t.toDate().getTime();
+  if (t instanceof Date) return t.getTime();
+  return new Date(t).getTime();
+}
+
 function timeAgo(ts) {
   if (!ts) return '';
   const ms = Date.now() - new Date(ts).getTime();
@@ -40,14 +57,24 @@ export default function LiveOps({ chapterId = null, navigation }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const today = startOfTodayMs();
       const [pk, done, mem, rest] = await Promise.all([
         fetchActivePickups({ chapterId }),
         fetchRecentlyCompletedPickups({ chapterId, hours: 24 }),
         fetchAllMembers(),
         fetchRestaurants(),
       ]);
-      setPickups(pk);
-      setRecent(done);
+      // LiveOps shows ONLY today. A run claimed yesterday that's
+      // still sitting "claimed" doesn't bleed into the new day's
+      // board, and yesterday's deliveries vanish at midnight.
+      const inflightToday = pk.filter((p) =>
+        toMs(p.claimed_at || p.created_at) >= today
+      );
+      const deliveredToday = done.filter((p) =>
+        toMs(p.completed_at) >= today
+      );
+      setPickups(inflightToday);
+      setRecent(deliveredToday);
       setMembers(Object.fromEntries(mem.map((m) => [m.id, m])));
       setRestaurants(Object.fromEntries(rest.map((r) => [r.id, r])));
     } catch (e) {
@@ -67,7 +94,10 @@ export default function LiveOps({ chapterId = null, navigation }) {
   return (
     <View style={styles.wrap}>
       <View style={styles.headRow}>
-        <Text style={styles.heading}>Live operations</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.heading}>Live operations</Text>
+          <Text style={styles.subhead}>Today only · resets at midnight</Text>
+        </View>
         <TouchableOpacity onPress={load} style={styles.refresh}>
           <Text style={styles.refreshText}>Refresh</Text>
         </TouchableOpacity>
@@ -129,7 +159,7 @@ export default function LiveOps({ chapterId = null, navigation }) {
       {recent.length > 0 && (
         <>
           <Text style={[styles.heading, { marginTop: 14, fontSize: 16 }]}>
-            Delivered · last 24h
+            Delivered today
           </Text>
           {recent.map((p) => {
             const vol = members[p.claimed_by];
@@ -165,7 +195,8 @@ export default function LiveOps({ chapterId = null, navigation }) {
 const styles = StyleSheet.create({
   wrap: { marginBottom: 20 },
   headRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  heading: { ...Type.h3, color: Colors.dark, flex: 1 },
+  heading: { ...Type.h3, color: Colors.dark },
+  subhead: { ...Type.caption, color: Colors.grayMid, marginTop: 2 },
   refresh: { paddingHorizontal: 10, paddingVertical: 4 },
   refreshText: { color: Colors.green, fontWeight: '600', fontSize: 13 },
 
