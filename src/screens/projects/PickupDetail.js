@@ -22,6 +22,7 @@ import useAuthStore from '../../store/authStore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant } from '../../services/database';
+import { getProfile } from '../../services/auth';
 import { openInMaps, openDirections, getCurrentPosition, milesBetween } from '../../services/maps';
 import { requireVerifiedId } from '../../services/idGate';
 import { notify, notifyThen, confirm } from '../../services/ui';
@@ -31,6 +32,7 @@ import { Image, TouchableOpacity } from 'react-native';
 export default function PickupDetail({ route, navigation }) {
   const pickupId = route?.params?.pickupId;
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const [pickup, setPickup] = useState(route?.params?.pickup || null);
   const [busy, setBusy] = useState(false);
   const [chosenFridge, setChosenFridge] = useState(null);
@@ -144,6 +146,16 @@ export default function PickupDetail({ route, navigation }) {
       const w = weight ? parseFloat(weight) : undefined;
       await completePickup(pickup.id, w);
       await refresh();
+      // Pull the freshly bumped user doc so Profile / Impact /
+      // Leaderboard show the updated lbs_rescued + hours the moment
+      // the volunteer pops back. Without this the screens stay stuck
+      // on the pre-pickup numbers until the next sign-in.
+      try {
+        if (user?.id) {
+          const fresh = await getProfile(user.id);
+          if (fresh && setUser) setUser({ ...user, ...fresh });
+        }
+      } catch (e) { console.warn('user refresh after pickup', e); }
       notifyThen('Delivered', 'Thanks for the run — your impact is logged.', () => navigation.goBack());
     } catch (e) {
       notify('Could not complete', e?.message || 'Try again.');

@@ -12,7 +12,8 @@
 // We don't cap maxWidth on desktop because the explicit ask was: use the
 // whole laptop screen. Padding scales with breakpoint instead of layout
 // width so the content breathes without feeling like a stretched phone.
-import React from 'react';
+import React, { useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { ScrollView, StyleSheet, View, Text, Platform } from 'react-native';
 import { Colors, Type } from '../../config/theme';
 import useAuthStore from '../../store/authStore';
@@ -30,11 +31,23 @@ import useBreakpoint from '../../hooks/useBreakpoint';
 import useEvents from '../../hooks/useEvents';
 import usePickups from '../../hooks/usePickups';
 import { confirm } from '../../services/ui';
+import { getProfile } from '../../services/auth';
 import Screen from '../../components/ui/Screen';
 
 export default function DashboardScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const unreadCount = useNotifStore((s) => s.unreadCount);
+
+  // Re-pull the user doc on every tab focus so lbs_rescued / hours
+  // / pickups stats reflect the post-pickup bumps without forcing
+  // a sign-out/sign-in.
+  useFocusEffect(useCallback(() => {
+    if (!user?.id) return;
+    getProfile(user.id).then((fresh) => {
+      if (fresh && setUser) setUser({ ...user, ...fresh });
+    }).catch(() => {});
+  }, [user?.id]));
   const { events } = useEvents();
   const { pickups, claim } = usePickups();
   const { isDesktop, isTablet, width } = useBreakpoint();

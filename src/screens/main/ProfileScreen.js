@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
@@ -10,7 +11,7 @@ import Icon from '../../components/ui/Icon';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import FadeInView from '../../components/ui/FadeInView';
 import useAuthStore from '../../store/authStore';
-import { signOut } from '../../services/auth';
+import { signOut, getProfile } from '../../services/auth';
 import { confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
@@ -26,7 +27,19 @@ const MENU_ITEMS = [
 
 export default function ProfileScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const { signOut: clearAuth } = useAuthStore();
+
+  // Re-pull the user doc every time Profile is opened so lbs_rescued
+  // / hours_logged / pickups_completed reflect the bumps written by
+  // completePickup. Without this the screen would stay stuck on the
+  // numbers from when the user last signed in.
+  useFocusEffect(useCallback(() => {
+    if (!user?.id) return;
+    getProfile(user.id).then((fresh) => {
+      if (fresh && setUser) setUser({ ...user, ...fresh });
+    }).catch(() => {});
+  }, [user?.id]));
 
   async function handleSignOut() {
     // Alert.alert with array-of-buttons silently drops onPress callbacks

@@ -10,20 +10,28 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useAuthStore from '../../store/authStore';
 import { LeaderboardBody } from './LeaderboardScreen';
 import { getOrgStats } from '../../services/orgStats';
+import { getProfile } from '../../services/auth';
 import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
 export default function ImpactScreen() {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const [org, setOrg] = useState({ meals: 0, lbs: 0, water: 0, co2: 0, events: 0 });
 
   // Reload every time the screen is focused so a pickup completed in
   // the same session reflects immediately when the user pops back to
-  // the Impact tab — not just on initial mount.
+  // the Impact tab — not just on initial mount. Also re-pull the
+  // user doc so personal lbs/hours/events update too.
   useFocusEffect(useCallback(() => {
     getOrgStats().then(setOrg).catch(() => {});
-  }, []));
+    if (user?.id) {
+      getProfile(user.id).then((fresh) => {
+        if (fresh && setUser) setUser({ ...user, ...fresh });
+      }).catch(() => {});
+    }
+  }, [user?.id]));
 
   return (
     <Screen contentStyle={styles.content}>
