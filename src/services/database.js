@@ -578,6 +578,7 @@ export async function cancelClaim(pickupId, reason = '') {
   if (pk.status !== 'claimed') {
     throw new Error('You can only release a pickup before you’ve hit the road.');
   }
+  const releasedBy = pk.claimed_by || null;
   await updateDoc(ref, {
     status: 'available',
     claimed_by: null,
@@ -585,6 +586,41 @@ export async function cancelClaim(pickupId, reason = '') {
     cancel_reason: reason || null,
     cancelled_at: new Date().toISOString(),
   });
+  // Reliability penalty — dropping a claimed pickup costs the
+  // volunteer 5 leaderboard points and bumps a `pickups_dropped`
+  // counter so chapters can see who keeps abandoning runs. We use
+  // a delta so concurrent score updates from event check-ins don't
+  // race with this one.
+  if (releasedBy) {
+    try {
+      const uRef = doc(db, 'users', releasedBy);
+      const uSnap = await getDoc(uRef);
+      if (uSnap.exists()) {
+        const u = uSnap.data();
+        await updateDoc(uRef, {
+          leaderboard_score: Math.max(0, (u.leaderboard_score || 0) - 5),
+          pickups_dropped:   (u.pickups_dropped || 0) + 1,
+          last_drop_at:      serverTimestamp(),
+        });
+      }
+      // Audit row for transparency (the volunteer can see this
+      // when we surface a 'dropped runs' tab on the profile).
+      await addDoc(collection(db, 'member_activity'), {
+        user_id:     releasedBy,
+        date:        new Date().toISOString().split('T')[0],
+        project:     'iris',
+        meals:       0,
+        hours:       0,
+        events:      0,
+        points:      -5,
+        raised:      0,
+        source_type: 'pickup_dropped',
+        source_id:   pickupId,
+        notes:       reason || null,
+        created_at:  serverTimestamp(),
+      });
+    } catch (e) { console.warn('drop penalty failed', e); }
+  }
   // Tell the restaurant — best-effort.
   try {
     if (pk.restaurant_id) {
@@ -639,6 +675,19 @@ export async function cancelPickup(pickupId, reason = '') {
 // Volunteer flips the pickup to "en route" once they have the food in
 // hand and are headed to the fridge. Used by the PickupDetail screen.
 // Also lets the volunteer pick a fridge if the restaurant didn't
+// Restaurant verifies that the volunteer is on-site picking up the
+// food. Sets verified_by_restaurant_at and stamps which restaurant
+// user account did the verification. Used by the restaurant's
+// pickup detail screen — they tap "Verify volunteer is here" once
+// the volunteer arrives.
+export async function verifyPickupByRestaurant(pickupId, verifierUid) {
+  if (useMock()) return;
+  await updateDoc(doc(db, 'pickups', pickupId), {
+    verified_by_restaurant_at: serverTimestamp(),
+    verified_by_restaurant_uid: verifierUid || null,
+  });
+}
+
 // pre-select one — we copy the fridge's address/coords onto the pickup
 // so the "Open in Maps" deep link works without an extra fetch.
 export async function setPickupEnroute(pickupId, { fridgeId } = {}) {

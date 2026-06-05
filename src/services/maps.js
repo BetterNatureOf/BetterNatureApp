@@ -16,6 +16,17 @@ export async function openInMaps({ address, lat, lng, label }) {
   const q = address ? encode(address) : (hasCoords ? `${lat},${lng}` : '');
   if (!q) return false;
 
+  // Web: Linking.canOpenURL is unreliable in browsers (returns false
+  // for plain https URLs in react-native-web). Open a Google Maps
+  // directions URL in a new tab directly.
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const url = hasCoords
+      ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${q}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
+  }
+
   const labelPart = label ? `(${encode(label)})` : '';
   const candidates = Platform.OS === 'ios'
     ? [
@@ -49,6 +60,58 @@ export async function openInMaps({ address, lat, lng, label }) {
     Alert.alert('Could not open Maps', e.message || 'No map app available.');
     return false;
   }
+}
+
+// Google Maps directions URL — destination required, origin
+// optional (defaults to the user's current location). On web we
+// pop a new tab; on native we hand off to the OS' default Maps app.
+export async function openDirections({ destination, origin, label }) {
+  if (!destination) return false;
+  const dq = typeof destination === 'string'
+    ? encode(destination)
+    : `${destination.lat},${destination.lng}`;
+  const oq = origin && (origin.lat || typeof origin === 'string')
+    ? (typeof origin === 'string' ? encode(origin) : `${origin.lat},${origin.lng}`)
+    : null;
+  const url = oq
+    ? `https://www.google.com/maps/dir/?api=1&origin=${oq}&destination=${dq}`
+    : `https://www.google.com/maps/dir/?api=1&destination=${dq}`;
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
+  }
+  try { await Linking.openURL(url); return true; }
+  catch (e) {
+    Alert.alert('Could not open Maps', e.message || 'No map app available.');
+    return false;
+  }
+}
+
+// Browser geolocation wrapped in a single-shot Promise.
+export function getCurrentPosition(opts = {}) {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.reject(new Error('Geolocation not available'));
+  }
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      reject,
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60 * 1000, ...opts },
+    );
+  });
+}
+
+// Haversine — miles between two {lat,lng} points. Used to give the
+// volunteer a rough "X mi away" badge on the pickup detail screen.
+export function milesBetween(a, b) {
+  if (!a || !b || a.lat == null || b.lat == null) return null;
+  const R = 3958.7613;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
 // Pretty single-line address. Pass any subset of fields.

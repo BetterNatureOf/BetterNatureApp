@@ -21,9 +21,11 @@ import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { claimPickup, setPickupEnroute, completePickup, cancelClaim } from '../../services/database';
+import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant } from '../../services/database';
+import { openInMaps, openDirections, getCurrentPosition, milesBetween } from '../../services/maps';
 import { notify, notifyThen, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import { Image, TouchableOpacity } from 'react-native';
 
 export default function PickupDetail({ route, navigation }) {
   const pickupId = route?.params?.pickupId;
@@ -32,6 +34,34 @@ export default function PickupDetail({ route, navigation }) {
   const [busy, setBusy] = useState(false);
   const [chosenFridge, setChosenFridge] = useState(null);
   const [weight, setWeight] = useState('');
+  const [myLoc, setMyLoc] = useState(null);
+  // Restaurant verifying that the volunteer just walked in to pick up.
+  const [verifying, setVerifying] = useState(false);
+
+  // Try once on mount to grab the volunteer's location so we can
+  // show a "X mi away" badge and pre-fill the directions origin.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return; // native needs expo-location, follow-up
+    getCurrentPosition().then(setMyLoc).catch(() => {});
+  }, []);
+
+  const restaurantPos = (pickup?.restaurant_lat != null && pickup?.restaurant_lng != null)
+    ? { lat: pickup.restaurant_lat, lng: pickup.restaurant_lng }
+    : null;
+  const distanceMi = (myLoc && restaurantPos) ? milesBetween(myLoc, restaurantPos) : null;
+  const userIsRestaurant = (user?.role === 'restaurant')
+    && (user?.restaurant_id === pickup?.restaurant_id || user?.id === pickup?.restaurant_id);
+
+  async function handleVerify() {
+    setVerifying(true);
+    try {
+      await verifyPickupByRestaurant(pickup.id, user?.id);
+      await refresh();
+      notify('Verified', 'Volunteer pickup confirmed. They can mark the run delivered when they drop it off.');
+    } catch (e) {
+      notify('Could not verify', e?.message || 'Try again.');
+    } finally { setVerifying(false); }
+  }
 
   useEffect(() => {
     if (!pickupId || pickup) return;
@@ -133,6 +163,68 @@ export default function PickupDetail({ route, navigation }) {
 
         <PickupCard pickup={pickup} cta={cta} />
 
+        {/* Food photo */}
+        {pickup.photo_url ? (
+          <Image source={{ uri: pickup.photo_url }} style={styles.photo} resizeMode="cover" />
+        ) : null}
+
+        {/* Address + directions + distance */}
+        {pickup.restaurant_address || restaurantPos ? (
+          <View style={styles.locCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locLabel}>Pickup location</Text>
+              <Text style={styles.locAddress}>
+                {pickup.restaurant_name || pickup.restaurant_business_name || 'Partner restaurant'}
+              </Text>
+              {pickup.restaurant_address ? (
+                <Text style={styles.locSub} selectable>{pickup.restaurant_address}</Text>
+              ) : null}
+              {distanceMi != null ? (
+                <Text style={styles.locDist}>
+                  ~{distanceMi < 10 ? distanceMi.toFixed(1) : Math.round(distanceMi)} mi from you
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.locBtnCol}>
+              <TouchableOpacity
+                style={styles.directionsBtn}
+                onPress={() => openDirections({
+                  destination: restaurantPos || pickup.restaurant_address,
+                  origin: myLoc || undefined,
+                  label: pickup.restaurant_name,
+                })}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.directionsBtnText}>Directions</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.openMapBtn}
+                onPress={() => openInMaps({
+                  address: pickup.restaurant_address,
+                  lat: pickup.restaurant_lat,
+                  lng: pickup.restaurant_lng,
+                  label: pickup.restaurant_name,
+                })}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.openMapBtnText}>Open in Maps</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {/* Restaurant-only: verify the volunteer arrived */}
+        {userIsRestaurant && (pickup.status === 'claimed' || pickup.status === 'enroute') && !pickup.verified_by_restaurant_at ? (
+          <TouchableOpacity style={styles.verifyBtn} onPress={handleVerify} disabled={verifying} activeOpacity={0.85}>
+            <Text style={styles.verifyBtnText}>{verifying ? 'Verifying…' : 'Verify volunteer is here'}</Text>
+          </TouchableOpacity>
+        ) : null}
+        {userIsRestaurant && pickup.verified_by_restaurant_at ? (
+          <View style={styles.verifiedNote}>
+            <Text style={styles.verifiedText}>✓ Volunteer pickup verified by you.</Text>
+          </View>
+        ) : null}
+
         {needsFridge ? (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Where will you drop this off?</Text>
@@ -219,4 +311,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFE5EE', borderRadius: Radius.lg,
   },
   cancelText: { fontSize: 14, fontWeight: '600', color: '#7A1838', flex: 1 },
+  photo: { width: '100%', height: 220, borderRadius: 14, marginTop: 18, backgroundColor: '#F7F5EF' },
+  locCard: {
+    flexDirection: 'row', gap: 12, marginTop: 18, padding: 16,
+    backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: Colors.glassBorder,
+  },
+  locLabel: { fontSize: 11, fontWeight: '800', color: Colors.gray, letterSpacing: 0.5, textTransform: 'uppercase' },
+  locAddress: { fontSize: 16, fontWeight: '800', color: Colors.dark, marginTop: 2 },
+  locSub: { ...Type.caption, marginTop: 4 },
+  locDist: { fontSize: 12, fontWeight: '700', color: Colors.green, marginTop: 6 },
+  locBtnCol: { gap: 8, alignItems: 'stretch' },
+  directionsBtn: { backgroundColor: Colors.green, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999 },
+  directionsBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13, textAlign: 'center' },
+  openMapBtn: { borderWidth: 1, borderColor: Colors.green, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999 },
+  openMapBtnText: { color: Colors.green, fontWeight: '800', fontSize: 13, textAlign: 'center' },
+  verifyBtn: { marginTop: 14, padding: 14, backgroundColor: Colors.green, borderRadius: 14, alignItems: 'center' },
+  verifyBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  verifiedNote: { marginTop: 14, padding: 14, backgroundColor: '#E8F5EE', borderRadius: 14 },
+  verifiedText: { color: Colors.green, fontWeight: '700' },
 });
