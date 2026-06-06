@@ -13,6 +13,7 @@ const screens = {
   SignupStep2: 'signup/chapter',
   SignupStep3: 'signup/verify',
   StartChapter: 'start-chapter',
+  RestaurantSignup: 'signup/restaurant',
 
   MainTabs: {
     path: '',

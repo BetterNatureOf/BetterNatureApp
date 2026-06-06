@@ -82,9 +82,16 @@ export default function WelcomeScreen({ navigation }) {
             style={styles.loginBtn}
           />
 
+          <Button
+            title="I'm a restaurant — apply to partner"
+            variant="secondary"
+            onPress={() => navigation.navigate('RestaurantSignup')}
+            style={styles.loginBtn}
+          />
+
           <Text style={styles.footnote}>
-            Restaurant partners, chapter presidents, and executives sign in with the
-            credentials sent to them after approval.
+            Chapter presidents and executives sign in with the credentials
+            assigned to them after promotion in-app.
           </Text>
         </View>
       </ResponsiveContainer>

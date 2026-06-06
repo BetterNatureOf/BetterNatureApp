@@ -6,11 +6,13 @@ import SignupStep1 from '../screens/auth/SignupStep1';
 import SignupStep2 from '../screens/auth/SignupStep2';
 import SignupStep3 from '../screens/auth/SignupStep3';
 import StartChapter from '../screens/chapter/StartChapter';
+import RestaurantSignup from '../screens/auth/RestaurantSignup';
 
-// NOTE: RestaurantSignup is intentionally NOT exposed here. Restaurants are
-// onboarded manually by the org and receive login credentials directly. The
-// president and executive portals are also gated behind login (no public
-// portal cards on the welcome screen).
+// Restaurants self-signup through RestaurantSignup. The doc lands in
+// /restaurants with status:'pending' and the account is gated behind
+// an exec approval (RestaurantApprovalGate) so nothing they post
+// reaches volunteers until reviewed. Presidents and executives still
+// sign in with credentials assigned after promotion in-app.
 
 const Stack = createStackNavigator();
 
@@ -23,6 +25,7 @@ export default function AuthNavigator() {
       <Stack.Screen name="SignupStep2" component={SignupStep2} />
       <Stack.Screen name="SignupStep3" component={SignupStep3} />
       <Stack.Screen name="StartChapter" component={StartChapter} />
+      <Stack.Screen name="RestaurantSignup" component={RestaurantSignup} />
     </Stack.Navigator>
   );
 }
