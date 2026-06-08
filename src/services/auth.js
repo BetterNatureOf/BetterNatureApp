@@ -23,5 +23,8 @@ export {
   linkAppleToCurrentUser,
   unlinkProvider,
   setPasswordOnCurrentUser,
+  addLinkedGoogleEmail,
+  removeLinkedGoogleEmail,
+  getLinkedGoogleEmails,
   onAuthStateChange,
 } from './authFirebase';

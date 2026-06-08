@@ -26,7 +26,13 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
+  collection,
+  query,
+  where,
   updateDoc,
+  arrayUnion,
+  arrayRemove,
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -212,6 +218,36 @@ async function bootstrapSocialUser(fbUser) {
   const ref = doc(db, 'users', fbUser.uid);
   const existing = await getDoc(ref);
   if (existing.exists()) return existing.data();
+
+  // Multi-Google linking: if THIS Google email is recorded on
+  // another user's `linked_google_emails` array, that user has
+  // declared "this Google account is also mine." Refuse to
+  // bootstrap a fresh profile — instead, surface the primary
+  // email so they can sign in there. Firebase Auth still allows
+  // only one Google credential per uid, so we can't merge auth
+  // uids client-side; we redirect the human to the primary.
+  if (fbUser.email) {
+    try {
+      const dupSnap = await getDocs(query(
+        collection(db, 'users'),
+        where('linked_google_emails', 'array-contains', fbUser.email.toLowerCase())
+      ));
+      const primary = dupSnap.docs[0]?.data();
+      if (primary) {
+        await fbSignOut(auth);
+        const e = new Error(
+          `This Google account is linked to your BetterNature profile at ${primary.email}. ` +
+          `Sign in with that email to access your stats and history.`
+        );
+        e.code = 'auth/linked-to-other-account';
+        throw e;
+      }
+    } catch (e) {
+      if (e?.code === 'auth/linked-to-other-account') throw e;
+      // Lookup failure is non-fatal — fall through and bootstrap.
+      console.warn('linked-email lookup failed', e);
+    }
+  }
   const isSuper = (fbUser.email || '').toLowerCase() === 'satvik.koya@betternatureofficial.org';
   const data = {
     id: fbUser.uid,
@@ -545,6 +581,61 @@ export async function linkGoogleToCurrentUser() {
     }
     throw e;
   }
+}
+
+// ── Multiple-Google-account linking ────────────────────────────────
+// Firebase Auth only stores one Google credential per uid. To let a
+// single BetterNature profile accept sign-ins from multiple Google
+// accounts (personal + work, school + personal, etc.) we record the
+// extra emails on the user doc as data. bootstrapSocialUser checks
+// this list on every social sign-in: if the incoming email is
+// listed on another user's profile, we refuse to bootstrap a new
+// profile and tell them which primary email to use instead.
+export async function addLinkedGoogleEmail(rawEmail) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Sign in first.');
+  const email = String(rawEmail || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('That doesn\'t look like a valid email.');
+  }
+  if (email === (fb.email || '').toLowerCase()) {
+    throw new Error('That\'s already your primary email.');
+  }
+  // Don't allow stealing an email that's already a primary on someone
+  // else's account or already linked elsewhere.
+  const primaries = await getDocs(query(collection(db, 'users'), where('email', '==', email)));
+  if (!primaries.empty && primaries.docs[0].id !== fb.uid) {
+    throw new Error('That email is already a primary BetterNature account. Sign in there instead.');
+  }
+  const linkedElsewhere = await getDocs(query(
+    collection(db, 'users'),
+    where('linked_google_emails', 'array-contains', email)
+  ));
+  if (!linkedElsewhere.empty && linkedElsewhere.docs[0].id !== fb.uid) {
+    throw new Error('That email is already linked to another BetterNature profile.');
+  }
+  await updateDoc(doc(db, 'users', fb.uid), {
+    linked_google_emails: arrayUnion(email),
+  });
+}
+
+export async function removeLinkedGoogleEmail(rawEmail) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Sign in first.');
+  const email = String(rawEmail || '').trim().toLowerCase();
+  await updateDoc(doc(db, 'users', fb.uid), {
+    linked_google_emails: arrayRemove(email),
+  });
+}
+
+export async function getLinkedGoogleEmails() {
+  if (!isFirebaseConfigured) return [];
+  const fb = auth.currentUser;
+  if (!fb) return [];
+  const snap = await getDoc(doc(db, 'users', fb.uid));
+  return snap.exists() ? (snap.data().linked_google_emails || []) : [];
 }
 
 // Same for Apple — disabled until FEATURES.APPLE_SIGNIN is true and

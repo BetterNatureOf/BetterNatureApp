@@ -28,6 +28,9 @@ import {
   linkAppleToCurrentUser,
   unlinkProvider,
   setPasswordOnCurrentUser,
+  addLinkedGoogleEmail,
+  removeLinkedGoogleEmail,
+  getLinkedGoogleEmails,
 } from '../../services/auth';
 import { notify, notifyThen, confirm } from '../../services/ui';
 import { FEATURES } from '../../config/features';
@@ -62,10 +65,40 @@ export default function ConnectedAccounts({ navigation }) {
   const [showSetPw, setShowSetPw] = useState(false);
   const [pw, setPw] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
+  const [linkedEmails, setLinkedEmails] = useState([]);
+  const [newEmail, setNewEmail] = useState('');
 
-  const refresh = useCallback(() => setProviders(getLinkedProviders()), []);
+  const refresh = useCallback(() => {
+    setProviders(getLinkedProviders());
+    getLinkedGoogleEmails().then(setLinkedEmails).catch(() => {});
+  }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  async function handleAddLinkedEmail() {
+    if (!newEmail.trim()) return;
+    setBusy('linked-add');
+    try {
+      await addLinkedGoogleEmail(newEmail);
+      setNewEmail('');
+      await refresh();
+      notify('Linked', 'That Google email can now sign in to this profile (it will be recognized as you).');
+    } catch (e) {
+      notify('Could not link', e?.message || 'Try again.');
+    } finally { setBusy(null); }
+  }
+
+  async function handleRemoveLinkedEmail(email) {
+    const ok = await confirm(`Unlink ${email}?`, 'Sign-ins from that Google account will create a new BetterNature profile instead of using this one.');
+    if (!ok) return;
+    setBusy(`linked-${email}`);
+    try {
+      await removeLinkedGoogleEmail(email);
+      await refresh();
+    } catch (e) {
+      notify('Could not unlink', e?.message || 'Try again.');
+    } finally { setBusy(null); }
+  }
 
   async function handleConnect(providerId) {
     setBusy(providerId);
@@ -211,6 +244,47 @@ export default function ConnectedAccounts({ navigation }) {
           </View>
         ) : null}
 
+        {/* Multiple Google accounts pointing at one BetterNature
+            profile. Firebase Auth only stores one Google credential
+            per user, so we record extra emails as data. Sign-ins
+            from a linked Google email are recognized as you and
+            won't create a duplicate profile. */}
+        <View style={styles.pwCard}>
+          <Text style={styles.pwTitle}>Other Google accounts on this profile</Text>
+          <Text style={styles.pwHelp}>
+            Add a second Google email (work, school, etc.) so signing in with it
+            counts as you instead of creating a new profile. We won't sign in for
+            you — we just remember the address.
+          </Text>
+          {linkedEmails.length === 0 ? (
+            <Text style={[styles.pwHelp, { fontStyle: 'italic' }]}>No other Google accounts linked yet.</Text>
+          ) : (
+            <View style={{ marginBottom: 10 }}>
+              {linkedEmails.map((em) => (
+                <View key={em} style={styles.linkedRow}>
+                  <Text style={styles.linkedEmail} numberOfLines={1}>{em}</Text>
+                  <AnimatedPressable
+                    onPress={() => handleRemoveLinkedEmail(em)}
+                    disabled={busy === `linked-${em}`}
+                    style={styles.smallBtn}
+                    scaleTo={0.97}
+                  >
+                    <Text style={styles.smallBtnText}>{busy === `linked-${em}` ? 'Removing…' : 'Unlink'}</Text>
+                  </AnimatedPressable>
+                </View>
+              ))}
+            </View>
+          )}
+          <Text style={styles.field}>Add a Google email</Text>
+          <Input value={newEmail} onChangeText={setNewEmail} placeholder="you@gmail.com" autoCapitalize="none" keyboardType="email-address" />
+          <Button
+            title={busy === 'linked-add' ? 'Linking…' : 'Link this email'}
+            onPress={handleAddLinkedEmail}
+            loading={busy === 'linked-add'}
+            style={{ marginTop: 10 }}
+          />
+        </View>
+
         <Text style={styles.foot}>
           Tip: if you forget which method you originally used, the “Forgot password” email goes to
           whichever email is attached to your account — it works as long as your email is verified.
@@ -282,4 +356,12 @@ const styles = StyleSheet.create({
   field: { fontSize: 12, fontWeight: '700', color: Colors.dark, letterSpacing: 0.3, marginTop: 12, marginBottom: 6, textTransform: 'uppercase' },
 
   foot: { ...Type.caption, color: Colors.gray, marginTop: 14 },
+  linkedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 8, paddingHorizontal: 10,
+    backgroundColor: Colors.greenLight,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  linkedEmail: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.dark },
 });
