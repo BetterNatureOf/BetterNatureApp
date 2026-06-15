@@ -234,7 +234,13 @@ export default function ManageChapters({ navigation }) {
           : chapterMembers.find((m) => m.role === slot.key);
         return { role: slot, person };
       });
-      const roster = chapterMembers.filter((m) => !isLead(m.role));
+      // Roster shows EVERY chapter member — including the president
+      // and other officers. The Team section above still highlights
+      // them in the leadership tier, but they belong on the member
+      // roster too (they signed up like everyone else and show up
+      // for pickups). Showing them in both places makes counts
+      // honest and lets the pres click into their own profile.
+      const roster = chapterMembers;
 
       result[ch.id] = {
         membersCount: chapterMembers.length,
