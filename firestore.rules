@@ -12,6 +12,18 @@ service cloud.firestore {
     function role() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
+    // Multi-role: a user can hold extra roles beyond their primary
+    // `role`. Defaults to [] when the field is missing.
+    function rolesArray() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid))
+        .data.get('roles', []);
+    }
+    // True if the writer holds ANY of `targets` either as their
+    // primary `role` or anywhere in their supplemental `roles[]`.
+    function hasAnyRole(targets) {
+      return isSignedIn()
+        && (role() in targets || rolesArray().hasAny(targets));
+    }
     // Role hierarchy used across web + app:
     //   super_admin > admin > volunteer / partner / member
     // Actual roles used across the app:
@@ -21,18 +33,10 @@ service cloud.firestore {
     //   restaurant - food donor portal
     // Legacy 'admin' / 'super_admin' kept for backwards compat with
     // any seed accounts that predate the role rename.
-    function isExec() {
-      return isSignedIn() && role() in ['executive', 'admin', 'super_admin'];
-    }
-    function isAdmin() {
-      return isSignedIn() && role() in ['executive', 'admin', 'super_admin'];
-    }
-    function isPresident() {
-      return isSignedIn() && role() in ['chapter_president', 'chapter_pres', 'executive', 'admin', 'super_admin'];
-    }
-    function isSuperAdmin() {
-      return isSignedIn() && role() in ['executive', 'super_admin'];
-    }
+    function isExec()       { return hasAnyRole(['executive', 'admin', 'super_admin']); }
+    function isAdmin()      { return hasAnyRole(['executive', 'admin', 'super_admin']); }
+    function isPresident()  { return hasAnyRole(['chapter_president', 'chapter_pres', 'executive', 'admin', 'super_admin']); }
+    function isSuperAdmin() { return hasAnyRole(['executive', 'super_admin']); }
 
     // The signed-in user's chapter_id (from their user doc). Used to
     // enforce that a chapter president can only edit objects in their
@@ -46,7 +50,7 @@ service cloud.firestore {
     function isPresOfChapter(chapterId) {
       return isExec()
         || (isSignedIn()
-            && role() in ['chapter_president', 'chapter_pres']
+            && hasAnyRole(['chapter_president', 'chapter_pres'])
             && chapterId != null
             && chapterId == myChapterId());
     }
@@ -72,7 +76,7 @@ service cloud.firestore {
     }
     function touchesPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['role','member_status','verification_status','restaurant_status']);
+        .hasAny(['role','roles','member_status','verification_status','restaurant_status']);
     }
     match /users/{uid} {
       allow read: if isSignedIn();
@@ -98,7 +102,7 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
       allow update: if isExec()
         || (isSignedIn()
-            && role() in ['chapter_president', 'chapter_pres']
+            && hasAnyRole(['chapter_president', 'chapter_pres'])
             && id == myChapterId());
     }
 
@@ -140,7 +144,7 @@ service cloud.firestore {
                     && isPresOfChapter(request.resource.data.chapter_id);
       allow delete: if isAdmin()
                     || (isSignedIn()
-                        && role() in ['chapter_president', 'chapter_pres']
+                        && hasAnyRole(['chapter_president', 'chapter_pres'])
                         && resource.data.chapter_id == myChapterId());
     }
 
@@ -254,7 +258,7 @@ service cloud.firestore {
                     && isPresOfChapter(request.resource.data.chapter_id);
       allow delete: if isAdmin()
                     || (isSignedIn()
-                        && role() in ['chapter_president', 'chapter_pres']
+                        && hasAnyRole(['chapter_president', 'chapter_pres'])
                         && resource.data.chapter_id == myChapterId());
     }
 

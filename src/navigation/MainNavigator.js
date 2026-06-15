@@ -66,6 +66,7 @@ import CheckInScreen from '../screens/admin/CheckInScreen';
 import BNMap from '../screens/impact/BNMap';
 import MemberApprovalGate from '../components/ui/MemberApprovalGate';
 import { isFounderEmail } from '../services/founder';
+import { isExec as isExecRole, isPresident as isPresRole } from '../services/roles';
 import NotificationPreferences from '../screens/other/NotificationPreferences';
 import WebsiteContent from '../screens/admin/WebsiteContent';
 
@@ -137,15 +138,14 @@ function TabIcon({ label, focused }) {
 // for staff accounts that predate the role rename — they still need
 // the full Org tab, otherwise super-admins get locked out of every
 // org-management screen the moment they sign in.
-const EXEC_LIKE = ['executive', 'admin', 'super_admin'];
-const PRES_LIKE = ['chapter_president', 'chapter_pres'];
-
-// Choose which dashboard the "Manage" tab opens to based on role.
+// Choose which dashboard the "Manage" tab opens to. With multi-role
+// support a user can be exec AND chapter pres — exec wins for the
+// default landing (org-wide), and PresidentDashboard shows up as a
+// shortcut card on the Executive dashboard for the chapter view.
 function ManageTab(props) {
-  const role = useAuthStore((s) => s.role);
   const user = useAuthStore((s) => s.user);
-  if (EXEC_LIKE.includes(role)) return <ExecutiveDashboard {...props} />;
-  if (PRES_LIKE.includes(role)) return <PresidentDashboard {...props} />;
+  if (isExecRole(user)) return <ExecutiveDashboard {...props} />;
+  if (isPresRole(user)) return <PresidentDashboard {...props} />;
   // Founder safety net — if a founder accidentally switched their
   // role to member, they'd lose the Org tab entirely and have no
   // way to flip back without dev-tools. Render the exec dashboard
@@ -155,11 +155,10 @@ function ManageTab(props) {
 }
 
 function MainTabs() {
-  const role = useAuthStore((s) => s.role);
   const user = useAuthStore((s) => s.user);
   const isFounder = isFounderEmail(user?.email);
-  const isExec = EXEC_LIKE.includes(role);
-  const isPres = PRES_LIKE.includes(role);
+  const isExec = isExecRole(user);
+  const isPres = isPresRole(user);
   const showManage = isFounder || isExec || isPres;
   const manageLabel = (isExec || isFounder) ? 'Org' : 'Chapter';
 

@@ -68,6 +68,11 @@ export default function ManageMembers({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // member being edited
   const [selectedRole, setSelectedRole] = useState('');
+  // Additional roles beyond the primary — execs can stack "Member +
+  // Chapter President" or "Executive + Chapter President" on one
+  // account. Stored as users/{uid}.roles[] alongside the singular
+  // users/{uid}.role.
+  const [selectedExtraRoles, setSelectedExtraRoles] = useState([]);
   const [selectedChapter, setSelectedChapter] = useState('');
   // Editable stats so a chapter president can correct a miscount
   // after an event (e.g. someone forgot to scan in).
@@ -127,6 +132,7 @@ export default function ManageMembers({ navigation, route }) {
   function openEdit(member) {
     setEditing(member);
     setSelectedRole(member.role || 'member');
+    setSelectedExtraRoles(Array.isArray(member.roles) ? member.roles : []);
     setSelectedChapter(member.chapter_id || member.chapters?.id || '');
     setStatEvents(String(member.events_attended || 0));
     setStatMeals(String(member.meals_rescued || 0));
@@ -151,6 +157,18 @@ export default function ManageMembers({ navigation, route }) {
     try {
       if (nextRole !== target.role) {
         await updateUserRole(target.id, nextRole);
+      }
+      // Multi-role array: drop the primary out of the extras (it's
+      // implied) and ignore duplicates. Always write the field so an
+      // exec can clear extras back to "primary only".
+      const cleanedExtras = Array.from(new Set(
+        selectedExtraRoles.filter((r) => r && r !== nextRole)
+      ));
+      const prevExtras = Array.isArray(target.roles) ? target.roles : [];
+      const extrasChanged = cleanedExtras.length !== prevExtras.length
+        || cleanedExtras.some((r) => !prevExtras.includes(r));
+      if (extrasChanged) {
+        await updateProfile(target.id, { roles: cleanedExtras });
       }
       const currentChapter = target.chapter_id || '';
       if (nextChapter !== currentChapter) {
@@ -481,6 +499,39 @@ export default function ManageMembers({ navigation, route }) {
                   )}
                 </TouchableOpacity>
               ))}
+
+              {/* Additional roles — multi-select. Lets one account
+                  stack roles, e.g. Executive + Chapter President so
+                  the founder can run an org AND a chapter. Excludes
+                  the primary role (selecting it as primary is
+                  enough). */}
+              <Text style={styles.fieldLabel}>Additional roles</Text>
+              <Text style={styles.roleOptionDesc}>
+                Stack on top of the primary role. An exec who's also a chapter pres should be Executive + chapter pres.
+              </Text>
+              {ROLE_OPTIONS
+                .filter((o) => o.key !== selectedRole && o.key !== 'restaurant')
+                .map((opt) => {
+                  const on = selectedExtraRoles.includes(opt.key);
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.roleOption, on && styles.roleOptionActive]}
+                      activeOpacity={0.85}
+                      onPress={() => setSelectedExtraRoles((prev) =>
+                        on ? prev.filter((r) => r !== opt.key) : [...prev, opt.key]
+                      )}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.roleOptionLabel, on && styles.roleOptionLabelActive]}>
+                          {opt.label}
+                        </Text>
+                        <Text style={styles.roleOptionDesc}>{opt.desc}</Text>
+                      </View>
+                      {on && <Text style={styles.checkMark}>✓</Text>}
+                    </TouchableOpacity>
+                  );
+                })}
 
               <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
                 Chapter

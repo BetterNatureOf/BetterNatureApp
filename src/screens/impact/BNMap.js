@@ -23,8 +23,7 @@ import { createFridge } from '../../services/fridges';
 import { fetchAllChapters } from '../../services/database';
 import useAuthStore from '../../store/authStore';
 import { notify } from '../../services/ui';
-
-const EXEC_LIKE = new Set(['executive', 'admin', 'super_admin', 'chapter_president', 'chapter_pres']);
+import { hasRole } from '../../services/roles';
 
 const TABS = [
   { key: 'insecurity', label: 'Food Insecurity' },
@@ -33,7 +32,7 @@ const TABS = [
 
 export default function BNMap({ navigation }) {
   const user = useAuthStore((s) => s.user);
-  const canAddFridge = EXEC_LIKE.has(user?.role);
+  const canAddFridge = hasRole(user, ['executive', 'admin', 'super_admin', 'chapter_president', 'chapter_pres']);
   const [tab, setTab] = useState('insecurity');
   const [fridgeView, setFridgeView] = useState('map'); // 'map' | 'list'
   const [fridges, setFridges] = useState([]);

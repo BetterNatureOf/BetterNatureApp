@@ -9,6 +9,7 @@ import Screen from '../../components/ui/Screen';
 import useAuthStore from '../../store/authStore';
 import { sendBroadcast } from '../../services/broadcast';
 import { notify, confirm } from '../../services/ui';
+import { isExec as isExecRole } from '../../services/roles';
 
 const AUDIENCES = [
   { key: 'bn',          label: 'BetterNature',           desc: 'Everyone in the org (members, presidents, execs)' },
@@ -21,7 +22,9 @@ export default function BroadcastScreen({ navigation }) {
   // Execs (and super_admins) broadcast org-wide. A chapter pres
   // can ONLY broadcast to their own chapter — chapter_id stamped on
   // the announcement + recipient filter enforces scoping.
-  const isExecLike = ['executive', 'admin', 'super_admin'].includes(user?.role);
+  // Multi-role aware: exec-or-also-exec broadcasts org-wide; pure
+  // pres (no exec role anywhere) is scoped to their chapter_id.
+  const isExecLike = isExecRole(user);
   const presChapterId = !isExecLike ? (user?.chapter_id || null) : null;
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
