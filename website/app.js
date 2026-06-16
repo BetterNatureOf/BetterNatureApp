@@ -283,7 +283,30 @@
         </a>` : ''}
       </li>
     `).join('');
-    const roster = officerRows || staticRoster || '<li class="chapter-modal__empty">Roster coming soon.</li>';
+    // Combine officers + full member roster. Officers render first
+    // (so leadership shows up at the top of the list) followed by
+    // every non-officer member denormalized onto ch.roster. We
+    // de-dupe by name so a president that already appears in the
+    // officers block doesn't double-print in the member list.
+    const officerNames = new Set(
+      [off.president, off.vice_president, off.treasurer, off.volunteer_coordinator, off.secretary]
+        .filter(Boolean).map((p) => (p.name || '').toLowerCase())
+    );
+    const memberRows = (ch.roster || [])
+      .filter((m) => m.name && !officerNames.has((m.name || '').toLowerCase()))
+      .map((m) => `
+        <li class="chapter-modal__member">
+          <div>
+            <strong>${m.name}</strong>
+            <span>${m.role || 'Member'}</span>
+          </div>
+          ${m.instagram ? `<a href="${m.instagram}" target="_blank" rel="noreferrer" aria-label="${m.name} on Instagram">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
+          </a>` : ''}
+        </li>
+      `).join('');
+    const combined = (officerRows || '') + (memberRows || '') + (staticRoster || '');
+    const roster = combined || '<li class="chapter-modal__empty">Roster coming soon.</li>';
     const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
     const president = ch.president_name || ch.president || '—';
     modalBody.innerHTML = `

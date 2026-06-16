@@ -175,15 +175,30 @@ export default function ManageChapters({ navigation }) {
   // requiring the marketing site to do a join.
   useEffect(() => {
     if (!chapters.length || !members.length) return;
+    // Multi-role aware: someone whose PRIMARY role is executive but
+    // whose supplemental roles[] includes 'chapter_president' should
+    // fill the president slot here AND show up on the public roster.
+    const hasRole = (u, key) => {
+      const all = new Set([u.role || 'member', ...(Array.isArray(u.roles) ? u.roles : [])]);
+      if (key === 'chapter_president') return all.has('chapter_president') || all.has('chapter_pres');
+      return all.has(key);
+    };
+    const labelFor = (u) => {
+      if (hasRole(u, 'chapter_president')) return 'President';
+      if (hasRole(u, 'chapter_vp'))        return 'Vice President';
+      if (hasRole(u, 'chapter_treas'))     return 'Treasurer';
+      if (hasRole(u, 'chapter_vol_coord')) return 'Volunteer Coordinator';
+      if (hasRole(u, 'chapter_sec'))       return 'Secretary';
+      if (hasRole(u, 'executive') || hasRole(u, 'admin') || hasRole(u, 'super_admin')) return 'Executive';
+      return 'Member';
+    };
     chapters.forEach(async (ch) => {
       const inChapter = members.filter((u) => u.chapter_id === ch.id && (u.role || 'member') !== 'restaurant');
-      const pres   = inChapter.find((u) => u.role === 'chapter_president' || u.role === 'chapter_pres');
-      const vp     = inChapter.find((u) => u.role === 'chapter_vp');
-      const sec    = inChapter.find((u) => u.role === 'chapter_sec');
-      const tres   = inChapter.find((u) => u.role === 'chapter_treas');
-      const volCo  = inChapter.find((u) => u.role === 'chapter_vol_coord');
-      // Shape officers as plain { name, email } objects so the
-      // marketing site can render them without parsing.
+      const pres   = inChapter.find((u) => hasRole(u, 'chapter_president'));
+      const vp     = inChapter.find((u) => hasRole(u, 'chapter_vp'));
+      const sec    = inChapter.find((u) => hasRole(u, 'chapter_sec'));
+      const tres   = inChapter.find((u) => hasRole(u, 'chapter_treas'));
+      const volCo  = inChapter.find((u) => hasRole(u, 'chapter_vol_coord'));
       const nextOfficers = {
         president:             pres  ? { name: pres.name  || '', email: pres.email  || '' } : null,
         vice_president:        vp    ? { name: vp.name    || '', email: vp.email    || '' } : null,
@@ -191,22 +206,33 @@ export default function ManageChapters({ navigation }) {
         volunteer_coordinator: volCo ? { name: volCo.name || '', email: volCo.email || '' } : null,
         secretary:             sec   ? { name: sec.name   || '', email: sec.email   || '' } : null,
       };
+      // Public roster — everyone in the chapter, lightweight shape
+      // for the marketing site. Officers are tagged with their
+      // leadership label so the public list shows roles cleanly.
+      // We don't denormalize email here (PII on a public page).
+      const nextRoster = inChapter.map((u) => ({
+        name: u.name || u.full_name || '',
+        role: labelFor(u),
+        instagram: u.instagram || '',
+      })).filter((r) => r.name);
       const nextPres = pres?.name || '';
       const nextCount = inChapter.length;
-      // Cheap diff: stringify the officers blob so a name typo
-      // change triggers the sync too.
       const officersStr = JSON.stringify(nextOfficers);
       const prevOfficersStr = JSON.stringify(ch.officers || {});
+      const rosterStr = JSON.stringify(nextRoster);
+      const prevRosterStr = JSON.stringify(ch.roster || []);
       if (
         ch.president_name !== nextPres ||
         ch.member_count !== nextCount ||
-        officersStr !== prevOfficersStr
+        officersStr !== prevOfficersStr ||
+        rosterStr !== prevRosterStr
       ) {
         try {
           await updateChapter(ch.id, {
             president_name: nextPres,
             member_count: nextCount,
             officers: nextOfficers,
+            roster: nextRoster,
           });
         } catch {}
       }
@@ -226,12 +252,23 @@ export default function ManageChapters({ navigation }) {
       const hours = chapterMembers.reduce((s, u) => s + (u.hours_logged || 0), 0);
       const eventsAttended = chapterMembers.reduce((s, u) => s + (u.events_attended || 0), 0);
 
-      // Officer slot → person (or null). Presidents tolerate either
-      // legacy 'chapter_pres' or current 'chapter_president'.
+      // Officer slot → person (or null). Multi-role aware: the
+      // president slot can be filled by anyone whose primary role
+      // is chapter_president/chapter_pres OR who lists either in
+      // their supplemental users/{uid}.roles[] array. So an exec
+      // who's ALSO the chapter pres fills the President slot here,
+      // and shows up on the Roster too.
+      const matches = (m, key) => {
+        const primary = m.role || 'member';
+        const extras = Array.isArray(m.roles) ? m.roles : [];
+        const all = new Set([primary, ...extras]);
+        if (key === 'chapter_president') {
+          return all.has('chapter_president') || all.has('chapter_pres');
+        }
+        return all.has(key);
+      };
       const team = OFFICER_SLOTS.map((slot) => {
-        const person = slot.key === 'chapter_president'
-          ? chapterMembers.find((m) => m.role === 'chapter_president' || m.role === 'chapter_pres')
-          : chapterMembers.find((m) => m.role === slot.key);
+        const person = chapterMembers.find((m) => matches(m, slot.key));
         return { role: slot, person };
       });
       // Roster shows EVERY chapter member — including the president
