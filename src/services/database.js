@@ -1532,6 +1532,38 @@ export async function updateUserRole(userId, role) {
     return;
   }
   await updateDoc(doc(db, 'users', userId), { role });
+
+  // Role promoted TO restaurant: spin up a real /restaurants/{id}
+  // doc so the partner shows up on Manage Restaurants. Without
+  // this, flipping a user's role to 'restaurant' in Manage Members
+  // only updates the user doc — Manage Restaurants reads from the
+  // /restaurants collection and would skip them. Skip if the user
+  // already has a restaurant_id (idempotent re-promotion).
+  if (role === 'restaurant') {
+    try {
+      const usnap = await getDoc(doc(db, 'users', userId));
+      if (!usnap.exists()) return;
+      const u = usnap.data();
+      if (u.restaurant_id) return; // already linked
+      const r = {
+        user_id: userId,
+        name: u.business_name || u.name || u.email || 'Partner',
+        email: u.email || '',
+        phone: u.phone || '',
+        address: u.address || '',
+        chapter_id: u.chapter_id || null,
+        chapter_name: u.chapter_name || '',
+        status: 'approved', // promoted by an exec — already vetted
+        promoted_from_member: true,
+        created_at: serverTimestamp(),
+      };
+      const ref = await addDoc(collection(db, 'restaurants'), r);
+      await updateDoc(doc(db, 'users', userId), {
+        restaurant_id: ref.id,
+        restaurant_status: 'approved',
+      });
+    } catch (e) { console.warn('restaurant promotion sync', e); }
+  }
 }
 
 export async function updateUserChapter(userId, chapterId) {
