@@ -250,19 +250,31 @@ export default function ManageMembers({ navigation, route }) {
   // Pending applications get their own section at the top so the
   // exec sees them on every visit without scrolling.
   const pending = visible.filter((m) => m.member_status === 'pending');
-  // Group by role for quick scanning
-  const execs = visible.filter(
-    (m) => m.role === 'executive' && m.member_status !== 'pending'
+  // Group by role for quick scanning. Multi-role aware — a person
+  // can show up in MULTIPLE sections (an exec who's also a chapter
+  // pres appears in both Executives AND Chapter Presidents). The
+  // `rest` Members section also includes anyone whose extras list
+  // 'member' (or who's a pure member by primary) so the same
+  // account appears in every section it qualifies for.
+  const memberHasAny = (m, keys) => {
+    const all = new Set([m.role || 'member', ...(Array.isArray(m.roles) ? m.roles : [])]);
+    return keys.some((k) => all.has(k));
+  };
+  const approved = visible.filter((m) => m.member_status !== 'pending');
+  const execs = approved.filter((m) =>
+    memberHasAny(m, ['executive', 'admin', 'super_admin'])
   );
-  const presidents = visible.filter(
-    (m) => (m.role === 'chapter_president' || m.role === 'chapter_pres') && m.member_status !== 'pending'
+  const presidents = approved.filter((m) =>
+    memberHasAny(m, ['chapter_president', 'chapter_pres'])
   );
-  const rest = visible.filter(
-    (m) =>
-      m.role !== 'executive' &&
-      m.role !== 'chapter_president' &&
-      m.role !== 'chapter_pres' &&
-      m.member_status !== 'pending'
+  // "Members" = anyone whose primary is member OR who explicitly
+  // tagged 'member' as an additional role. This way an exec who
+  // wants to also do pickup duty surfaces here once they add
+  // 'member' to their roles[].
+  const rest = approved.filter((m) =>
+    memberHasAny(m, ['member'])
+    || (!memberHasAny(m, ['executive', 'admin', 'super_admin', 'chapter_president', 'chapter_pres'])
+        && (m.role || 'member') !== 'restaurant')
   );
 
   return (
