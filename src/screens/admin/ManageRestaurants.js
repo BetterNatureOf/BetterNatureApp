@@ -14,7 +14,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
-import { fetchRestaurants, updateRestaurant } from '../../services/database';
+import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs } from '../../services/database';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 
@@ -51,6 +51,10 @@ export default function ManageRestaurants({ navigation }) {
 
   const load = useCallback(async () => {
     try {
+      // Heal any users whose role was flipped to 'restaurant' before
+      // updateUserRole started spinning up the /restaurants doc
+      // automatically. One-shot, idempotent.
+      await backfillRestaurantDocs();
       const data = await fetchRestaurants(tab);
       setRestaurants(data);
     } catch (e) { console.warn(e); }

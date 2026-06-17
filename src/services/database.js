@@ -1052,6 +1052,56 @@ export async function completePickup(pickupId, actualWeightLbs) {
 }
 
 // ── Restaurants ──
+// Find users whose role is 'restaurant' but have no /restaurants
+// doc and create the missing partner record. Heals existing
+// accounts promoted before updateUserRole started spinning the
+// doc up automatically (commit ea8fefe). Safe to run on every
+// ManageRestaurants load — exits in a single users scan when
+// everything is already in sync.
+export async function backfillRestaurantDocs() {
+  if (useMock()) return { created: 0 };
+  let created = 0;
+  try {
+    const usnap = await getDocs(query(
+      collection(db, 'users'),
+      where('role', '==', 'restaurant')
+    ));
+    const restUsers = usnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (!restUsers.length) return { created };
+
+    // Pull the restaurants collection ONCE and index by user_id so
+    // we can detect which users are already wired up.
+    const rsnap = await getDocs(collection(db, 'restaurants'));
+    const linkedUids = new Set(
+      rsnap.docs.map((d) => d.data()?.user_id).filter(Boolean)
+    );
+
+    for (const u of restUsers) {
+      if (u.restaurant_id) continue;        // already linked
+      if (linkedUids.has(u.id)) continue;   // restaurants doc exists, just relink
+      const ref = await addDoc(collection(db, 'restaurants'), {
+        user_id: u.id,
+        name: u.business_name || u.name || u.email || 'Partner',
+        email: u.email || '',
+        phone: u.phone || '',
+        address: u.address || '',
+        chapter_id: u.chapter_id || null,
+        chapter_name: u.chapter_name || '',
+        status: 'approved',
+        promoted_from_member: true,
+        backfilled: true,
+        created_at: serverTimestamp(),
+      });
+      await updateDoc(doc(db, 'users', u.id), {
+        restaurant_id: ref.id,
+        restaurant_status: 'approved',
+      });
+      created++;
+    }
+  } catch (e) { console.warn('backfillRestaurantDocs failed', e); }
+  return { created };
+}
+
 export async function fetchRestaurants(status = 'approved') {
   if (useMock()) return mockRestaurants.filter((r) => r.status === status);
   // where()+orderBy() on different fields needs a composite index;
