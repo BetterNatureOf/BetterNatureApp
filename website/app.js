@@ -209,7 +209,7 @@
     // Cache-bust the dynamic import — Cloudflare Pages will sometimes
     // serve an older cached firebase-chapters.js even after a fresh
     // deploy. ?v= forces the browser to fetch the live build.
-    const { listChapters } = await import('./firebase-chapters.js?v=2026-06-04d');
+    const { listChapters } = await import('./firebase-chapters.js?v=2026-06-05a');
     liveChapters = await listChapters();
     console.log(`[bn] live chapters loaded: ${liveChapters.length}`);
   } catch (e) {
