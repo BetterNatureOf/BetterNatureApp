@@ -183,13 +183,19 @@ export default function ManageChapters({ navigation }) {
       if (key === 'chapter_president') return all.has('chapter_president') || all.has('chapter_pres');
       return all.has(key);
     };
+    // In the CHAPTER roster context the relevant title is the
+    // chapter role they hold here, not their org-wide rank. An
+    // executive who's also a member of Memphis shows up as
+    // "Member" on Memphis's roster — the website / chapter modal
+    // is a chapter view, not the org leadership board. Only when
+    // they hold a chapter officer role do we surface the officer
+    // label.
     const labelFor = (u) => {
       if (hasRole(u, 'chapter_president')) return 'President';
       if (hasRole(u, 'chapter_vp'))        return 'Vice President';
       if (hasRole(u, 'chapter_treas'))     return 'Treasurer';
       if (hasRole(u, 'chapter_vol_coord')) return 'Volunteer Coordinator';
       if (hasRole(u, 'chapter_sec'))       return 'Secretary';
-      if (hasRole(u, 'executive') || hasRole(u, 'admin') || hasRole(u, 'super_admin')) return 'Executive';
       return 'Member';
     };
     chapters.forEach(async (ch) => {
@@ -199,22 +205,31 @@ export default function ManageChapters({ navigation }) {
       const sec    = inChapter.find((u) => hasRole(u, 'chapter_sec'));
       const tres   = inChapter.find((u) => hasRole(u, 'chapter_treas'));
       const volCo  = inChapter.find((u) => hasRole(u, 'chapter_vol_coord'));
+      const officer = (u) => u ? { id: u.id, name: u.name || '', email: u.email || '' } : null;
       const nextOfficers = {
-        president:             pres  ? { name: pres.name  || '', email: pres.email  || '' } : null,
-        vice_president:        vp    ? { name: vp.name    || '', email: vp.email    || '' } : null,
-        treasurer:             tres  ? { name: tres.name  || '', email: tres.email  || '' } : null,
-        volunteer_coordinator: volCo ? { name: volCo.name || '', email: volCo.email || '' } : null,
-        secretary:             sec   ? { name: sec.name   || '', email: sec.email   || '' } : null,
+        president:             officer(pres),
+        vice_president:        officer(vp),
+        treasurer:             officer(tres),
+        volunteer_coordinator: officer(volCo),
+        secretary:             officer(sec),
       };
       // Public roster — everyone in the chapter, lightweight shape
       // for the marketing site. Officers are tagged with their
       // leadership label so the public list shows roles cleanly.
       // We don't denormalize email here (PII on a public page).
-      const nextRoster = inChapter.map((u) => ({
-        name: u.name || u.full_name || '',
-        role: labelFor(u),
-        instagram: u.instagram || '',
-      })).filter((r) => r.name);
+      // De-dupe by uid in case fetchAllMembers somehow returned the
+      // same user twice (mirror docs, restaurant linkage, etc.). uid
+      // is also written so the website can match officer↔roster
+      // entries by id instead of fragile name-string equality.
+      const seen = new Set();
+      const nextRoster = [];
+      for (const u of inChapter) {
+        if (seen.has(u.id)) continue;
+        seen.add(u.id);
+        const name = u.name || u.full_name || '';
+        if (!name) continue;
+        nextRoster.push({ id: u.id, name, role: labelFor(u), instagram: u.instagram || '' });
+      }
       const nextPres = pres?.name || '';
       const nextCount = inChapter.length;
       const officersStr = JSON.stringify(nextOfficers);

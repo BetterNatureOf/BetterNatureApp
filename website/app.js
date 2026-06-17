@@ -272,28 +272,28 @@
         </div>
       </li>
     `).join('');
-    const staticRoster = (ch.roster || []).map(m => `
-      <li class="chapter-modal__member">
-        <div>
-          <strong>${m.name}</strong>
-          <span>${m.role || ''}</span>
-        </div>
-        ${m.instagram ? `<a href="${m.instagram}" target="_blank" rel="noreferrer" aria-label="${m.name} on Instagram">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
-        </a>` : ''}
-      </li>
-    `).join('');
-    // Combine officers + full member roster. Officers render first
-    // (so leadership shows up at the top of the list) followed by
-    // every non-officer member denormalized onto ch.roster. We
-    // de-dupe by name so a president that already appears in the
-    // officers block doesn't double-print in the member list.
-    const officerNames = new Set(
+    // Roster sources, in priority order:
+    //   1. ch.officers (denormalized leadership) → officerRows
+    //   2. ch.roster   (denormalized membership) → memberRows
+    //   3. C.chapters.featured[].roster (static fallback for legacy
+    //      chapters that don't have ch.roster yet)
+    // We render officers + members ONCE, de-duping the members against
+    // the officer names so the president doesn't appear twice. The
+    // static fallback only fires when there's no live roster — never
+    // alongside, otherwise everyone shows up twice.
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const officerKeys = new Set(
       [off.president, off.vice_president, off.treasurer, off.volunteer_coordinator, off.secretary]
-        .filter(Boolean).map((p) => (p.name || '').toLowerCase())
+        .filter(Boolean)
+        .flatMap((p) => [norm(p.name), norm(p.email), norm(p.id)].filter(Boolean))
     );
-    const memberRows = (ch.roster || [])
-      .filter((m) => m.name && !officerNames.has((m.name || '').toLowerCase()))
+    const liveRoster = Array.isArray(ch.roster) ? ch.roster : [];
+    const memberRows = liveRoster
+      .filter((m) => {
+        if (!m.name) return false;
+        const keys = [norm(m.name), norm(m.email), norm(m.id)].filter(Boolean);
+        return !keys.some((k) => officerKeys.has(k));
+      })
       .map((m) => `
         <li class="chapter-modal__member">
           <div>
@@ -305,7 +305,20 @@
           </a>` : ''}
         </li>
       `).join('');
-    const combined = (officerRows || '') + (memberRows || '') + (staticRoster || '');
+    // Only render the static fallback if there's nothing live to show.
+    const haveLive = (officerRows && officerRows.length) || (memberRows && memberRows.length);
+    const staticFallback = haveLive ? '' : (Array.isArray(C.chapters.featured) ? C.chapters.featured : [])
+      .filter((f) => norm(f.city) === norm(ch.city))
+      .flatMap((f) => Array.isArray(f.roster) ? f.roster : [])
+      .map((m) => `
+        <li class="chapter-modal__member">
+          <div>
+            <strong>${m.name}</strong>
+            <span>${m.role || ''}</span>
+          </div>
+        </li>
+      `).join('');
+    const combined = (officerRows || '') + (memberRows || '') + (staticFallback || '');
     const roster = combined || '<li class="chapter-modal__empty">Roster coming soon.</li>';
     const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
     const president = ch.president_name || ch.president || '—';
