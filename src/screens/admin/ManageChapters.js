@@ -52,12 +52,22 @@ const LEAD_KEYS = new Set([
 
 function isLead(role) { return LEAD_KEYS.has(role); }
 
-function labelForRole(role) {
-  if (role === 'chapter_pres' || role === 'chapter_president') return 'President';
-  if (role === 'chapter_vp') return 'Vice President';
-  if (role === 'chapter_treas') return 'Treasurer';
-  if (role === 'chapter_vol_coord') return 'Volunteer Coordinator';
-  if (role === 'chapter_sec') return 'Secretary';
+// Pass either a role string OR a full user object. When given a
+// user we union the primary role with their roles[] extras so an
+// exec with chapter_president in their extras reads "President"
+// in the roster, not "Member".
+function labelForRole(roleOrUser) {
+  const all = typeof roleOrUser === 'string'
+    ? new Set([roleOrUser])
+    : new Set([
+        roleOrUser?.role || 'member',
+        ...(Array.isArray(roleOrUser?.roles) ? roleOrUser.roles : []),
+      ]);
+  if (all.has('chapter_pres') || all.has('chapter_president')) return 'President';
+  if (all.has('chapter_vp'))         return 'Vice President';
+  if (all.has('chapter_treas'))      return 'Treasurer';
+  if (all.has('chapter_vol_coord'))  return 'Volunteer Coordinator';
+  if (all.has('chapter_sec'))        return 'Secretary';
   return 'Member';
 }
 
@@ -557,7 +567,7 @@ export default function ManageChapters({ navigation }) {
                         >
                           <View style={{ flex: 1 }}>
                             <Text style={styles.rosterName}>{m.name || '(unnamed)'}</Text>
-                            <Text style={styles.rosterMeta}>{m.email} · {labelForRole(m.role)}</Text>
+                            <Text style={styles.rosterMeta}>{m.email} · {labelForRole(m)}</Text>
                           </View>
                           <Text style={styles.rosterStat}>{m.events_attended || 0} ev · {m.lbs_rescued || Math.round((m.meals_rescued || 0) / 1.2)} lbs · {m.hours_logged || 0}h</Text>
                           <Text style={styles.rosterChev}>›</Text>

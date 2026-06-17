@@ -1103,16 +1103,20 @@ export async function backfillRestaurantDocs() {
 }
 
 export async function fetchRestaurants(status = 'approved') {
-  if (useMock()) return mockRestaurants.filter((r) => r.status === status);
-  // where()+orderBy() on different fields needs a composite index;
-  // do it client-side so a missing index doesn't black-hole the list.
+  if (useMock()) {
+    return status === 'all' || !status
+      ? mockRestaurants
+      : mockRestaurants.filter((r) => r.status === status);
+  }
   const snap = await getDocs(collection(db, 'restaurants'));
   let list = snapToList(snap);
-  if (status) list = list.filter((r) => r.status === status);
+  if (status && status !== 'all') list = list.filter((r) => r.status === status);
   list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return withMockFallback(
     list,
-    mockRestaurants.filter((r) => r.status === status)
+    status === 'all' || !status
+      ? mockRestaurants
+      : mockRestaurants.filter((r) => r.status === status)
   );
 }
 

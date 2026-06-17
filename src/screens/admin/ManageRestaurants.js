@@ -14,11 +14,17 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
-import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs } from '../../services/database';
+import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs, createRestaurant, fetchChapters } from '../../services/database';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 
-const TABS = ['pending', 'approved', 'rejected'];
+const TABS = ['all', 'pending', 'approved', 'rejected'];
+const TAB_LABELS = {
+  all: 'All',
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+};
 
 const EDITABLE_FIELDS = [
   { key: 'name',         label: 'Restaurant name' },
@@ -42,23 +48,79 @@ function fmtDate(t) {
 }
 
 export default function ManageRestaurants({ navigation }) {
-  const [restaurants, setRestaurants] = useState([]);
-  const [tab, setTab] = useState('pending');
+  // We always load the full list now and filter client-side. That
+  // way the tab counts ("Pending 3 · Approved 12") are accurate
+  // without an extra fetch per tab, and the search box reaches into
+  // every status at once.
+  const [allRestaurants, setAllRestaurants] = useState([]);
+  const [tab, setTab] = useState('all');
+  const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({});
+  const [adding, setAdding] = useState(false);
+  const [chapters, setChapters] = useState([]);
+
+  useEffect(() => {
+    fetchChapters().then(setChapters).catch(() => {});
+  }, []);
+
+  async function handleAddPartner() {
+    if (!addForm.name?.trim()) {
+      notify('Required', 'At least a restaurant name is required.');
+      return;
+    }
+    setAdding(true);
+    try {
+      const chosen = chapters.find((c) => c.id === addForm.chapter_id);
+      await createRestaurant({
+        ...addForm,
+        chapter_name: chosen?.name || '',
+        status: 'approved',
+        added_by_exec: true,
+      });
+      setAddForm({});
+      setShowAdd(false);
+      await load();
+      notify('Partner added', `${addForm.name} is now an approved partner.`);
+    } catch (e) {
+      notify('Could not add', e?.message || 'Try again.');
+    } finally { setAdding(false); }
+  }
 
   const load = useCallback(async () => {
     try {
       // Heal any users whose role was flipped to 'restaurant' before
       // updateUserRole started spinning up the /restaurants doc
       // automatically. One-shot, idempotent.
-      await backfillRestaurantDocs();
-      const data = await fetchRestaurants(tab);
-      setRestaurants(data);
+      const { created } = await backfillRestaurantDocs();
+      if (created > 0) {
+        notify('Synced', `${created} promoted member${created === 1 ? '' : 's'} added to Approved.`);
+      }
+      const data = await fetchRestaurants('all');
+      setAllRestaurants(data);
     } catch (e) { console.warn(e); }
-  }, [tab]);
+  }, []);
+
+  const counts = {
+    all: allRestaurants.length,
+    pending: allRestaurants.filter((r) => r.status === 'pending').length,
+    approved: allRestaurants.filter((r) => r.status === 'approved').length,
+    rejected: allRestaurants.filter((r) => r.status === 'rejected').length,
+  };
+
+  const q = search.trim().toLowerCase();
+  const restaurants = allRestaurants
+    .filter((r) => tab === 'all' || r.status === tab)
+    .filter((r) => !q
+      || (r.name || '').toLowerCase().includes(q)
+      || (r.email || '').toLowerCase().includes(q)
+      || (r.city || '').toLowerCase().includes(q)
+      || (r.chapter_name || '').toLowerCase().includes(q)
+      || (r.contact_name || '').toLowerCase().includes(q));
 
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -116,10 +178,63 @@ export default function ManageRestaurants({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>‹ Back</Text>
         </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Manage Restaurants</BrushText>
-        <Text style={styles.subtitle}>
-          Approve applications, edit partner info, or revoke access.
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <BrushText variant="screenTitle" style={styles.title}>Manage Restaurants</BrushText>
+            <Text style={styles.subtitle}>
+              {counts.all} partner{counts.all === 1 ? '' : 's'} · {counts.pending} pending · {counts.approved} approved
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowAdd((v) => !v)} style={styles.addBtn} activeOpacity={0.85}>
+            <Text style={styles.addBtnText}>{showAdd ? 'Cancel' : '+ Add partner'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {showAdd ? (
+          <View style={styles.addCard}>
+            <Text style={styles.addTitle}>Add a restaurant partner</Text>
+            <Text style={styles.addHelp}>
+              Use this when you onboarded a partner outside the app (paper form, in-person handshake, etc.). The partner is created in Approved status and shows up in the local chapter's pickup queue immediately.
+            </Text>
+            <Text style={styles.label}>Restaurant name *</Text>
+            <TextInput style={styles.input} value={addForm.name || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, name: v }))} placeholder="Emirates Catering" />
+            <Text style={styles.label}>Contact email</Text>
+            <TextInput style={styles.input} value={addForm.email || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, email: v }))} placeholder="manager@restaurant.com" autoCapitalize="none" keyboardType="email-address" />
+            <Text style={styles.label}>Contact phone</Text>
+            <TextInput style={styles.input} value={addForm.phone || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, phone: v }))} placeholder="+1 555 555 5555" keyboardType="phone-pad" />
+            <Text style={styles.label}>Address</Text>
+            <TextInput style={styles.input} value={addForm.address || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, address: v }))} placeholder="123 Main St" />
+            <Text style={styles.label}>Chapter</Text>
+            <View style={styles.chapterGrid}>
+              {chapters.length === 0 ? (
+                <Text style={styles.addHelp}>No chapters loaded yet.</Text>
+              ) : chapters.map((c) => {
+                const on = addForm.chapter_id === c.id;
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    onPress={() => setAddForm((p) => ({ ...p, chapter_id: c.id }))}
+                    activeOpacity={0.85}
+                    style={[styles.chapterChip, on && styles.chapterChipActive]}
+                  >
+                    <Text style={[styles.chapterChipText, on && styles.chapterChipTextActive]}>
+                      {c.name || `BetterNature ${c.city || ''}`}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Button title="Add partner" onPress={handleAddPartner} loading={adding} style={{ marginTop: 10 }} />
+          </View>
+        ) : null}
+
+        <TextInput
+          style={styles.search}
+          placeholder="Search name, email, city, contact, or chapter"
+          placeholderTextColor={Colors.grayMid}
+          value={search}
+          onChangeText={setSearch}
+        />
 
         <View style={styles.tabs}>
           {TABS.map((t) => (
@@ -129,7 +244,7 @@ export default function ManageRestaurants({ navigation }) {
               onPress={() => { setTab(t); setExpanded(null); setEditingId(null); }}
             >
               <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {TAB_LABELS[t]} · {counts[t]}
               </Text>
             </TouchableOpacity>
           ))}
@@ -137,7 +252,13 @@ export default function ManageRestaurants({ navigation }) {
 
         {restaurants.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>No {tab} restaurants.</Text>
+            <Text style={styles.emptyText}>
+              {counts.all === 0
+                ? 'No restaurant partners yet. Tap "+ Add partner" or promote a member in Manage Members.'
+                : q
+                  ? `No partners match "${search}".`
+                  : `No partners with status "${tab}". Try the All tab.`}
+            </Text>
           </View>
         ) : (
           restaurants.map((rest) => {
@@ -189,6 +310,7 @@ export default function ManageRestaurants({ navigation }) {
                       </>
                     ) : (
                       <>
+                        <DetailRow label="Chapter" value={rest.chapter_name || (rest.chapter_id ? '(legacy id only)' : 'Not assigned — pickups will not fan out')} />
                         <DetailRow label="Contact" value={rest.contact_name} />
                         <DetailRow label="Email"   value={rest.email} selectable />
                         <DetailRow label="Phone"   value={rest.phone} selectable />
@@ -277,4 +399,37 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   label: { fontSize: 12, fontWeight: '700', color: Colors.gray, marginBottom: 4, letterSpacing: 0.4, textTransform: 'uppercase' },
   input: { borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.dark, backgroundColor: '#FAF8F1' },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
+  addBtn: { backgroundColor: Colors.green, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+  addBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
+  addCard: {
+    backgroundColor: Colors.white,
+    borderRadius: Radius.xl,
+    padding: 16,
+    marginTop: 6,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    ...Shadows.card,
+  },
+  addTitle: { fontSize: 15, fontWeight: '800', color: Colors.dark, marginBottom: 4 },
+  addHelp: { ...Type.caption, color: Colors.gray, marginBottom: 10, lineHeight: 18 },
+  chapterGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10, marginTop: 4 },
+  chapterChip: {
+    paddingVertical: 8, paddingHorizontal: 12,
+    backgroundColor: '#FAF8F1',
+    borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+  },
+  chapterChipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
+  chapterChipText: { fontSize: 12, fontWeight: '700', color: Colors.dark },
+  chapterChipTextActive: { color: '#FFF' },
+  search: {
+    borderWidth: 1, borderColor: Colors.glassBorder,
+    borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 14, color: Colors.dark,
+    backgroundColor: Colors.white,
+    marginBottom: 12,
+  },
 });
