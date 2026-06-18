@@ -183,6 +183,16 @@ export default function ManageMembers({ navigation, route }) {
       if (Object.keys(updates).length) {
         await updateProfile(target.id, updates);
       }
+      // Push the new member shape to the chapter docs the website
+      // reads (officers / roster / member_count / president_name).
+      // Without this the marketing site keeps showing the previous
+      // president / member count until Manage Chapters is opened.
+      // Resync every chapter — covers the case where the member
+      // moved between chapters in the same save.
+      try {
+        const { resyncAllChapters } = await import('../../services/chapterDenorm');
+        await resyncAllChapters();
+      } catch (e) { console.warn('chapter denorm after member save', e); }
       load();
     } catch (e) {
       const code = (e?.code || '').toLowerCase();
