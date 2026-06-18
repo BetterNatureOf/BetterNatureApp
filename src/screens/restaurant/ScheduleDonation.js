@@ -119,6 +119,18 @@ export default function ScheduleDonation({ navigation }) {
         ? Math.max(1, Math.round((scheduledFor.getTime() - Date.now()) / 3600000))
         : w.hours;
 
+      // Guard: a restaurant without a chapter_id will post a pickup
+      // that fans out to nobody (notification fan-out + volunteer
+      // feed both filter by chapter_id). Block + tell them how to
+      // fix instead of silently dropping the post into the void.
+      if (!user?.chapter_id) {
+        notify(
+          'No chapter linked',
+          'Your restaurant isn\'t linked to a BetterNature chapter yet. Email info@betternatureofficial.org to assign one — otherwise no volunteer will see your post.'
+        );
+        return;
+      }
+
       // Post the pickup IMMEDIATELY without waiting for the photo
       // upload. Volunteers see it on the feed; the photo gets
       // patched onto the doc when the upload finishes (usually a

@@ -90,8 +90,8 @@ export default function WelcomeScreen({ navigation }) {
           />
 
           <Text style={styles.footnote}>
-            Chapter presidents and executives sign in with the credentials
-            assigned to them after promotion in-app.
+            Restaurants apply through the button above.
+            Chapter presidents and executives sign in with their existing account — promotions happen in-app.
           </Text>
         </View>
       </ResponsiveContainer>

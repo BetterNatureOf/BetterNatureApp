@@ -120,7 +120,9 @@ export default function ProfileScreen({ navigation }) {
 
       {/* Pickup reliability — completed vs dropped. Surfaces the
           `pickups_dropped` counter bumped when a volunteer releases
-          a claimed pickup, alongside `pickups_completed`. */}
+          a claimed pickup, alongside `pickups_completed`. A "drop
+          rate" chip appears once the volunteer has at least one of
+          either so a chronically-flaking volunteer sees feedback. */}
       <View style={styles.statsRow}>
         <StatCard
           number={user?.pickups_completed || 0}
@@ -135,6 +137,23 @@ export default function ProfileScreen({ navigation }) {
           style={styles.statItem}
         />
       </View>
+      {(() => {
+        const done = user?.pickups_completed || 0;
+        const dropped = user?.pickups_dropped || 0;
+        const total = done + dropped;
+        if (total < 2) return null;
+        const pct = Math.round((dropped / total) * 100);
+        const tone = pct >= 40 ? { bg: '#FCE3E3', fg: '#8E1B1B' }
+                    : pct >= 20 ? { bg: '#FFF2CF', fg: '#7A5400' }
+                    : { bg: '#E5F2EC', fg: '#1B5E3F' };
+        return (
+          <View style={[styles.reliabilityChip, { backgroundColor: tone.bg }]}>
+            <Text style={[styles.reliabilityText, { color: tone.fg }]}>
+              {pct}% drop rate · {pct >= 40 ? 'high' : pct >= 20 ? 'okay' : 'reliable'}
+            </Text>
+          </View>
+        );
+      })()}
 
       <BrushDivider />
 
@@ -215,6 +234,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   statItem: { flex: 1 },
+  reliabilityChip: {
+    alignSelf: 'center',
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 999,
+    marginTop: -4,
+    marginBottom: 12,
+  },
+  reliabilityText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   menuCard: {
     marginHorizontal: 24,
     backgroundColor: Colors.white,

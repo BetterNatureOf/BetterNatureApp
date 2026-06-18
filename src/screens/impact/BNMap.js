@@ -145,6 +145,15 @@ export default function BNMap({ navigation }) {
                     );
                   })}
                 </View>
+                {canAddFridge ? (
+                  <TouchableOpacity
+                    onPress={() => navigation?.navigate?.('ManageFridges')}
+                    style={[styles.locateBtn, { backgroundColor: Colors.green }]}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.locateBtnText, { color: '#FFF' }]}>+ Add fridge</Text>
+                  </TouchableOpacity>
+                ) : null}
                 {geoState === 'idle' || geoState === 'denied' ? (
                   <TouchableOpacity onPress={requestLocation} style={styles.locateBtn}>
                     <Text style={styles.locateBtnText}>

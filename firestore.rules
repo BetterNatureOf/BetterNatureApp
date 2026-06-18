@@ -275,7 +275,18 @@ service cloud.firestore {
     // can't inflate the counters.
     match /org_stats/{id} {
       allow read: if true;
-      allow write: if isSignedIn();
+      // bumpOrgStats is called as a side effect of legitimate writes
+      // (pickup complete, event check-in, donation). The doc only
+      // carries running counters — no PII, no privileges. To stop
+      // a logged-in user from inflating the ticker via the JS
+      // console, restrict writes to ONLY the known counter fields
+      // (no arbitrary keys) and gate destructive resets behind
+      // exec. Any signed-in user can bump; only an exec can clear.
+      allow update: if isSignedIn()
+        && request.resource.data.keys().hasOnly(
+             ['meals','lbs','individuals','co2','water','events','hours','volunteers','chapters','updated_at']
+           );
+      allow create, delete: if isExec();
     }
 
     // ── animals_helped, badges, user_badges, member_of_month, checklist_progress ──

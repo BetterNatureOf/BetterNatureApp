@@ -43,7 +43,12 @@ export default function PresEvents({ navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const list = await fetchEvents(user?.chapter_id);
+      // Guard: fetchEvents(undefined) returns EVERY event org-wide,
+      // so a pres without a chapter_id stamped would see (and try
+      // to edit) every chapter's events. Bail to an empty list and
+      // let the render show a "set your chapter first" state.
+      if (!user?.chapter_id) { setEvents([]); setLoading(false); return; }
+      const list = await fetchEvents(user.chapter_id);
       setEvents(list || []);
     } catch {}
     setLoading(false);

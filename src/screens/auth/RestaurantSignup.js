@@ -77,6 +77,14 @@ export default function RestaurantSignup({ navigation }) {
         role: ROLES.RESTAURANT,
       });
       const uid = authData?.user?.id;
+      // Flag the user doc as restaurant_status:'incomplete' BEFORE
+      // the /restaurants doc write. If the browser dies between
+      // signUp and createRestaurant, the next sign-in sees the
+      // incomplete flag and can recover instead of stranding the
+      // user on a restaurant dashboard with no partner record.
+      if (uid) {
+        try { await updateProfile(uid, { restaurant_status: 'incomplete' }); } catch {}
+      }
 
       // 2) Create the restaurant doc in pending state, linked to the
       //    user's uid so exec can match it back to the Auth account.

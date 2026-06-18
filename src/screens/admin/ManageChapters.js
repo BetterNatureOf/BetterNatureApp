@@ -439,6 +439,22 @@ export default function ManageChapters({ navigation }) {
     }
   }
 
+  // Manually re-sync every chapter's denormalized fields (officers
+  // / roster / member_count / president_name). Useful when chapters
+  // were created via script before the denormalizer existed, or
+  // after a bulk role change, so the marketing site catches up
+  // without waiting on the next member edit.
+  async function handleResyncAll() {
+    try {
+      const { resyncAllChapters } = await import('../../services/chapterDenorm');
+      const { synced } = await resyncAllChapters();
+      notify('Re-synced', `${synced} chapter${synced === 1 ? '' : 's'} updated. Website reflects on next page load.`);
+      load();
+    } catch (e) {
+      notify('Could not re-sync', e?.message || 'Try again.');
+    }
+  }
+
   async function toggleStatus(chapter) {
     const next = chapter.status === 'inactive' ? 'active' : 'inactive';
     // Deactivation is destructive — gate it behind the user's
@@ -476,6 +492,12 @@ export default function ManageChapters({ navigation }) {
           </View>
           <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
             <Text style={styles.addBtnText}>+ Add chapter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addBtn, { marginLeft: 8, backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.glassBorder }]}
+            onPress={handleResyncAll}
+          >
+            <Text style={[styles.addBtnText, { color: Colors.green }]}>Re-sync web</Text>
           </TouchableOpacity>
         </View>
 

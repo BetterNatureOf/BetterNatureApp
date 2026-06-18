@@ -100,6 +100,19 @@ export default function ManageVerifications({ navigation }) {
           Review every ID that volunteers and partners upload. Approval unlocks pickup claims.
         </Text>
 
+        {/* Storage-health hint — when nobody on the platform has an
+            ID uploaded, the most likely cause is that Firebase
+            Storage isn't initialized for the project. Surface that
+            instead of letting the screen sit silently empty. */}
+        {members && members.length > 0 && (members || []).every((m) => !m.id_document_url) ? (
+          <View style={styles.storageBanner}>
+            <Text style={styles.storageBannerTitle}>No IDs uploaded yet — check Firebase Storage</Text>
+            <Text style={styles.storageBannerBody}>
+              The most common reason this screen is empty is that Firebase Storage isn't initialized on the project. Open console.firebase.google.com/project/better-nature-app/storage and tap Get Started, then redeploy storage rules.
+            </Text>
+          </View>
+        ) : null}
+
         {/* Filter pills with counts */}
         <View style={styles.pills}>
           {FILTERS.map((f) => {
@@ -293,6 +306,16 @@ const styles = StyleSheet.create({
   backText: { fontSize: 15, color: Colors.green, fontWeight: '600' },
   title: { color: Colors.green, marginTop: 4 },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 18 },
+  storageBanner: {
+    backgroundColor: '#FFF6E5',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E0A52F',
+  },
+  storageBannerTitle: { fontSize: 14, fontWeight: '800', color: '#7A5400', marginBottom: 6 },
+  storageBannerBody: { fontSize: 12, color: '#7A5400', lineHeight: 17 },
 
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 22 },
   pill: {

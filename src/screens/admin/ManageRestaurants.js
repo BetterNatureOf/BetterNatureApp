@@ -196,6 +196,9 @@ export default function ManageRestaurants({ navigation }) {
             <Text style={styles.addHelp}>
               Use this when you onboarded a partner outside the app (paper form, in-person handshake, etc.). The partner is created in Approved status and shows up in the local chapter's pickup queue immediately.
             </Text>
+            <Text style={[styles.addHelp, { fontWeight: '700', color: '#7A5400' }]}>
+              Heads up: this creates the partner record only — no Firebase Auth login. To let them post pickups themselves, send them to /signup/restaurant.
+            </Text>
             <Text style={styles.label}>Restaurant name *</Text>
             <TextInput style={styles.input} value={addForm.name || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, name: v }))} placeholder="Emirates Catering" />
             <Text style={styles.label}>Contact email</Text>
