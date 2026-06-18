@@ -461,28 +461,60 @@ export default function ManageMembers({ navigation, route }) {
                 </View>
               </View>
 
-              {/* ID images */}
+              {/* ID document — always rendered so the exec can see
+                  upload + verification state at a glance, including
+                  when no ID is on file yet. Tap an image to open the
+                  full-size version in a new tab. */}
+              <Text style={[styles.fieldLabel, { marginTop: 8 }]}>
+                ID document {editing?.verification_status ? `· ${editing.verification_status}` : ''}
+              </Text>
               {(editing?.id_document_front_url || editing?.id_document_url || editing?.id_document_back_url) ? (
-                <>
-                  <Text style={[styles.fieldLabel, { marginTop: 8 }]}>ID document</Text>
-                  <View style={styles.idImagesRow}>
-                    {(editing?.id_document_front_url || editing?.id_document_url) ? (
+                <View style={styles.idImagesRow}>
+                  {(editing?.id_document_front_url || editing?.id_document_url) ? (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        const url = editing.id_document_front_url || editing.id_document_url;
+                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                          window.open(url, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                    >
                       <Image
                         source={{ uri: editing.id_document_front_url || editing.id_document_url }}
                         style={styles.idImage}
                         resizeMode="cover"
                       />
-                    ) : null}
-                    {editing?.id_document_back_url ? (
+                      <Text style={styles.idSideLabel}>Front · tap to open</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {editing?.id_document_back_url ? (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                          window.open(editing.id_document_back_url, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                    >
                       <Image
                         source={{ uri: editing.id_document_back_url }}
                         style={styles.idImage}
                         resizeMode="cover"
                       />
-                    ) : null}
-                  </View>
-                </>
-              ) : null}
+                      <Text style={styles.idSideLabel}>Back · tap to open</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : (
+                <View style={styles.idEmpty}>
+                  <Text style={styles.idEmptyTitle}>No ID on file</Text>
+                  <Text style={styles.idEmptyBody}>
+                    This member didn't upload an ID during signup (or Firebase Storage isn't initialized for the project — check console.firebase.google.com/project/better-nature-app/storage).
+                    Until an ID lands here, they can't claim pickups.
+                  </Text>
+                </View>
+              )}
 
               <Text style={styles.fieldLabel}>Role</Text>
               {ROLE_OPTIONS.map((opt) => (
@@ -762,7 +794,18 @@ const styles = StyleSheet.create({
   statBig: { fontSize: 22, fontWeight: '800', color: Colors.green },
   statLabel: { fontSize: 11, color: Colors.grayMid, marginTop: 2, fontWeight: '600' },
   idImagesRow: { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 12 },
-  idImage: { flex: 1, height: 110, borderRadius: 10, backgroundColor: Colors.grayLight },
+  idImage: { width: 160, height: 110, borderRadius: 10, backgroundColor: Colors.grayLight },
+  idSideLabel: { fontSize: 11, color: Colors.grayMid, marginTop: 4, textAlign: 'center' },
+  idEmpty: {
+    backgroundColor: '#FFF6E5',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E0A52F',
+  },
+  idEmptyTitle: { fontSize: 13, fontWeight: '800', color: '#7A5400', marginBottom: 4 },
+  idEmptyBody: { fontSize: 12, color: '#7A5400', lineHeight: 17 },
   statEditRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   statEditCell: { flex: 1 },
   statEditLabel: { fontSize: 11, color: Colors.grayMid, fontWeight: '700', marginBottom: 4, letterSpacing: 0.4, textTransform: 'uppercase' },
