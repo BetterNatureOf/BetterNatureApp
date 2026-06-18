@@ -287,7 +287,15 @@ export default function MainNavigator() {
       <Stack.Screen name="PresFinance" component={require('../screens/president/PresFinance').default} />
       <Stack.Screen name="PresEvents" component={PresEvents} />
       <Stack.Screen name="PresReports" component={PresReports} />
-      <Stack.Screen name="PresMembers" component={ManageMembers} />
+      {/* Pres-scoped view: the same ManageMembers screen, but it
+          filters to the current user's chapter and disables the
+          admin-only controls (role picker, executive escalation,
+          chapter reassignment). */}
+      <Stack.Screen
+        name="PresMembers"
+        component={ManageMembers}
+        initialParams={{ scope: 'chapter' }}
+      />
       <Stack.Screen name="PresBroadcast" component={BroadcastScreen} />
 
       {/* Executive-flavored alias for the finance screen. */}

@@ -59,6 +59,14 @@ function roleBadgeLabel(role) {
 export default function ManageMembers({ navigation, route }) {
   const authUser = useAuthStore((s) => s.user);
   const setAuthUser = useAuthStore((s) => s.setUser);
+  // Two entry points share this screen:
+  //  - Org tab (exec) → no scope, sees every member, every chapter
+  //  - Chapter tab (pres) → route.params.scope === 'chapter'
+  // Pres view filters to their own chapter only and hides admin-
+  // only controls (role picker, executive escalation, chapter
+  // reassignment) so the screen looks viewer-only.
+  const scope = route?.params?.scope;
+  const isChapterScope = scope === 'chapter';
   const { isWide } = useBreakpoint();
   const [needsPromote, setNeedsPromote] = useState(false);
   const [promoting, setPromoting] = useState(false);
@@ -155,7 +163,11 @@ export default function ManageMembers({ navigation, route }) {
 
     setEditing(null);
     try {
-      if (nextRole !== target.role) {
+      // Chapter-scope (pres) cannot change role / chapter / extra
+      // roles. We hide the UI for those above; this is the matching
+      // server-side bypass so a stale `selectedRole` from before
+      // the scope flag flipped can't accidentally fire the write.
+      if (!isChapterScope && nextRole !== target.role) {
         await updateUserRole(target.id, nextRole);
       }
       // Multi-role array: drop the primary out of the extras (it's
@@ -167,11 +179,11 @@ export default function ManageMembers({ navigation, route }) {
       const prevExtras = Array.isArray(target.roles) ? target.roles : [];
       const extrasChanged = cleanedExtras.length !== prevExtras.length
         || cleanedExtras.some((r) => !prevExtras.includes(r));
-      if (extrasChanged) {
+      if (!isChapterScope && extrasChanged) {
         await updateProfile(target.id, { roles: cleanedExtras });
       }
       const currentChapter = target.chapter_id || '';
-      if (nextChapter !== currentChapter) {
+      if (!isChapterScope && nextChapter !== currentChapter) {
         await updateUserChapter(target.id, nextChapter || null);
       }
       // Stats — only push the ones that actually changed so we don't
@@ -254,8 +266,13 @@ export default function ManageMembers({ navigation, route }) {
   }
 
   // Restaurants have their own portal + Manage Restaurants screen,
-  // so they shouldn't pollute the members view here.
-  const visible = filtered.filter((m) => (m.role || 'member') !== 'restaurant');
+  // so they shouldn't pollute the members view here. Chapter-scope
+  // also drops everyone outside the signed-in pres's chapter so a
+  // pres can't see (or accidentally try to edit) another chapter's
+  // roster.
+  const visible = filtered
+    .filter((m) => (m.role || 'member') !== 'restaurant')
+    .filter((m) => !isChapterScope || m.chapter_id === authUser?.chapter_id);
 
   // Pending applications get their own section at the top so the
   // exec sees them on every visit without scrolling.
@@ -526,8 +543,15 @@ export default function ManageMembers({ navigation, route }) {
                 </View>
               )}
 
-              <Text style={styles.fieldLabel}>Role</Text>
-              {ROLE_OPTIONS.map((opt) => (
+              {isChapterScope ? (
+                <View style={styles.chapterScopeNote}>
+                  <Text style={styles.chapterScopeText}>
+                    Viewer-only — role + chapter assignment can only be changed by an Executive in Org → Manage Members.
+                  </Text>
+                </View>
+              ) : null}
+              {isChapterScope ? null : <Text style={styles.fieldLabel}>Role</Text>}
+              {isChapterScope ? null : ROLE_OPTIONS.map((opt) => (
                 <TouchableOpacity
                   key={opt.key}
                   style={[
@@ -559,11 +583,13 @@ export default function ManageMembers({ navigation, route }) {
                   the founder can run an org AND a chapter. Excludes
                   the primary role (selecting it as primary is
                   enough). */}
-              <Text style={styles.fieldLabel}>Additional roles</Text>
-              <Text style={styles.roleOptionDesc}>
-                Stack on top of the primary role. An exec who's also a chapter pres should be Executive + chapter pres.
-              </Text>
-              {ROLE_OPTIONS
+              {isChapterScope ? null : <Text style={styles.fieldLabel}>Additional roles</Text>}
+              {isChapterScope ? null : (
+                <Text style={styles.roleOptionDesc}>
+                  Stack on top of the primary role. An exec who's also a chapter pres should be Executive + chapter pres.
+                </Text>
+              )}
+              {isChapterScope ? null : ROLE_OPTIONS
                 .filter((o) => o.key !== selectedRole && o.key !== 'restaurant')
                 .map((opt) => {
                   const on = selectedExtraRoles.includes(opt.key);
@@ -587,9 +613,10 @@ export default function ManageMembers({ navigation, route }) {
                   );
                 })}
 
-              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
-                Chapter
-              </Text>
+              {isChapterScope ? null : (
+                <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Chapter</Text>
+              )}
+              {isChapterScope ? null : (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -632,6 +659,7 @@ export default function ManageMembers({ navigation, route }) {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+              )}
 
               <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
                 Stats (editable by chapter president + execs)
@@ -904,6 +932,15 @@ const styles = StyleSheet.create({
   roleOptionDesc: { fontSize: 11, color: Colors.gray, marginTop: 2 },
   checkMark: { fontSize: 18, color: Colors.green, fontWeight: '800' },
   chapterChips: { gap: 8, paddingBottom: 4 },
+  chapterScopeNote: {
+    backgroundColor: '#FFF6E5',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E0A52F',
+  },
+  chapterScopeText: { fontSize: 12, color: '#7A5400', lineHeight: 17, fontWeight: '600' },
   chapterChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
