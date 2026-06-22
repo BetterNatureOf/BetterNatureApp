@@ -163,17 +163,26 @@ export default function ScheduleDonation({ navigation }) {
 
       // Fire-and-forget photo upload + patch. If it fails the
       // pickup still exists, just without a thumbnail; restaurant
-      // can re-upload from the pickup detail screen.
+      // can re-upload from the pickup detail screen. Critically,
+      // on failure we still flip photo_uploading:false so the
+      // volunteer-side card doesn't sit on a spinner forever —
+      // it just shows "no photo" and the run continues.
       if (photoUri && created?.id) {
         uploadPickupPhoto(restaurantId, photoUri)
           .then((photoUrl) => {
-            if (!photoUrl) return;
             return updateDoc(doc(db, 'pickups', created.id), {
-              photo_url: photoUrl,
+              photo_url: photoUrl || null,
               photo_uploading: false,
+              photo_upload_failed: !photoUrl,
             });
           })
-          .catch((e) => console.warn('photo upload (post-create)', e));
+          .catch((e) => {
+            console.warn('photo upload (post-create)', e);
+            return updateDoc(doc(db, 'pickups', created.id), {
+              photo_uploading: false,
+              photo_upload_failed: true,
+            }).catch(() => {});
+          });
       }
     } catch (e) {
       console.error('createPickup failed:', e);
