@@ -13,8 +13,13 @@ import Icon from '../ui/Icon';
  * should see a useful hint about what to do next.
  */
 export default function MyPickups({ pickups = [], userId, onPickupPress, onClaimPress }) {
-  // Show pickups the user has claimed, OR available ones they can grab
-  const myPickups = pickups.filter((p) => p.claimed_by === userId && p.status === 'claimed');
+  // Show pickups the user has claimed (incl. en route — they're
+  // still actively working it), OR available ones they can grab.
+  // Without `enroute` here the card disappeared the moment they
+  // tapped "I'm on my way" and they couldn't find their run.
+  const myPickups = pickups.filter(
+    (p) => p.claimed_by === userId && ['claimed', 'enroute'].includes(p.status)
+  );
   const available = pickups.filter((p) => p.status === 'available');
 
   if (myPickups.length === 0 && available.length === 0) {

@@ -508,6 +508,32 @@ export async function fetchPickups(chapterId) {
   return snapToList(snap);
 }
 
+// The signed-in volunteer's own claimed + enroute pickups. fetchPickups
+// returns only `available` for the chapter feed, so without this the
+// MyPickups dashboard widget went empty the moment a volunteer claimed
+// a run — and stayed empty until they delivered it.
+export async function fetchMyActivePickups(userId) {
+  if (!userId) return [];
+  if (useMock()) {
+    return (mockPickups || []).filter(
+      (p) => p.claimed_by === userId && ['claimed', 'enroute'].includes(p.status)
+    );
+  }
+  try {
+    // Single-key where + client filter — avoids the
+    // composite-index requirement of (claimed_by, status) which
+    // would silently return [] in prod until the index was built.
+    const snap = await getDocs(query(
+      collection(db, 'pickups'),
+      where('claimed_by', '==', userId)
+    ));
+    return snapToList(snap).filter((p) => ['claimed', 'enroute'].includes(p.status));
+  } catch (e) {
+    console.warn('fetchMyActivePickups failed', e);
+    return [];
+  }
+}
+
 // All in-flight pickups org-wide (or scoped to a chapter). "In-flight"
 // = a volunteer has claimed it but hasn't dropped it off yet. Used by
 // the exec + chapter-pres live-ops dashboard to see who's out doing

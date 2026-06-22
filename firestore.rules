@@ -303,10 +303,19 @@ service cloud.firestore {
     // nobody deletes — receipt history is immutable for audit.
     match /tax_receipts/{id} {
       allow read: if true;
-      // Receipts are minted from completePickup() which runs as the
-      // volunteer (member role). Anyone signed in can create; nobody
-      // can edit or delete an issued receipt — it's audit history.
-      allow create: if isSignedIn();
+      // Receipts must be tied to a real /pickups/{id} that the
+      // CURRENT signed-in user actually delivered (claimed_by ==
+      // auth.uid) and that's in 'completed' status. Without this
+      // anyone signed in could mint a forged receipt for any
+      // restaurant via the JS SDK. Execs can mint anything (manual
+      // backfills, paper receipts). Nobody edits or deletes — the
+      // collection is immutable audit history.
+      allow create: if isExec()
+        || (isSignedIn()
+            && request.resource.data.pickup_id is string
+            && exists(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id))
+            && get(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id)).data.claimed_by == request.auth.uid
+            && get(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id)).data.status == 'completed');
       allow update, delete: if false;
     }
 
