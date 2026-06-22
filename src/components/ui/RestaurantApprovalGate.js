@@ -57,17 +57,22 @@ export default function RestaurantApprovalGate({ children }) {
   }
 
   const rejected = status === 'rejected';
+  const incomplete = status === 'incomplete';
 
   return (
     <View style={styles.container}>
       <View style={styles.card}>
         <BrushText variant="screenTitle" style={styles.title}>
-          {rejected ? 'Application not accepted' : 'Application pending'}
+          {rejected ? 'Application not accepted'
+            : incomplete ? 'Finish your application'
+            : 'Application pending'}
         </BrushText>
         <Text style={styles.body}>
           {rejected
             ? 'A BetterNature executive reviewed your application and was unable to approve it at this time. Email info@betternatureofficial.org if you believe this is a mistake.'
-            : 'Thanks for applying to be a food rescue partner! An executive will review your application inside the app. Your dashboard will unlock automatically the moment you\'re approved.'}
+            : incomplete
+              ? 'Your account exists but the partner application wasn\'t saved. This usually happens when the signup tab is closed between steps. Email info@betternatureofficial.org and we\'ll wire your record up — your account is safe.'
+              : 'Thanks for applying to be a food rescue partner! An executive will review your application inside the app. Your dashboard will unlock automatically the moment you\'re approved.'}
         </Text>
 
         <View style={styles.statusRow}>
