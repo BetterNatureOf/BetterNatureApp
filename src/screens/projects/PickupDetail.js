@@ -15,6 +15,8 @@ import BrushText from '../../components/ui/BrushText';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import PickupCard from '../../components/pickup/PickupCard';
+import PickupTimeline from '../../components/pickup/PickupTimeline';
+import PickupContacts from '../../components/pickup/PickupContacts';
 import FridgePicker from '../../components/ui/FridgePicker';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
@@ -161,12 +163,22 @@ export default function PickupDetail({ route, navigation }) {
   async function handleCancelClaim() {
     const ok = await confirm(
       'Release this pickup?',
-      'It goes back on the board for another volunteer. Only do this if you can’t make the run.'
+      'It goes back on the board for another volunteer. This costs 5 leaderboard points and gets logged as a drop. Only do this if you truly can\'t make the run.'
     );
     if (!ok) return;
+    // Ask for the reason on web via prompt; on native we skip
+    // (native devs can wire a picker later). The reason lets the
+    // chapter pres see why runs get dropped in aggregate.
+    let reason = '';
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      reason = window.prompt(
+        'Why can\'t you make it? (helps the chapter improve — one sentence is fine)',
+        ''
+      ) || '';
+    }
     setBusy(true);
     try {
-      await cancelClaim(pickup.id);
+      await cancelClaim(pickup.id, reason.trim() || undefined);
       notifyThen('Released', 'Thanks for letting us know. The pickup is open again.', () => navigation.goBack());
     } catch (e) {
       notify('Could not release', e?.message || 'Try again.');
@@ -174,9 +186,24 @@ export default function PickupDetail({ route, navigation }) {
   }
 
   async function handleDelivered() {
+    // Sanity-check the actual weight before we ship a tax receipt
+    // to the partner. If the volunteer enters something wildly off
+    // from the restaurant's estimate, force a confirmation — the
+    // partner's receipt should match the food they actually gave.
+    const w = weight ? parseFloat(weight) : undefined;
+    const est = Number(pickup?.estimated_weight_lbs || 0);
+    if (w != null && Number.isFinite(w) && est > 0) {
+      const drift = Math.abs(w - est) / est;
+      if (drift > 0.3) {
+        const ok = await confirm(
+          'Weight looks off',
+          `Restaurant estimated ${est} lbs, you entered ${w} lbs. That's ${Math.round(drift * 100)}% off. The tax receipt will use your number. Continue?`
+        );
+        if (!ok) return;
+      }
+    }
     setBusy(true);
     try {
-      const w = weight ? parseFloat(weight) : undefined;
       await completePickup(pickup.id, w);
       await refresh();
       // Pull the freshly bumped user doc so Profile / Impact /
@@ -189,7 +216,11 @@ export default function PickupDetail({ route, navigation }) {
           if (fresh && setUser) setUser({ ...user, ...fresh });
         }
       } catch (e) { console.warn('user refresh after pickup', e); }
-      notifyThen('Delivered', 'Thanks for the run — your impact is logged.', () => navigation.goBack());
+      // Instead of navigating away immediately, stay on the screen
+       // — the completion card (rendered below when status ===
+       // 'completed') shows their impact + tax receipt link so the
+       // volunteer sees proof of the run before they leave.
+       notify('Delivered', 'Nice run. Your impact is logged.');
     } catch (e) {
       notify('Could not complete', e?.message || 'Try again.');
     } finally { setBusy(false); }
@@ -216,6 +247,22 @@ export default function PickupDetail({ route, navigation }) {
           <Text style={styles.backText}>Back</Text>
         </AnimatedPressable>
         <BrushText variant="screenTitle" style={styles.title}>Pickup</BrushText>
+
+        {/* Timeline — shows where in the flow this run is at a
+            glance, on both restaurant and volunteer views. Only
+            once the pickup is past 'available' — a preview card
+            doesn't need the ladder. */}
+        {pickup.status !== 'available' ? <PickupTimeline pickup={pickup} /> : null}
+
+        {/* Contact cards. Restaurant sees the volunteer's phone
+            once claimed; volunteer sees the restaurant's phone
+            once claimed. Both sides can call/text the moment
+            something goes sideways at the door. */}
+        {pickup.status !== 'available' && pickup.status !== 'completed' && pickup.status !== 'cancelled' ? (
+          userIsRestaurant
+            ? <PickupContacts pickup={pickup} side="restaurant" />
+            : <PickupContacts pickup={pickup} side="volunteer" />
+        ) : null}
 
         {pickup.status === 'available' ? (
           <View style={styles.previewBanner}>
@@ -315,15 +362,20 @@ export default function PickupDetail({ route, navigation }) {
           </View>
         ) : null}
 
-        {pickup.status === 'enroute' ? (
+        {/* Weight input — available in claimed and enroute state so
+            the volunteer can enter the real weight the moment they
+            handle the food (a kitchen scale, whatever). The
+            restaurant estimate is a placeholder; the receipt uses
+            what the volunteer confirms. */}
+        {!userIsRestaurant && (pickup.status === 'claimed' || pickup.status === 'enroute') ? (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>
-              Actual weight <Text style={styles.optional}>(optional — corrects the meal count)</Text>
+              Actual weight (lbs) <Text style={styles.optional}>· goes on the tax receipt</Text>
             </Text>
             <Input
               value={weight}
               onChangeText={setWeight}
-              placeholder={String(pickup.estimated_weight_lbs || 20)}
+              placeholder={`Estimate ${pickup.estimated_weight_lbs || 20} — override with the real number`}
               keyboardType="decimal-pad"
             />
           </View>
@@ -332,7 +384,34 @@ export default function PickupDetail({ route, navigation }) {
         {pickup.status === 'completed' ? (
           <View style={[styles.section, styles.doneCard]}>
             <Icon name="check-circle" size={28} color={Colors.green} />
-            <Text style={styles.doneText}>This pickup is complete. Thank you.</Text>
+            <Text style={styles.doneText}>Delivered — thank you.</Text>
+            <Text style={styles.doneSub}>
+              {pickup.actual_weight_lbs || pickup.estimated_weight_lbs || 0} lbs rescued ·
+              {' '}{Math.round((pickup.actual_weight_lbs || pickup.estimated_weight_lbs || 0) * 1.2)} meal equivalents ·
+              {' '}{pickup.hours_earned || 0}h logged
+            </Text>
+            {pickup.tax_receipt_url ? (
+              <TouchableOpacity
+                onPress={() => {
+                  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                    window.open(pickup.tax_receipt_url, '_blank', 'noopener,noreferrer');
+                  }
+                }}
+                style={styles.receiptLink}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.receiptLinkText}>📄 View the tax receipt sent to the restaurant</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.doneSub}>Tax receipt is being generated for the restaurant…</Text>
+            )}
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.doneBackBtn}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.doneBackText}>Back to dashboard</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -377,7 +456,19 @@ const styles = StyleSheet.create({
     padding: 16, marginTop: 18,
     backgroundColor: Colors.greenLight, borderRadius: Radius.lg,
   },
-  doneText: { fontSize: 14, fontWeight: '700', color: Colors.green },
+  doneText: { fontSize: 16, fontWeight: '800', color: Colors.green, marginTop: 8 },
+  doneSub: { ...Type.caption, color: Colors.gray, marginTop: 4, textAlign: 'center' },
+  receiptLink: {
+    marginTop: 12, paddingVertical: 10, paddingHorizontal: 14,
+    backgroundColor: '#E8F5EE', borderRadius: 10, alignItems: 'center',
+    borderWidth: 1, borderColor: '#A7F3D0',
+  },
+  receiptLinkText: { color: '#065F46', fontWeight: '800', fontSize: 13 },
+  doneBackBtn: {
+    marginTop: 12, paddingVertical: 12, paddingHorizontal: 24,
+    backgroundColor: Colors.green, borderRadius: 10,
+  },
+  doneBackText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
   releaseBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 8 },
   releaseText: { fontSize: 13, fontWeight: '600', color: Colors.pink },
   cancelCard: {

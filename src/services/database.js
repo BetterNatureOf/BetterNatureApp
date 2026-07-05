@@ -424,16 +424,26 @@ export async function createPickup(pickup) {
   let address = pickup.restaurant_address || pickup.address || '';
   let restLat = pickup.restaurant_lat;
   let restLng = pickup.restaurant_lng;
-  if (pickup.restaurant_id && !address) {
+  // Snapshot restaurant contact so the volunteer can call when they
+  // arrive and the doors are locked, AND so the restaurant can call
+  // the volunteer if they don't show up. These are the safety
+  // valves that keep a run from silently failing.
+  let restPhone = pickup.restaurant_phone || '';
+  let restContact = pickup.restaurant_contact_name || '';
+  if (pickup.restaurant_id) {
     try {
       const rSnap = await getDoc(doc(db, 'restaurants', pickup.restaurant_id));
       if (rSnap.exists()) {
         const r = rSnap.data();
-        const line1 = r.address || r.street || '';
-        const tail = [r.city, r.state].filter(Boolean).join(', ') + (r.zip ? ' ' + r.zip : '');
-        address = [line1, tail].filter(Boolean).join(', ').trim();
+        if (!address) {
+          const line1 = r.address || r.street || '';
+          const tail = [r.city, r.state].filter(Boolean).join(', ') + (r.zip ? ' ' + r.zip : '');
+          address = [line1, tail].filter(Boolean).join(', ').trim();
+        }
         if (r.lat != null) restLat = r.lat;
         if (r.lng != null) restLng = r.lng;
+        if (!restPhone) restPhone = r.phone || '';
+        if (!restContact) restContact = r.contact_name || r.name || '';
       }
     } catch (e) { console.warn('pickup enrich (restaurant)', e); }
   }
@@ -462,6 +472,8 @@ export async function createPickup(pickup) {
     restaurant_address: address,
     restaurant_lat: restLat ?? null,
     restaurant_lng: restLng ?? null,
+    restaurant_phone: restPhone,
+    restaurant_contact_name: restContact,
     fridge_address: fridgeAddr,
     fridge_lat: fridgeLat ?? null,
     fridge_lng: fridgeLng ?? null,
@@ -632,6 +644,22 @@ export async function claimPickup(pickupId, userId) {
   // transaction reads + writes in one round-trip, so the second
   // claimant lands in the `pk.status !== 'available'` branch and
   // gets a friendly error instead of stomping the first volunteer.
+  // Snapshot the volunteer's contact so the restaurant can call
+  // them if they don't show up. Reads from the user doc outside
+  // the transaction because get() inside a transaction on a
+  // different doc requires read+write pairs and complicates
+  // things — the volunteer's phone/name is a snapshot, not a
+  // race-sensitive value.
+  let claimantPhone = '';
+  let claimantName = '';
+  try {
+    const uSnap = await getDoc(doc(db, 'users', userId));
+    if (uSnap.exists()) {
+      const u = uSnap.data();
+      claimantPhone = u.phone || '';
+      claimantName = u.name || u.full_name || '';
+    }
+  } catch {}
   const pk = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
@@ -641,8 +669,18 @@ export async function claimPickup(pickupId, userId) {
     }
     if (data.status === 'completed') throw new Error('That pickup has already been delivered.');
     if (data.status === 'cancelled') throw new Error('That pickup was cancelled by the restaurant.');
-    tx.update(ref, { status: 'claimed', claimed_by: userId, claimed_at: claimedAt });
-    return { id: snap.id, ...data, status: 'claimed', claimed_by: userId, claimed_at: claimedAt };
+    tx.update(ref, {
+      status: 'claimed',
+      claimed_by: userId,
+      claimed_at: claimedAt,
+      claimant_phone: claimantPhone,
+      claimant_name: claimantName,
+    });
+    return {
+      id: snap.id, ...data,
+      status: 'claimed', claimed_by: userId, claimed_at: claimedAt,
+      claimant_phone: claimantPhone, claimant_name: claimantName,
+    };
   });
 
   // Smart reminder: confirmation push + email so the volunteer has
