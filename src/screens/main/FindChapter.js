@@ -37,7 +37,7 @@ export default function FindChapter({ navigation }) {
     const q = search.trim().toLowerCase();
     if (!q) return chapters;
     return chapters.filter((c) =>
-      [c.name, c.city, c.state, c.country].some((v) => (v || '').toLowerCase().includes(q))
+      [c.name, c.city, c.state, c.country, c.country_name].some((v) => (v || '').toLowerCase().includes(q))
     );
   }, [chapters, search]);
 
@@ -122,7 +122,7 @@ export default function FindChapter({ navigation }) {
               <View key={c.id} style={styles.card}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{c.name}</Text>
-                  <Text style={styles.loc}>{[c.city, c.state, c.country].filter(Boolean).join(', ')}</Text>
+                  <Text style={styles.loc}>{[c.city, c.state, c.country_name || c.country].filter(Boolean).join(', ')}</Text>
                   {c.president_name ? <Text style={styles.pres}>President: {c.president_name}</Text> : null}
                   {c.description ? <Text style={styles.desc}>{c.description}</Text> : null}
                 </View>

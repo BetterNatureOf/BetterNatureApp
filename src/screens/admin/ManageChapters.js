@@ -33,6 +33,7 @@ import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { getProfile } from '../../services/auth';
+import { normalizeCountry } from '../../services/countryCodes';
 import useAuthStore from '../../store/authStore';
 import ChapterApprovals from './ChapterApprovals';
 
@@ -364,11 +365,16 @@ export default function ManageChapters({ navigation }) {
       return;
     }
     setSaving(true);
+    // Accept full country names ("India", "Chile") — the normalizer
+    // maps them to the alpha-3 code the world choropleth aggregates
+    // by, while stamping a friendlier display name for the roster.
+    const { code, name } = normalizeCountry(form.country || 'USA');
     const payload = {
       name: chapterNameFor(form.city),
       city: form.city.trim(),
       state: form.state.trim(),
-      country: (form.country || 'USA').toUpperCase(),
+      country: code || 'USA',
+      country_name: name,
       description: form.description.trim(),
     };
     const finishOk = async () => {
@@ -532,7 +538,7 @@ export default function ManageChapters({ navigation }) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cardTitle}>{ch.name}</Text>
                     <Text style={styles.cardLoc}>
-                      {[ch.city, ch.state, ch.country].filter(Boolean).join(', ')}
+                      {[ch.city, ch.state, ch.country_name || ch.country].filter(Boolean).join(', ')}
                     </Text>
                   </View>
                   <View style={[styles.statusPill, ch.status === 'inactive' && styles.statusPillOff]}>
@@ -673,13 +679,12 @@ export default function ManageChapters({ navigation }) {
                     onChangeText={(v) => setForm((p) => ({ ...p, state: v }))}
                   />
                 </View>
-                <View style={{ width: 80 }}>
+                <View style={{ flex: 1, minWidth: 160 }}>
                   <Text style={styles.fieldLabel}>Country</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="USA"
-                    autoCapitalize="characters"
-                    maxLength={3}
+                    placeholder="India, Chile, USA…"
+                    autoCapitalize="words"
                     value={form.country}
                     onChangeText={(v) => setForm((p) => ({ ...p, country: v }))}
                   />
