@@ -1733,6 +1733,48 @@ export async function fetchAllMembers() {
 //   2. 'partner' added as a supplemental role (churches, community
 //      gardens, dual-role accounts that also volunteer)
 // Skips if the user already has restaurant_id stamped.
+// Self-heal for the current user: creates their own
+// /restaurants/{id} if it doesn't exist. Passes the strict
+// user_id == auth.uid rule because the writer IS the user —
+// works even before the exec-friendly rules deploy lands.
+// Called from DashboardScreen on mount for any user with
+// 'partner' in roles[] or role=='restaurant' who has no
+// restaurant_id yet.
+export async function ensureMyPartnerRecord(user) {
+  if (!user?.id || useMock()) return null;
+  if (user.restaurant_id) return user.restaurant_id;
+  try {
+    // Double-check Firestore for the restaurant_id in case the
+    // local auth store is stale.
+    const usnap = await getDoc(doc(db, 'users', user.id));
+    if (!usnap.exists()) return null;
+    const u = usnap.data();
+    if (u.restaurant_id) return u.restaurant_id;
+
+    const r = {
+      user_id: user.id, // MUST equal auth.uid for the rule
+      name: u.business_name || u.name || u.email || 'Partner',
+      email: u.email || '',
+      phone: u.phone || '',
+      address: u.address || '',
+      chapter_id: u.chapter_id || null,
+      chapter_name: u.chapter_name || '',
+      status: 'pending', // MUST be pending for the current rule
+      self_created: true,
+      created_at: serverTimestamp(),
+    };
+    const ref = await addDoc(collection(db, 'restaurants'), r);
+    await updateDoc(doc(db, 'users', user.id), {
+      restaurant_id: ref.id,
+      restaurant_status: 'pending',
+    });
+    return ref.id;
+  } catch (e) {
+    console.warn('ensureMyPartnerRecord', e);
+    return null;
+  }
+}
+
 export async function ensurePartnerRecordForUser(userId) {
   if (!userId) return null;
   if (useMock()) return null;

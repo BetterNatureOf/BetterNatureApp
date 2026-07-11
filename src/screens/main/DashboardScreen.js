@@ -32,6 +32,7 @@ import useEvents from '../../hooks/useEvents';
 import usePickups from '../../hooks/usePickups';
 import { confirm } from '../../services/ui';
 import { getProfile } from '../../services/auth';
+import { ensureMyPartnerRecord } from '../../services/database';
 import Screen from '../../components/ui/Screen';
 
 export default function DashboardScreen({ navigation }) {
@@ -44,9 +45,23 @@ export default function DashboardScreen({ navigation }) {
   // a sign-out/sign-in.
   useFocusEffect(useCallback(() => {
     if (!user?.id) return;
-    getProfile(user.id).then((fresh) => {
-      if (fresh && setUser) setUser({ ...user, ...fresh });
-    }).catch(() => {});
+    (async () => {
+      // Church self-heal: if this account is flagged as a partner
+      // (roles[] includes 'partner' OR primary role === 'restaurant')
+      // but has no /restaurants doc yet, create it as themselves.
+      // The write passes the strict user_id == auth.uid rule that
+      // blocks exec-initiated backfills, so field onboarding works
+      // even before the exec-friendly rules deploy lands.
+      const isPartnerRole = user?.role === 'restaurant'
+        || (Array.isArray(user?.roles) && user.roles.includes('partner'));
+      if (isPartnerRole && !user?.restaurant_id) {
+        try { await ensureMyPartnerRecord(user); } catch {}
+      }
+      try {
+        const fresh = await getProfile(user.id);
+        if (fresh && setUser) setUser({ ...user, ...fresh });
+      } catch {}
+    })();
   }, [user?.id]));
   const { events } = useEvents();
   const { pickups, claim } = usePickups();

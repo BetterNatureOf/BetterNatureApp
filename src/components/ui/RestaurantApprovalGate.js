@@ -19,6 +19,7 @@ import { fetchChapterById } from '../../services/database'; // not used; placeho
 import { doc, getDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { signOut } from '../../services/auth';
+import { ensureMyPartnerRecord } from '../../services/database';
 
 export default function RestaurantApprovalGate({ children }) {
   const user = useAuthStore((s) => s.user);
@@ -29,8 +30,19 @@ export default function RestaurantApprovalGate({ children }) {
 
   async function refresh() {
     if (!isFirebaseConfigured) return;
-    if (!user?.restaurant_id) return;
     setChecking(true);
+    // Self-heal: if we're gated but there's no restaurant_id yet
+    // (church signup that hit an error, or exec-promoted account
+    // whose backfill was blocked by rules), create the record as
+    // ourselves. Then continue with the normal status poll.
+    if (!user?.restaurant_id) {
+      try {
+        const newId = await ensureMyPartnerRecord(user);
+        if (newId) setUser({ ...user, restaurant_id: newId, restaurant_status: 'pending' });
+      } catch {}
+      setChecking(false);
+      return;
+    }
     try {
       const snap = await getDoc(doc(db, 'restaurants', user.restaurant_id));
       const next = snap.exists() ? (snap.data().status || 'pending') : 'pending';
