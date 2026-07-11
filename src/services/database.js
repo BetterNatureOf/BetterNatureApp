@@ -1727,6 +1727,44 @@ export async function fetchAllMembers() {
   return list;
 }
 
+// Idempotent: ensure a user has a /restaurants/{id} doc so they
+// can post food donations. Used for two flows:
+//   1. Primary role flip to 'restaurant' (updateUserRole below)
+//   2. 'partner' added as a supplemental role (churches, community
+//      gardens, dual-role accounts that also volunteer)
+// Skips if the user already has restaurant_id stamped.
+export async function ensurePartnerRecordForUser(userId) {
+  if (!userId) return null;
+  if (useMock()) return null;
+  try {
+    const usnap = await getDoc(doc(db, 'users', userId));
+    if (!usnap.exists()) return null;
+    const u = usnap.data();
+    if (u.restaurant_id) return u.restaurant_id;
+    const r = {
+      user_id: userId,
+      name: u.business_name || u.name || u.email || 'Partner',
+      email: u.email || '',
+      phone: u.phone || '',
+      address: u.address || '',
+      chapter_id: u.chapter_id || null,
+      chapter_name: u.chapter_name || '',
+      status: 'approved',
+      promoted_from_member: true,
+      created_at: serverTimestamp(),
+    };
+    const ref = await addDoc(collection(db, 'restaurants'), r);
+    await updateDoc(doc(db, 'users', userId), {
+      restaurant_id: ref.id,
+      restaurant_status: 'approved',
+    });
+    return ref.id;
+  } catch (e) {
+    console.warn('ensurePartnerRecordForUser', e);
+    return null;
+  }
+}
+
 export async function updateUserRole(userId, role) {
   if (useMock()) {
     const m = mockMembers.find((u) => u.id === userId);

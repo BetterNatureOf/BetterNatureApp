@@ -201,9 +201,20 @@ service cloud.firestore {
     // approval queue picks it up. Execs manage everything else.
     match /restaurants/{id} {
       allow read: if true;
-      allow create: if isSignedIn()
-        && request.resource.data.user_id == request.auth.uid
-        && request.resource.data.status == 'pending';
+      // Two legit paths:
+      //  A) Public restaurant signup form — the signed-up user
+      //     writes their own record with user_id == auth.uid and
+      //     status == 'pending' so the queue picks it up.
+      //  B) Exec onboarding — an exec creates the record on behalf
+      //     of a partner (church community garden, offline signup,
+      //     backfill of promoted members, etc.) with any status.
+      // Without (B), backfillRestaurantDocs + updateUserRole
+      // silently failed rules and the partner never appeared on
+      // Manage Restaurants.
+      allow create: if isExec()
+        || (isSignedIn()
+            && request.resource.data.user_id == request.auth.uid
+            && request.resource.data.status == 'pending');
       allow update, delete: if isExec();
     }
 

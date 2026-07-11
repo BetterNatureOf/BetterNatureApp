@@ -14,7 +14,7 @@
 // width so the content breathes without feeling like a stretched phone.
 import React, { useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ScrollView, StyleSheet, View, Text, Platform } from 'react-native';
+import { ScrollView, StyleSheet, View, Text, Platform, TouchableOpacity } from 'react-native';
 import { Colors, Type } from '../../config/theme';
 import useAuthStore from '../../store/authStore';
 import useNotifStore from '../../store/notifStore';
@@ -101,6 +101,40 @@ export default function DashboardScreen({ navigation }) {
     />
   );
 
+  // Partner tools — visible when the user is a food donor as well
+  // as a volunteer (churches with a community garden, dual-role
+  // accounts). Uses the supplemental roles[] array so a member
+  // stays in the main volunteer app AND gets the "Post surplus"
+  // entry point without being forced into the restaurant-only
+  // portal.
+  const isPartner = user?.role === 'restaurant'
+    || (Array.isArray(user?.roles) && user.roles.includes('partner'));
+  const partnerTools = isPartner ? (
+    <View style={styles.partnerCard}>
+      <Text style={styles.partnerEyebrow}>You're also a partner</Text>
+      <Text style={styles.partnerTitle}>Post food surplus</Text>
+      <Text style={styles.partnerBody}>
+        Have leftover food today? Post it and a volunteer will pick it up. Free, tax-deductible, weighed + receipted.
+      </Text>
+      <View style={styles.partnerActions}>
+        <TouchableOpacity
+          style={styles.partnerBtnPrimary}
+          onPress={() => navigation.navigate('ScheduleDonation')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.partnerBtnPrimaryText}>Post surplus →</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.partnerBtnSecondary}
+          onPress={() => navigation.navigate('DonationHistory')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.partnerBtnSecondaryText}>My donations</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  ) : null;
+
   const projects = (
     <ProjectCards onPress={(project) => navigation.navigate('ProjectDetail', { project })} />
   );
@@ -140,6 +174,7 @@ export default function DashboardScreen({ navigation }) {
           <View style={[styles.twoCol, styles.flushH]}>
             {/* Left — primary workspace */}
             <View style={styles.colMain}>
+              {partnerTools}
               {activePickups}
               <View style={{ height: 28 }} />
               {projects}
@@ -176,7 +211,8 @@ export default function DashboardScreen({ navigation }) {
       >
         {welcome}
         {stats}
-        {activePickups}
+        {partnerTools}
+              {activePickups}
         <BrushDivider />
         {projects}
         <BrushDivider />
@@ -226,6 +262,29 @@ const wstyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  partnerCard: {
+    backgroundColor: '#FFF9EC',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E0A52F',
+  },
+  partnerEyebrow: { fontSize: 11, fontWeight: '800', color: '#7A5400', letterSpacing: 0.6, textTransform: 'uppercase' },
+  partnerTitle: { fontSize: 18, fontWeight: '800', color: Colors.dark, marginTop: 4 },
+  partnerBody: { fontSize: 13, color: Colors.gray, marginTop: 6, lineHeight: 19 },
+  partnerActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  partnerBtnPrimary: {
+    paddingVertical: 10, paddingHorizontal: 16,
+    backgroundColor: Colors.green, borderRadius: 10,
+  },
+  partnerBtnPrimaryText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  partnerBtnSecondary: {
+    paddingVertical: 10, paddingHorizontal: 16,
+    backgroundColor: 'transparent', borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.green,
+  },
+  partnerBtnSecondaryText: { color: Colors.green, fontWeight: '800', fontSize: 14 },
   container: {
     flex: 1,
     backgroundColor: Colors.cream,

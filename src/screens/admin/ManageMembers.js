@@ -31,7 +31,8 @@ const ROLE_OPTIONS = [
   { key: 'chapter_vol_coord',  label: 'Volunteer Coordinator', desc: 'Schedules events + recruits members' },
   { key: 'chapter_sec',        label: 'Secretary',             desc: 'Meeting notes + chapter communication' },
   { key: 'member',             label: 'Member',                desc: 'Regular volunteer' },
-  { key: 'restaurant',         label: 'Restaurant Partner',    desc: 'Restaurant portal access' },
+  { key: 'restaurant',         label: 'Restaurant (portal only)', desc: 'Restaurant-only portal — no volunteer feed. Use "Partner" instead when they should also volunteer.' },
+  { key: 'partner',            label: 'Partner (add-on)',      desc: 'Adds "Post surplus" tools alongside the volunteer view. Churches, community gardens, dual-role accounts.' },
 ];
 
 const ROLE_COLORS = {
@@ -181,6 +182,18 @@ export default function ManageMembers({ navigation, route }) {
         || cleanedExtras.some((r) => !prevExtras.includes(r));
       if (!isChapterScope && extrasChanged) {
         await updateProfile(target.id, { roles: cleanedExtras });
+        // Adding 'partner' as a supplemental role gives a member
+        // the ability to post food donations (churches with a
+        // community garden, dual-role accounts, etc.). Auto-mint
+        // a /restaurants/{id} the moment we stamp the role so
+        // they can immediately access the "Post surplus" tools —
+        // no separate onboarding step.
+        if (cleanedExtras.includes('partner') && !prevExtras.includes('partner')) {
+          try {
+            const { ensurePartnerRecordForUser } = await import('../../services/database');
+            await ensurePartnerRecordForUser(target.id);
+          } catch (e) { console.warn('partner record ensure', e); }
+        }
       }
       const currentChapter = target.chapter_id || '';
       if (!isChapterScope && nextChapter !== currentChapter) {
