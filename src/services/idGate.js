@@ -18,8 +18,15 @@ import { confirm } from './ui';
 // physically handle food in any of the joint workflows.
 export function requireVerifiedId(user, navigation) {
   // Restaurants / partners: no personal ID required, no waiver
-  // required (we cover them under the business agreement). Let through.
+  // required (we cover them under the business agreement). Multi-
+  // role aware — a church with primary role 'member' and 'partner'
+  // in their supplemental roles[] should ALSO bypass, otherwise
+  // they get blocked from posting donations they're allowed to
+  // post.
   if (user?.role === 'restaurant' || user?.role === 'partner') return true;
+  if (Array.isArray(user?.roles) && (
+       user.roles.includes('partner') || user.roles.includes('restaurant')
+     )) return true;
 
   // Missing ID upload.
   if (!user?.id_document_url) {

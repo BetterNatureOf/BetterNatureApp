@@ -13,7 +13,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import useAuthStore from '../../store/authStore';
-import { createPickup } from '../../services/database';
+import { createPickup, ensureMyPartnerRecord } from '../../services/database';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
@@ -85,13 +85,18 @@ export default function ScheduleDonation({ navigation }) {
       notify('Need a photo', 'A quick photo helps volunteers know what to expect.');
       return;
     }
-    // Hard-gate posting on a complete profile so we never push a pickup
-    // to the volunteer feed without an address attached.
-    const hasAddress = !!(user?.address && (user?.business_name || user?.name));
+    // Hard-gate posting on a complete profile so we never push a
+    // pickup to the volunteer feed without an address attached.
+    // Accept ANY of: business_name, organization name, or
+    // personal name — churches and community gardens frequently
+    // don't have a "business_name" set but they do have a
+    // recognizable partner name.
+    const hasName = !!(user?.business_name || user?.organization_name || user?.name);
+    const hasAddress = !!user?.address && hasName;
     if (!user?.restaurant_complete && !hasAddress) {
       notifyThen(
         'Finish your profile first',
-        'Add your business name and address so the volunteer knows where to come.',
+        'Add your address and business/organization name so the volunteer knows where to come.',
         () => navigation.navigate('RestaurantOnboarding'),
       );
       return;
@@ -108,7 +113,23 @@ export default function ScheduleDonation({ navigation }) {
     }
     setPosting(true);
     try {
-      const restaurantId = user?.restaurant_id || user?.id;
+      // Ensure the /restaurants doc exists. A church with
+      // roles=['partner'] but no restaurant_id yet would otherwise
+      // fall back to user.id, which fetches nothing (no address
+      // enrichment) and reads confusingly downstream. This heals
+      // the record on-the-fly.
+      let restaurantId = user?.restaurant_id;
+      if (!restaurantId) {
+        restaurantId = await ensureMyPartnerRecord(user);
+      }
+      if (!restaurantId) {
+        notify(
+          'Partner record missing',
+          'Your account is flagged as a partner but the record didn\'t materialize. Reload the page and try again — email info@betternatureofficial.org if it keeps happening.'
+        );
+        setPosting(false);
+        return;
+      }
       const w = WINDOW_CHIPS.find(x => x.key === windowKey) || WINDOW_CHIPS[1];
       // Either mode — never both. The other field is forced to null
       // so downstream code (restaurant feed sort, SMS dispatcher,

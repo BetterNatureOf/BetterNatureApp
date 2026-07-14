@@ -4,7 +4,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Card from '../../components/ui/Card';
 import useAuthStore from '../../store/authStore';
-import { fetchPickups, fetchDonationHistory } from '../../services/database';
+import { fetchPickupsByRestaurant, fetchDonationHistory, ensureMyPartnerRecord } from '../../services/database';
 import Screen from '../../components/ui/Screen';
 
 function fmtDate(d) {
@@ -18,13 +18,22 @@ export default function DonationHistory({ navigation }) {
   const [sponsorships, setSponsorships] = useState([]);
 
   useEffect(() => {
-    fetchPickups()
-      .then(setPickups)
-      .catch(() => {});
-    fetchDonationHistory(user?.id)
-      .then(setSponsorships)
-      .catch(() => {});
-  }, []);
+    (async () => {
+      // Bug pre-2025-07: this used to call fetchPickups() with no
+      // args, which returned every 'available' pickup across the
+      // whole org — completely wrong for a "MY donations" screen.
+      // Fetch by restaurant_id, self-healing the record if it's
+      // missing (church that only has 'partner' in their roles[]).
+      let rid = user?.restaurant_id;
+      if (!rid) {
+        try { rid = await ensureMyPartnerRecord(user); } catch {}
+      }
+      if (rid) {
+        try { setPickups(await fetchPickupsByRestaurant(rid, 100)); } catch {}
+      }
+      try { setSponsorships(await fetchDonationHistory(user?.id)); } catch {}
+    })();
+  }, [user?.id, user?.restaurant_id]);
 
   const isEmpty = pickups.length === 0 && sponsorships.length === 0;
 
