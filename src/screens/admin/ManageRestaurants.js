@@ -14,7 +14,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
-import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs, createRestaurant, fetchChapters } from '../../services/database';
+import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs, createRestaurant, fetchChapters, fetchOrphanedPartners } from '../../services/database';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 
@@ -63,6 +63,7 @@ export default function ManageRestaurants({ navigation }) {
   const [addForm, setAddForm] = useState({});
   const [adding, setAdding] = useState(false);
   const [chapters, setChapters] = useState([]);
+  const [orphans, setOrphans] = useState([]);
 
   useEffect(() => {
     fetchChapters().then(setChapters).catch(() => {});
@@ -100,8 +101,12 @@ export default function ManageRestaurants({ navigation }) {
       if (created > 0) {
         notify('Synced', `${created} promoted member${created === 1 ? '' : 's'} added to Approved.`);
       }
-      const data = await fetchRestaurants('all');
+      const [data, orphs] = await Promise.all([
+        fetchRestaurants('all'),
+        fetchOrphanedPartners(),
+      ]);
       setAllRestaurants(data);
+      setOrphans(orphs);
     } catch (e) { console.warn(e); }
   }, []);
 
@@ -189,6 +194,35 @@ export default function ManageRestaurants({ navigation }) {
             <Text style={styles.addBtnText}>{showAdd ? 'Cancel' : '+ Add partner'}</Text>
           </TouchableOpacity>
         </View>
+
+        {orphans.length > 0 ? (
+          <View style={styles.orphanCard}>
+            <Text style={styles.orphanTitle}>
+              {orphans.length} partner account{orphans.length === 1 ? '' : 's'} stuck without a record
+            </Text>
+            <Text style={styles.orphanBody}>
+              These accounts are flagged as partners (church, community garden, etc.) but the write that should create their /restaurants doc was blocked by the Firestore rule (user_id must equal the writer). Two ways to unblock — whichever is easier:
+            </Text>
+            <Text style={styles.orphanBullet}>
+              1. Ask them to log in on their device (or reload if already logged in). The app self-heals — the partner record materializes and appears here within 8s.
+            </Text>
+            <Text style={styles.orphanBullet}>
+              2. Run `firebase login --reauth && firebase deploy --only firestore:rules` on your machine. The relaxed rule (already in the repo) lets exec-initiated creates through immediately.
+            </Text>
+            <View style={{ height: 8 }} />
+            {orphans.map((u) => (
+              <View key={u.id} style={styles.orphanRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.orphanName}>{u.business_name || u.name || u.email || '(no name)'}</Text>
+                  <Text style={styles.orphanMeta}>
+                    {u.email}{u.chapter_name ? ` · ${u.chapter_name}` : ''} · role: {u.role || 'member'}
+                    {Array.isArray(u.roles) && u.roles.length ? ` (+${u.roles.join(', ')})` : ''}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {showAdd ? (
           <View style={styles.addCard}>
@@ -427,6 +461,20 @@ const styles = StyleSheet.create({
   chapterChipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
   chapterChipText: { fontSize: 12, fontWeight: '700', color: Colors.dark },
   chapterChipTextActive: { color: '#FFF' },
+  orphanCard: {
+    backgroundColor: '#FFF6E5',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E0A52F',
+  },
+  orphanTitle: { fontSize: 14, fontWeight: '800', color: '#7A5400', marginBottom: 6 },
+  orphanBody: { fontSize: 12, color: '#7A5400', lineHeight: 17, marginBottom: 8 },
+  orphanBullet: { fontSize: 12, color: '#7A5400', lineHeight: 18, marginLeft: 4 },
+  orphanRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#F0E0BC' },
+  orphanName: { fontSize: 13, fontWeight: '800', color: Colors.dark },
+  orphanMeta: { ...Type.caption, color: '#7A5400', marginTop: 2 },
   search: {
     borderWidth: 1, borderColor: Colors.glassBorder,
     borderRadius: 12,

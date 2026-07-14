@@ -1250,6 +1250,35 @@ export async function backfillRestaurantDocs() {
   return { created };
 }
 
+// Find users tagged as partners (role==='restaurant' OR roles[]
+// contains 'partner') who have no /restaurants doc yet. The write
+// that would have created one is silently rejected by the current
+// firestore rule (user_id must equal auth.uid), so the church /
+// community garden shows up here as a diagnostic instead of just
+// vanishing off Manage Restaurants.
+export async function fetchOrphanedPartners() {
+  if (useMock()) return [];
+  try {
+    const usnap = await getDocs(collection(db, 'users'));
+    const partners = usnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((u) => !u.deleted_at)
+      .filter((u) =>
+        u.role === 'restaurant'
+        || (Array.isArray(u.roles) && u.roles.includes('partner'))
+      );
+    // Dedupe against actual /restaurants docs by user_id.
+    const rsnap = await getDocs(collection(db, 'restaurants'));
+    const linkedUids = new Set(
+      rsnap.docs.map((d) => d.data()?.user_id).filter(Boolean)
+    );
+    return partners.filter((u) => !u.restaurant_id && !linkedUids.has(u.id));
+  } catch (e) {
+    console.warn('fetchOrphanedPartners failed', e);
+    return [];
+  }
+}
+
 export async function fetchRestaurants(status = 'approved') {
   if (useMock()) {
     return status === 'all' || !status
