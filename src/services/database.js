@@ -1250,6 +1250,75 @@ export async function backfillRestaurantDocs() {
   return { created };
 }
 
+// Delete a /restaurants doc entirely. Exec-only per rules. Also
+// clears restaurant_id + restaurant_status off the linked user
+// doc so the church's device doesn't stay pointed at a
+// tombstone. Idempotent — safe to re-run.
+export async function deleteRestaurant(restaurantId) {
+  if (useMock()) return;
+  if (!restaurantId) return;
+  const ref = doc(db, 'restaurants', restaurantId);
+  const snap = await getDoc(ref);
+  const userId = snap.exists() ? snap.data().user_id : null;
+  await deleteDoc(ref);
+  if (userId) {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        restaurant_id: null,
+        restaurant_status: null,
+      });
+    } catch {}
+  }
+}
+
+// Find /restaurants docs that share a user_id (duplicates) and
+// keep only the first, deleting the rest. Runs on Manage
+// Restaurants load so accidental dupes clean up on the exec's
+// next visit. The kept doc is the earliest by created_at (or the
+// first one Firestore returns if no timestamp).
+export async function dedupeRestaurantsByUser() {
+  if (useMock()) return { removed: 0 };
+  let removed = 0;
+  try {
+    const rsnap = await getDocs(collection(db, 'restaurants'));
+    const byUser = new Map();
+    for (const d of rsnap.docs) {
+      const data = d.data();
+      const uid = data.user_id;
+      if (!uid) continue;
+      if (!byUser.has(uid)) byUser.set(uid, []);
+      byUser.get(uid).push({ id: d.id, ...data });
+    }
+    for (const [uid, docs] of byUser.entries()) {
+      if (docs.length < 2) continue;
+      // Prefer the approved one; else earliest by created_at.
+      docs.sort((a, b) => {
+        if ((a.status === 'approved') !== (b.status === 'approved')) {
+          return a.status === 'approved' ? -1 : 1;
+        }
+        const ta = a.created_at?.toMillis?.() || 0;
+        const tb = b.created_at?.toMillis?.() || 0;
+        return ta - tb;
+      });
+      const keep = docs[0];
+      for (let i = 1; i < docs.length; i++) {
+        try {
+          await deleteDoc(doc(db, 'restaurants', docs[i].id));
+          removed++;
+        } catch (e) { console.warn('dedupe delete', e); }
+      }
+      // Re-link the user to the surviving doc.
+      try {
+        await updateDoc(doc(db, 'users', uid), {
+          restaurant_id: keep.id,
+          restaurant_status: keep.status || 'approved',
+        });
+      } catch {}
+    }
+  } catch (e) { console.warn('dedupeRestaurantsByUser', e); }
+  return { removed };
+}
+
 // Find users tagged as partners (role==='restaurant' OR roles[]
 // contains 'partner') who have no /restaurants doc yet. The write
 // that would have created one is silently rejected by the current
@@ -1780,6 +1849,24 @@ export async function ensureMyPartnerRecord(user) {
     const u = usnap.data();
     if (u.restaurant_id) return u.restaurant_id;
 
+    // Belt-and-suspenders: an earlier flow (exec promotion, church
+    // sign-in on another device, etc.) might already have created
+    // a /restaurants doc for this user without stamping
+    // restaurant_id back onto the user doc. Look for it before
+    // minting a duplicate.
+    const existing = await getDocs(query(
+      collection(db, 'restaurants'),
+      where('user_id', '==', user.id)
+    ));
+    if (!existing.empty) {
+      const found = existing.docs[0];
+      await updateDoc(doc(db, 'users', user.id), {
+        restaurant_id: found.id,
+        restaurant_status: found.data().status || 'pending',
+      });
+      return found.id;
+    }
+
     const r = {
       user_id: user.id, // MUST equal auth.uid for the rule
       name: u.business_name || u.name || u.email || 'Partner',
@@ -1812,6 +1899,25 @@ export async function ensurePartnerRecordForUser(userId) {
     if (!usnap.exists()) return null;
     const u = usnap.data();
     if (u.restaurant_id) return u.restaurant_id;
+
+    // Guard against duplicates — another flow (self-heal from the
+    // church's own device, prior promotion attempt, etc.) might
+    // already have created a doc for this user without stamping
+    // restaurant_id back onto their user record. Link to it instead
+    // of minting a duplicate. This is why Manage Restaurants was
+    // showing Collierville / Emirates twice.
+    const existing = await getDocs(query(
+      collection(db, 'restaurants'),
+      where('user_id', '==', userId)
+    ));
+    if (!existing.empty) {
+      const found = existing.docs[0];
+      await updateDoc(doc(db, 'users', userId), {
+        restaurant_id: found.id,
+        restaurant_status: found.data().status || 'approved',
+      });
+      return found.id;
+    }
     const r = {
       user_id: userId,
       name: u.business_name || u.name || u.email || 'Partner',

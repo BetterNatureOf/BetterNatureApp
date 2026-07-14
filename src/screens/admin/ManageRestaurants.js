@@ -14,7 +14,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
-import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs, createRestaurant, fetchChapters, fetchOrphanedPartners } from '../../services/database';
+import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs, createRestaurant, fetchChapters, fetchOrphanedPartners, dedupeRestaurantsByUser, deleteRestaurant } from '../../services/database';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 
@@ -97,7 +97,13 @@ export default function ManageRestaurants({ navigation }) {
       // Heal any users whose role was flipped to 'restaurant' before
       // updateUserRole started spinning up the /restaurants doc
       // automatically. One-shot, idempotent.
+      // Clean any duplicate partner records BEFORE we re-fetch, so
+      // the exec never sees Collierville / Emirates listed twice.
+      const dupResult = await dedupeRestaurantsByUser();
       const { created } = await backfillRestaurantDocs();
+      if (dupResult.removed > 0) {
+        notify('Cleaned duplicates', `Merged ${dupResult.removed} duplicate partner record${dupResult.removed === 1 ? '' : 's'}.`);
+      }
       if (created > 0) {
         notify('Synced', `${created} promoted member${created === 1 ? '' : 's'} added to Approved.`);
       }
@@ -374,6 +380,35 @@ export default function ManageRestaurants({ navigation }) {
                             <Button title="Re-approve" onPress={() => handleAction(rest, 'approved')} style={{ flex: 1, marginLeft: 6 }} />
                           ) : null}
                         </View>
+
+                        {/* Hard-delete — removes the /restaurants doc
+                            entirely AND unlinks it from the user
+                            (restaurant_id / restaurant_status cleared).
+                            Password-gated because it's destructive and
+                            can't be undone. Use for test records,
+                            duplicates the auto-dedupe missed, or a
+                            partner who churned off the platform. */}
+                        <TouchableOpacity
+                          onPress={async () => {
+                            const ok = await confirmWithPassword(
+                              `Delete ${rest.name}?`,
+                              `Removes the partner record entirely and unlinks it from ${rest.email || 'their account'}. The user account itself stays — they can re-apply. This can't be undone.`,
+                              { confirmLabel: 'Delete', destructive: true }
+                            );
+                            if (!ok) return;
+                            try {
+                              await deleteRestaurant(rest.id);
+                              await load();
+                              notify('Deleted', `${rest.name} removed.`);
+                            } catch (e) {
+                              notify('Could not delete', e?.message || 'Try again.');
+                            }
+                          }}
+                          style={styles.deleteBtn}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.deleteBtnText}>Delete partner record</Text>
+                        </TouchableOpacity>
                       </>
                     )}
                   </View>
@@ -475,6 +510,12 @@ const styles = StyleSheet.create({
   orphanRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#F0E0BC' },
   orphanName: { fontSize: 13, fontWeight: '800', color: Colors.dark },
   orphanMeta: { ...Type.caption, color: '#7A5400', marginTop: 2 },
+  deleteBtn: {
+    marginTop: 10, paddingVertical: 10,
+    borderRadius: 10, borderWidth: 1, borderColor: '#F8DADA',
+    backgroundColor: 'transparent', alignItems: 'center',
+  },
+  deleteBtnText: { color: '#8E1B1B', fontWeight: '800', fontSize: 13 },
   search: {
     borderWidth: 1, borderColor: Colors.glassBorder,
     borderRadius: 12,
