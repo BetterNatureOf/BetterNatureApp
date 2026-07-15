@@ -23,6 +23,7 @@ import { signOut } from '../../services/auth';
 import DonationCTA from '../../components/donate/DonationCTA';
 import ContractGate from '../../components/ui/ContractGate';
 import RestaurantApprovalGate from '../../components/ui/RestaurantApprovalGate';
+import { partnerTypeFor } from '../../config/partnerTypes';
 import {
   fetchDonationHistory, fetchPickupsByRestaurant, verifyPickupByRestaurant,
 } from '../../services/database';
@@ -200,9 +201,14 @@ export default function RestDashboard({ navigation }) {
         {/* Header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.eyebrow}>Restaurant Partner</Text>
+            {/* Header reads the partner_type stamped at signup —
+                a church garden sees "Community Garden Partner" and
+                their name, not "Restaurant". */}
+            <Text style={styles.eyebrow}>
+              {partnerTypeFor(user?.partner_type).icon} {partnerTypeFor(user?.partner_type).label} Partner
+            </Text>
             <BrushText variant="screenTitle" style={styles.title}>
-              {user?.business_name || user?.name || 'Welcome'}
+              {user?.business_name || user?.organization_name || user?.name || 'Welcome'}
             </BrushText>
             <Text style={styles.subtitle}>
               {profileComplete

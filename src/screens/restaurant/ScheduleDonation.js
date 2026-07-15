@@ -147,7 +147,7 @@ export default function ScheduleDonation({ navigation }) {
       if (!user?.chapter_id) {
         notify(
           'No chapter linked',
-          'Your restaurant isn\'t linked to a BetterNature chapter yet. Email info@betternatureofficial.org to assign one — otherwise no volunteer will see your post.'
+          'Your organization isn\'t linked to a BetterNature chapter yet. Email info@betternatureofficial.org to assign one — otherwise no volunteer will see your post.'
         );
         return;
       }

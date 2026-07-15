@@ -18,6 +18,7 @@ import { signUp, updateProfile } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
 import useAuthStore, { ROLES } from '../../store/authStore';
 import Screen from '../../components/ui/Screen';
+import { PARTNER_TYPES } from '../../config/partnerTypes';
 
 export default function RestaurantSignup({ navigation }) {
   const setUser = useAuthStore((s) => s.setUser);
@@ -31,6 +32,10 @@ export default function RestaurantSignup({ navigation }) {
     food_type: '',
     frequency: '',
     chapter_id: '',
+    // Default 'restaurant' since most signups still are. The picker
+    // just below the org-name field lets churches / gardens / etc.
+    // pick their type so the app doesn't call them a restaurant.
+    partner_type: 'restaurant',
   });
   const [chapters, setChapters] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -50,11 +55,11 @@ export default function RestaurantSignup({ navigation }) {
 
   async function handleSubmit() {
     if (!form.name.trim() || !form.email.trim() || !form.password) {
-      notify('Required', 'Please fill in restaurant name, email, and password.');
+      notify('Required', 'Please fill in organization name, email, and password.');
       return;
     }
     if (!form.chapter_id) {
-      notify('Pick a chapter', 'Choose the BetterNature chapter closest to your restaurant. Only volunteers in that chapter will be notified about your pickups.');
+      notify('Pick a chapter', 'Choose the BetterNature chapter closest to your organization. Only volunteers in that chapter will be notified about your donations.');
       return;
     }
     if (form.password.length < 6) {
@@ -108,6 +113,7 @@ export default function RestaurantSignup({ navigation }) {
             restaurant_status: 'pending',
             chapter_id: form.chapter_id,
             chapter_name: chosen?.name || '',
+            partner_type: form.partner_type,
           });
         } catch {}
       }
@@ -123,6 +129,7 @@ export default function RestaurantSignup({ navigation }) {
           restaurant_status: 'pending',
           chapter_id: form.chapter_id,
           chapter_name: chosen?.name || '',
+          partner_type: form.partner_type,
         });
       }
 
@@ -148,15 +155,37 @@ export default function RestaurantSignup({ navigation }) {
     >
       <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
         <BrushText variant="screenTitle" style={styles.title}>
-          Restaurant Partner Signup
+          Food Donor Partner Signup
         </BrushText>
         <Text style={styles.subtitle}>
-          Join BetterNature's food rescue network and help reduce waste in your community.
+          Restaurants, churches, community gardens, schools, food banks — any organization with edible surplus. Join BetterNature's rescue network.
         </Text>
 
+        {/* Partner type — drives the labels every screen shows for
+            this account after signup ("Church Dashboard" vs
+            "Restaurant Dashboard" etc.). */}
+        <Text style={styles.fieldLabel}>What kind of partner are you?</Text>
+        <View style={styles.typeGrid}>
+          {PARTNER_TYPES.map((t) => {
+            const on = form.partner_type === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                onPress={() => update('partner_type', t.key)}
+                activeOpacity={0.85}
+                style={[styles.typeChip, on && styles.typeChipActive]}
+              >
+                <Text style={[styles.typeChipText, on && styles.typeChipTextActive]}>
+                  {t.icon} {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <Input
-          label="Restaurant Name"
-          placeholder="Your restaurant"
+          label="Organization Name"
+          placeholder="Your organization"
           value={form.name}
           onChangeText={(v) => update('name', v)}
         />
@@ -270,4 +299,14 @@ const styles = StyleSheet.create({
   chapterChipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
   chapterChipText: { fontSize: 13, fontWeight: '600', color: Colors.dark },
   chapterChipTextActive: { color: '#FFF' },
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  typeChip: {
+    paddingVertical: 8, paddingHorizontal: 12,
+    backgroundColor: Colors.white,
+    borderRadius: Radius.pill,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+  },
+  typeChipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
+  typeChipText: { fontSize: 12, fontWeight: '600', color: Colors.dark },
+  typeChipTextActive: { color: '#FFF' },
 });

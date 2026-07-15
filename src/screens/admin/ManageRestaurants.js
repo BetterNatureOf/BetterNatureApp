@@ -15,6 +15,7 @@ import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs, createRestaurant, fetchChapters, fetchOrphanedPartners, dedupeRestaurantsByUser, deleteRestaurant } from '../../services/database';
+import { PARTNER_TYPES, partnerTypeFor } from '../../config/partnerTypes';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 
@@ -191,7 +192,7 @@ export default function ManageRestaurants({ navigation }) {
         </TouchableOpacity>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <BrushText variant="screenTitle" style={styles.title}>Manage Restaurants</BrushText>
+            <BrushText variant="screenTitle" style={styles.title}>Manage Food Donors</BrushText>
             <Text style={styles.subtitle}>
               {counts.all} partner{counts.all === 1 ? '' : 's'} · {counts.pending} pending · {counts.approved} approved
             </Text>
@@ -239,8 +240,26 @@ export default function ManageRestaurants({ navigation }) {
             <Text style={[styles.addHelp, { fontWeight: '700', color: '#7A5400' }]}>
               Heads up: this creates the partner record only — no Firebase Auth login. To let them post pickups themselves, send them to /signup/restaurant.
             </Text>
-            <Text style={styles.label}>Restaurant name *</Text>
-            <TextInput style={styles.input} value={addForm.name || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, name: v }))} placeholder="Emirates Catering" />
+            <Text style={styles.label}>Partner type</Text>
+            <View style={styles.chapterGrid}>
+              {PARTNER_TYPES.map((t) => {
+                const on = (addForm.partner_type || 'restaurant') === t.key;
+                return (
+                  <TouchableOpacity
+                    key={t.key}
+                    onPress={() => setAddForm((p) => ({ ...p, partner_type: t.key }))}
+                    activeOpacity={0.85}
+                    style={[styles.chapterChip, on && styles.chapterChipActive]}
+                  >
+                    <Text style={[styles.chapterChipText, on && styles.chapterChipTextActive]}>
+                      {t.icon} {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.label}>Organization name *</Text>
+            <TextInput style={styles.input} value={addForm.name || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, name: v }))} placeholder="Emirates Catering / First Baptist Community Garden / …" />
             <Text style={styles.label}>Contact email</Text>
             <TextInput style={styles.input} value={addForm.email || ''} onChangeText={(v) => setAddForm((p) => ({ ...p, email: v }))} placeholder="manager@restaurant.com" autoCapitalize="none" keyboardType="email-address" />
             <Text style={styles.label}>Contact phone</Text>
@@ -316,9 +335,12 @@ export default function ManageRestaurants({ navigation }) {
                   style={styles.cardHead}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.name}>{rest.name || '(unnamed)'}</Text>
+                    <Text style={styles.name}>
+                      {partnerTypeFor(rest.partner_type).icon} {rest.name || '(unnamed)'}
+                    </Text>
                     <Text style={styles.sub}>
-                      {[rest.city, rest.state].filter(Boolean).join(', ') || rest.address || '—'}
+                      {partnerTypeFor(rest.partner_type).label}
+                      {(rest.city || rest.state) ? ` · ${[rest.city, rest.state].filter(Boolean).join(', ')}` : rest.address ? ` · ${rest.address}` : ''}
                     </Text>
                   </View>
                   <View style={[styles.statusPill, statusStyle(rest.status)]}>
@@ -353,6 +375,10 @@ export default function ManageRestaurants({ navigation }) {
                       </>
                     ) : (
                       <>
+                        <DetailRow
+                          label="Type"
+                          value={`${partnerTypeFor(rest.partner_type).icon} ${partnerTypeFor(rest.partner_type).label}`}
+                        />
                         <DetailRow label="Chapter" value={rest.chapter_name || (rest.chapter_id ? '(legacy id only)' : 'Not assigned — pickups will not fan out')} />
                         <DetailRow label="Contact" value={rest.contact_name} />
                         <DetailRow label="Email"   value={rest.email} selectable />
