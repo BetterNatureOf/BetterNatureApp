@@ -1207,26 +1207,72 @@ export async function completePickup(pickupId, actualWeightLbs) {
 // ManageRestaurants load — exits in a single users scan when
 // everything is already in sync.
 export async function backfillRestaurantDocs() {
-  if (useMock()) return { created: 0 };
+  if (useMock()) return { created: 0, promoted: 0 };
   let created = 0;
+  let promoted = 0;
   try {
-    const usnap = await getDocs(query(
-      collection(db, 'users'),
-      where('role', '==', 'restaurant')
-    ));
-    const restUsers = usnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (!restUsers.length) return { created };
+    // Union of partner-like users: primary role 'restaurant' OR
+    // 'partner' anywhere in roles[]. The primary-role query is
+    // cheap; the roles[] scan requires a full users read but only
+    // fires when there are no primary-restaurant users left to
+    // process (typical org has <500 users, still fast).
+    const [primarySnap, allUsersSnap] = await Promise.all([
+      getDocs(query(collection(db, 'users'), where('role', '==', 'restaurant'))),
+      getDocs(collection(db, 'users')),
+    ]);
+    const partnerUsers = [];
+    const seen = new Set();
+    for (const d of primarySnap.docs) {
+      partnerUsers.push({ id: d.id, ...d.data() });
+      seen.add(d.id);
+    }
+    for (const d of allUsersSnap.docs) {
+      if (seen.has(d.id)) continue;
+      const data = d.data();
+      if (Array.isArray(data.roles) && data.roles.includes('partner')) {
+        partnerUsers.push({ id: d.id, ...data });
+      }
+    }
+    if (!partnerUsers.length) return { created, promoted };
 
-    // Pull the restaurants collection ONCE and index by user_id so
-    // we can detect which users are already wired up.
+    // Index restaurants by user_id so we can detect who's already
+    // wired up AND catch pending self-heal records that an exec
+    // effectively already approved by promoting them.
     const rsnap = await getDocs(collection(db, 'restaurants'));
-    const linkedUids = new Set(
-      rsnap.docs.map((d) => d.data()?.user_id).filter(Boolean)
-    );
+    const byUid = new Map();
+    for (const d of rsnap.docs) {
+      const data = d.data();
+      if (data.user_id) byUid.set(data.user_id, { id: d.id, ...data });
+    }
 
-    for (const u of restUsers) {
-      if (u.restaurant_id) continue;        // already linked
-      if (linkedUids.has(u.id)) continue;   // restaurants doc exists, just relink
+    for (const u of partnerUsers) {
+      const existing = byUid.get(u.id);
+      if (existing) {
+        // Promote self-heal 'pending' records to 'approved' —
+        // the exec adding partner IS the approval. Skip real
+        // public-signup pending applications (those don't carry
+        // the self_created flag).
+        const needsPromote = (existing.status === 'pending' || !existing.status)
+          && existing.self_created === true;
+        if (needsPromote) {
+          await updateDoc(doc(db, 'restaurants', existing.id), {
+            status: 'approved',
+            promoted_from_member: true,
+            approved_at: serverTimestamp(),
+          });
+          promoted++;
+        }
+        // Keep the user doc's pointer + status in sync either way.
+        if (u.restaurant_id !== existing.id || u.restaurant_status !== (needsPromote ? 'approved' : existing.status)) {
+          await updateDoc(doc(db, 'users', u.id), {
+            restaurant_id: existing.id,
+            restaurant_status: needsPromote ? 'approved' : (existing.status || 'approved'),
+          });
+        }
+        continue;
+      }
+      // No /restaurants doc — mint one, approved by default (exec
+      // promotion path).
       const ref = await addDoc(collection(db, 'restaurants'), {
         user_id: u.id,
         name: u.business_name || u.name || u.email || 'Partner',
@@ -1235,6 +1281,7 @@ export async function backfillRestaurantDocs() {
         address: u.address || '',
         chapter_id: u.chapter_id || null,
         chapter_name: u.chapter_name || '',
+        partner_type: u.partner_type || 'other',
         status: 'approved',
         promoted_from_member: true,
         backfilled: true,
@@ -1247,7 +1294,7 @@ export async function backfillRestaurantDocs() {
       created++;
     }
   } catch (e) { console.warn('backfillRestaurantDocs failed', e); }
-  return { created };
+  return { created, promoted };
 }
 
 // Delete a /restaurants doc entirely. Exec-only per rules. Also
@@ -1912,9 +1959,24 @@ export async function ensurePartnerRecordForUser(userId) {
     ));
     if (!existing.empty) {
       const found = existing.docs[0];
+      const status = found.data().status;
+      // If a self-heal record already exists in 'pending' state,
+      // promote it to 'approved' since an EXEC just triggered this
+      // flow (they toggled partner in Manage Members or ran the
+      // backfill). Without this, promoting a partner in the admin
+      // UI left them stuck on the approval gate — the exec was
+      // essentially approving them but the /restaurants doc didn't
+      // reflect it.
+      if (status === 'pending' || !status) {
+        await updateDoc(doc(db, 'restaurants', found.id), {
+          status: 'approved',
+          promoted_from_member: true,
+          approved_at: serverTimestamp(),
+        });
+      }
       await updateDoc(doc(db, 'users', userId), {
         restaurant_id: found.id,
-        restaurant_status: found.data().status || 'approved',
+        restaurant_status: 'approved',
       });
       return found.id;
     }

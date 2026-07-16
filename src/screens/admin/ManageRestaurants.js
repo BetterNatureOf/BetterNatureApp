@@ -101,12 +101,17 @@ export default function ManageRestaurants({ navigation }) {
       // Clean any duplicate partner records BEFORE we re-fetch, so
       // the exec never sees Collierville / Emirates listed twice.
       const dupResult = await dedupeRestaurantsByUser();
-      const { created } = await backfillRestaurantDocs();
+      const { created, promoted } = await backfillRestaurantDocs();
       if (dupResult.removed > 0) {
         notify('Cleaned duplicates', `Merged ${dupResult.removed} duplicate partner record${dupResult.removed === 1 ? '' : 's'}.`);
       }
       if (created > 0) {
         notify('Synced', `${created} promoted member${created === 1 ? '' : 's'} added to Approved.`);
+      }
+      if (promoted > 0) {
+        // Someone (or several) had a self-healed 'pending' record
+        // that the exec effectively already approved by promoting.
+        notify('Approved', `${promoted} partner record${promoted === 1 ? '' : 's'} flipped from Pending to Approved.`);
       }
       const [data, orphs] = await Promise.all([
         fetchRestaurants('all'),
