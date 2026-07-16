@@ -53,20 +53,47 @@ function repaintProgramStats(s) {
   }
 }
 
-(async () => {
+// Wait for the DOM node app.js paints before we try to write into
+// it. Without this the IIFE fires at module load and every
+// `document.getElementById(...)` returns null because app.js
+// hasn't run its render yet — the whole ticker/impact/program
+// repaint silently no-ops. Poll up to 5 seconds (10 tries) then
+// give up gracefully.
+function waitForNode(id, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      const el = document.getElementById(id);
+      if (el) return resolve(el);
+      if (Date.now() - start > timeoutMs) return resolve(null);
+      setTimeout(tick, 250);
+    };
+    tick();
+  });
+}
+
+async function paintLiveStats() {
   try {
+    // Wait until the ticker DOM exists — that's app.js's signal
+    // that the initial static paint is done.
+    await waitForNode('tickerTrack');
     const stats = await fetchOrgStats();
-    // If Firestore returns an empty doc (all zeros), leave the static
-    // CONTENT numbers in place — content.js already carries our real
-    // reporting totals and we never want to flash "0" over them.
     const total = (stats.meals || 0) + (stats.lbs || 0) + (stats.individuals || 0)
                 + (stats.co2 || 0) + (stats.water || 0);
-    if (total === 0) return;
+    if (total === 0) return; // leave static CONTENT numbers in place
     repaintTicker(statsToTicker(stats));
     repaintImpactGrid(statsToImpactCards(stats));
     repaintProgramStats(stats);
   } catch (e) {
     console.warn('live stats failed', e);
-    // Leave the static CONTENT numbers in place if Firestore is unreachable.
   }
-})();
+}
+
+// Fire once when the module loads (works if app.js already ran)
+// and again on DOMContentLoaded (works if app.js is still parsing).
+// The waitForNode above makes both safe even if they race.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', paintLiveStats);
+} else {
+  paintLiveStats();
+}
