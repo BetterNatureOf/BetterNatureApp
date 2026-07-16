@@ -282,9 +282,12 @@ export default function ManageMembers({ navigation, route }) {
   // so they shouldn't pollute the members view here. Chapter-scope
   // also drops everyone outside the signed-in pres's chapter so a
   // pres can't see (or accidentally try to edit) another chapter's
-  // roster.
+  // roster. Restaurants USED to be excluded here (they had their
+  // own screen). But if you want to promote a restaurant to also
+  // be a partner+member (church dual role), you had no way in —
+  // fixed by including them. They render in their own "Partners"
+  // section with the partner type icon.
   const visible = filtered
-    .filter((m) => (m.role || 'member') !== 'restaurant')
     .filter((m) => !isChapterScope || m.chapter_id === authUser?.chapter_id);
 
   // Pending applications get their own section at the top so the
@@ -307,14 +310,21 @@ export default function ManageMembers({ navigation, route }) {
   const presidents = approved.filter((m) =>
     memberHasAny(m, ['chapter_president', 'chapter_pres'])
   );
-  // "Members" = anyone whose primary is member OR who explicitly
-  // tagged 'member' as an additional role. This way an exec who
-  // wants to also do pickup duty surfaces here once they add
-  // 'member' to their roles[].
+  // "Members" — volunteer accounts. Excludes restaurants (they
+  // show in Partners section instead), unless they ALSO have
+  // 'member' explicitly in roles[] — that's the church-with-
+  // volunteer-help case.
   const rest = approved.filter((m) =>
     memberHasAny(m, ['member'])
     || (!memberHasAny(m, ['executive', 'admin', 'super_admin', 'chapter_president', 'chapter_pres'])
         && (m.role || 'member') !== 'restaurant')
+  );
+  // Partners section — anyone whose primary role is 'restaurant'
+  // OR who has 'partner'/'restaurant' in roles[]. Lets the exec
+  // add supplemental roles (member, chapter_president, etc.)
+  // without leaving this screen.
+  const partners = approved.filter((m) =>
+    memberHasAny(m, ['restaurant', 'partner'])
   );
 
   return (
@@ -390,6 +400,18 @@ export default function ManageMembers({ navigation, route }) {
             <Text style={styles.groupLabel}>Chapter Presidents</Text>
             <MemberList
               members={presidents}
+              onEdit={openEdit}
+              onRemove={handleRemove}
+              wide={isWide}
+            />
+          </>
+        )}
+
+        {partners.length > 0 && (
+          <>
+            <Text style={styles.groupLabel}>Food Donor Partners</Text>
+            <MemberList
+              members={partners}
               onEdit={openEdit}
               onRemove={handleRemove}
               wide={isWide}
@@ -603,6 +625,13 @@ export default function ManageMembers({ navigation, route }) {
                 </Text>
               )}
               {isChapterScope ? null : ROLE_OPTIONS
+                // Exclude the currently-selected primary from the
+                // additional list. 'restaurant' as an additional
+                // role doesn't make sense (use 'partner' instead
+                // which is the multi-role tag). 'partner' shows up
+                // and can be added on top of ANY primary role so
+                // a restaurant can also become a member+partner,
+                // a member can become a partner, etc.
                 .filter((o) => o.key !== selectedRole && o.key !== 'restaurant')
                 .map((opt) => {
                   const on = selectedExtraRoles.includes(opt.key);

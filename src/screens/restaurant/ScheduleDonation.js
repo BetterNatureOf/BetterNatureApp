@@ -18,7 +18,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
 import { requireVerifiedId } from '../../services/idGate';
-import { notify, notifyThen } from '../../services/ui';
+import { notify, notifyThen, confirm } from '../../services/ui';
 import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
@@ -81,9 +81,17 @@ export default function ScheduleDonation({ navigation }) {
 
   async function handlePost() {
     if (!requireVerifiedId(user, navigation)) return;
+    // Photo used to be a hard gate — you couldn't post without
+    // one. That blocked partners with a locked kitchen phone,
+    // failed Storage uploads (before Storage was initialized), or
+    // just wanting to type "5 lbs veggies" and go. Now it's a soft
+    // confirm: no photo? warn once, but let them post.
     if (!photoUri) {
-      notify('Need a photo', 'A quick photo helps volunteers know what to expect.');
-      return;
+      const ok = await confirm(
+        'No photo attached',
+        'Volunteers get less info without a photo — is that OK? You can always add one after posting.'
+      );
+      if (!ok) return;
     }
     // Hard-gate posting on a complete profile so we never push a
     // pickup to the volunteer feed without an address attached.
@@ -91,15 +99,21 @@ export default function ScheduleDonation({ navigation }) {
     // personal name — churches and community gardens frequently
     // don't have a "business_name" set but they do have a
     // recognizable partner name.
+    // Address is important (volunteers need to know where to go),
+    // but we no longer HARD-block on it — a partner might post
+    // from their kitchen with the address on file at the exec
+    // level. Warn only if we have zero identifiable address.
     const hasName = !!(user?.business_name || user?.organization_name || user?.name);
     const hasAddress = !!user?.address && hasName;
     if (!user?.restaurant_complete && !hasAddress) {
-      notifyThen(
-        'Finish your profile first',
-        'Add your address and business/organization name so the volunteer knows where to come.',
-        () => navigation.navigate('RestaurantOnboarding'),
+      const ok = await confirm(
+        'No address on file',
+        'Volunteers won\'t know where to pick up. Continue anyway (they\'ll ask via phone) — or complete your profile in Settings first?'
       );
-      return;
+      if (!ok) {
+        navigation.navigate('RestaurantOnboarding');
+        return;
+      }
     }
     if (timingMode === 'date') {
       if (!scheduledFor) {

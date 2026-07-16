@@ -163,6 +163,8 @@ export default function ManageRestaurants({ navigation }) {
   function startEdit(rest) {
     const next = {};
     EDITABLE_FIELDS.forEach((f) => { next[f.key] = rest[f.key] || ''; });
+    // Seed partner_type so the picker highlights the current choice.
+    next.partner_type = rest.partner_type || 'other';
     setForm(next);
     setEditingId(rest.id);
   }
@@ -177,6 +179,10 @@ export default function ManageRestaurants({ navigation }) {
         const next = (form[f.key] || '').trim();
         if (next !== (rest[f.key] || '')) updates[f.key] = next;
       });
+      const nextType = form.partner_type || 'other';
+      if (nextType !== (rest.partner_type || 'other')) {
+        updates.partner_type = nextType;
+      }
       if (Object.keys(updates).length) {
         await updateRestaurant(rest.id, updates);
       }
@@ -361,6 +367,30 @@ export default function ManageRestaurants({ navigation }) {
                   <View style={styles.expanded}>
                     {isEditing ? (
                       <>
+                        {/* Partner type — editable so exec can fix
+                            an old restaurant labeled 'other' to
+                            'community_garden' etc. */}
+                        <View style={{ marginBottom: 12 }}>
+                          <Text style={styles.label}>Partner type</Text>
+                          <View style={styles.chapterGrid}>
+                            {PARTNER_TYPES.map((t) => {
+                              const on = (form.partner_type || rest.partner_type || 'other') === t.key;
+                              return (
+                                <TouchableOpacity
+                                  key={t.key}
+                                  onPress={() => setForm((p) => ({ ...p, partner_type: t.key }))}
+                                  activeOpacity={0.85}
+                                  style={[styles.chapterChip, on && styles.chapterChipActive]}
+                                >
+                                  <Text style={[styles.chapterChipText, on && styles.chapterChipTextActive]}>
+                                    {t.icon} {t.label}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+
                         {EDITABLE_FIELDS.map((f) => (
                           <View key={f.key} style={{ marginBottom: 10 }}>
                             <Text style={styles.label}>{f.label}</Text>
