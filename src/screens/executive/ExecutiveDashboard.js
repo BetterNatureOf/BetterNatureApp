@@ -193,18 +193,22 @@ const styles = StyleSheet.create({
   signOutBtn: { paddingVertical: 6, paddingHorizontal: 10 },
   signOut: { fontSize: 13, color: Colors.pink, fontWeight: '600' },
 
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  stat: { flex: 1 },
+  // Wrap-friendly stat grid — 3 across on tablet+, 2 up on phone
+  // with a min-width safeguard so the numbers stay readable.
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  stat: { flex: 1, minWidth: 100 },
 
-  kpis: { flexDirection: 'row', gap: 10, marginBottom: 28 },
+  // KPI cards — flex-wrap so a phone drops the second card below.
+  kpis: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 28 },
   kpisWide: { gap: 16 },
   kpi: {
     flex: 1,
+    minWidth: 220,
     borderRadius: Radius.xl,
     padding: 22,
   },
   kpiLabel: { ...Type.eyebrow, color: 'rgba(255,255,255,0.55)', fontSize: 10 },
-  kpiValue: { color: '#fff', fontSize: 34, fontWeight: '800', marginTop: 6, fontFamily: 'Caveat-Bold' },
+  kpiValue: { color: '#fff', fontSize: 30, fontWeight: '800', marginTop: 6, fontFamily: 'Caveat-Bold' },
   kpiCaption: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4, fontWeight: '500' },
 
   sectionHeader: { color: Colors.green, marginBottom: 14 },

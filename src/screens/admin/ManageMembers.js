@@ -929,21 +929,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Modal
+  // Modal — tighter padding on phone so the role/chapter chips
+  // fit without wrapping into unreadable rows.
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: Platform.OS === 'web' ? 24 : 12,
   },
   modalCard: {
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 460,
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
-    padding: 24,
-    maxHeight: '85%',
+    padding: 20,
+    maxHeight: '92%',
     ...Shadows.card,
   },
   modalTitle: { fontSize: 18, fontWeight: '700', color: Colors.green },

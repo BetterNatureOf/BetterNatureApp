@@ -479,7 +479,9 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: 14, fontWeight: '600', color: '#7A1838', flex: 1 },
   photo: { width: '100%', height: 220, borderRadius: 14, marginTop: 18, backgroundColor: '#F7F5EF' },
   locCard: {
-    flexDirection: 'row', gap: 12, marginTop: 18, padding: 16,
+    // flexWrap so on tiny phones the map buttons drop below the
+    // address instead of overlapping the street text.
+    flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 18, padding: 16,
     backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: Colors.glassBorder,
   },
   locLabel: { fontSize: 11, fontWeight: '800', color: Colors.gray, letterSpacing: 0.5, textTransform: 'uppercase' },

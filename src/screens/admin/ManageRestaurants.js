@@ -345,17 +345,17 @@ export default function ManageRestaurants({ navigation }) {
                   activeOpacity={0.85}
                   style={styles.cardHead}
                 >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.name}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.name} numberOfLines={1}>
                       {partnerTypeFor(rest.partner_type).icon} {rest.name || '(unnamed)'}
                     </Text>
-                    <Text style={styles.sub}>
+                    <Text style={styles.sub} numberOfLines={1}>
                       {partnerTypeFor(rest.partner_type).label}
                       {(rest.city || rest.state) ? ` · ${[rest.city, rest.state].filter(Boolean).join(', ')}` : rest.address ? ` · ${rest.address}` : ''}
                     </Text>
                   </View>
                   <View style={[styles.statusPill, statusStyle(rest.status)]}>
-                    <Text style={[styles.statusPillText, statusTextStyle(rest.status)]}>
+                    <Text style={[styles.statusPillText, statusTextStyle(rest.status)]} numberOfLines={1}>
                       {rest.status || 'pending'}
                     </Text>
                   </View>
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   label: { fontSize: 12, fontWeight: '700', color: Colors.gray, marginBottom: 4, letterSpacing: 0.4, textTransform: 'uppercase' },
   input: { borderWidth: 1, borderColor: Colors.glassBorder, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.dark, backgroundColor: '#FAF8F1' },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 6 },
   addBtn: { backgroundColor: Colors.green, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
   addBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
   addCard: {

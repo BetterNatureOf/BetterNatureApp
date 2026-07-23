@@ -136,16 +136,16 @@ export default function LiveOps({ chapterId = null, navigation }) {
               onPress={navigation ? () => navigation.navigate('PickupDetail', { id: p.id }) : undefined}
               style={styles.card}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>
+                <Text style={styles.cardTitle} numberOfLines={1}>
                   {rest?.name || p.restaurant_name || 'Restaurant'}
                 </Text>
-                <Text style={styles.cardSub}>
+                <Text style={styles.cardSub} numberOfLines={1}>
                   {vol?.name || vol?.full_name || 'Volunteer'}
                   {vol?.phone ? ` · ${vol.phone}` : ''}
                 </Text>
-                <Text style={styles.cardMeta}>
+                <Text style={styles.cardMeta} numberOfLines={1}>
                   Claimed {timeAgo(p.claimed_at || p.updated_at || p.created_at)}
-                  {p.weight ? ` · ~${p.weight} lbs` : ''}
+                  {(p.actual_weight_lbs || p.estimated_weight_lbs) ? ` · ~${p.actual_weight_lbs || p.estimated_weight_lbs} lbs` : ''}
                 </Text>
               </View>
               <View style={[styles.tag, { backgroundColor: tone.bg }]}>
@@ -172,11 +172,11 @@ export default function LiveOps({ chapterId = null, navigation }) {
                 onPress={navigation ? () => navigation.navigate('PickupDetail', { id: p.id }) : undefined}
                 style={[styles.card, { borderLeftColor: Colors.green }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>
+                  <Text style={styles.cardTitle} numberOfLines={1}>
                     {rest?.name || p.restaurant_name || 'Restaurant'}
-                    {p.weight ? `  ·  ${p.weight} lbs` : ''}
+                    {(p.actual_weight_lbs || p.estimated_weight_lbs) ? `  ·  ${p.actual_weight_lbs || p.estimated_weight_lbs} lbs` : ''}
                   </Text>
-                  <Text style={styles.cardSub}>
+                  <Text style={styles.cardSub} numberOfLines={1}>
                     Dropped by {vol?.name || vol?.full_name || 'volunteer'} · {timeAgo(ts)}
                   </Text>
                 </View>
@@ -200,17 +200,21 @@ const styles = StyleSheet.create({
   refresh: { paddingHorizontal: 10, paddingVertical: 4 },
   refreshText: { color: Colors.green, fontWeight: '600', fontSize: 13 },
 
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  // 3-col grid that stays a grid on tablet/desktop but wraps to
+  // 2-col on tiny screens (rarely needed, but cheap to add).
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   statBox: {
     flex: 1,
+    minWidth: 90,
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     paddingVertical: 12,
+    paddingHorizontal: 6,
     alignItems: 'center',
     ...Shadows.soft,
   },
-  statValue: { fontSize: 22, fontWeight: '800', color: Colors.green },
-  statLabel: { ...Type.caption, marginTop: 2, textAlign: 'center' },
+  statValue: { fontSize: 20, fontWeight: '800', color: Colors.green },
+  statLabel: { ...Type.caption, marginTop: 2, textAlign: 'center', fontSize: 11 },
 
   emptyCard: {
     backgroundColor: Colors.white,

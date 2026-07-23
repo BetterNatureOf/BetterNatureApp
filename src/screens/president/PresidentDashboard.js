@@ -137,8 +137,8 @@ const styles = StyleSheet.create({
   title: { color: Colors.white, marginTop: 4 },
   signOutBtn: { paddingVertical: 6, paddingHorizontal: 10 },
   signOut: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '600' },
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 28 },
-  stat: { flex: 1 },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 28 },
+  stat: { flex: 1, minWidth: 100 },
   sectionHeader: { color: Colors.green, marginBottom: 14 },
 
   grid: { flexDirection: 'column', gap: 12 },
