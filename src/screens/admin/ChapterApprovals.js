@@ -190,8 +190,12 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: 14,
     marginBottom: 10,
+    // flexWrap so the Approve/Deny action row drops beneath the
+    // applicant info instead of stealing horizontal space.
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
+    gap: 10,
     borderLeftWidth: 4,
     borderLeftColor: Colors.pink,
     ...Shadows.card,

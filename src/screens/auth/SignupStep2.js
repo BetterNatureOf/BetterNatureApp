@@ -74,9 +74,9 @@ export default function SignupStep2({ navigation, route }) {
             ]}
           >
             <View style={styles.chapterInfo}>
-              <Text style={styles.chapterName}>{chapter.name}</Text>
-              <Text style={styles.chapterLocation}>
-                {chapter.city}, {chapter.state}
+              <Text style={styles.chapterName} numberOfLines={1}>{chapter.name}</Text>
+              <Text style={styles.chapterLocation} numberOfLines={1}>
+                {chapter.city}{chapter.state ? `, ${chapter.state}` : ''}
               </Text>
               <Text style={styles.chapterMembers}>
                 {chapter.member_count || 0} members
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   chapterSelected: {
     borderColor: Colors.pink,
   },
-  chapterInfo: { flex: 1 },
+  chapterInfo: { flex: 1, minWidth: 0 },
   chapterName: { fontSize: 16, fontWeight: '700', color: Colors.dark },
   chapterLocation: { ...Type.caption, marginTop: 2 },
   chapterMembers: { fontSize: 12, color: Colors.sage, marginTop: 2 },
