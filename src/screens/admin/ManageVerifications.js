@@ -342,7 +342,10 @@ const styles = StyleSheet.create({
   emptyBody: { ...Type.caption },
 
   row: {
-    flexDirection: 'row', gap: 14,
+    // flexWrap so the wide info column drops below the ID thumbs
+    // on narrow screens instead of squishing horizontally into
+    // unreadable text.
+    flexDirection: 'row', flexWrap: 'wrap', gap: 14,
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: 14,

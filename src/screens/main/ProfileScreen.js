@@ -228,12 +228,15 @@ const styles = StyleSheet.create({
   roleText: { fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: '600', textTransform: 'capitalize' },
   chapter: { color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 6, fontWeight: '500' },
   statsRow: {
+    // wrap so on very narrow phones the stat cards drop to a
+    // 2-up layout instead of shrinking beyond legibility.
     flexDirection: 'row',
-    paddingHorizontal: 24,
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
     marginTop: 22,
-    gap: 10,
+    gap: 8,
   },
-  statItem: { flex: 1 },
+  statItem: { flex: 1, minWidth: 90 },
   reliabilityChip: {
     alignSelf: 'center',
     paddingHorizontal: 12, paddingVertical: 6,

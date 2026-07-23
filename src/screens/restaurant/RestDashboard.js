@@ -404,7 +404,10 @@ const styles = StyleSheet.create({
   // Phone padding — leaner so the green CTA + the recent-posts list
   // both fit without horizontal squeeze.
   contentPhone: { padding: 16, paddingTop: 48, paddingBottom: 80 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 18 },
+  // flexWrap on the header so long partner names + sign-out don't
+  // fight for horizontal space on phones — the sign-out button
+  // drops beneath the title instead of squishing.
+  header: { flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 18 },
   eyebrow: { fontSize: 12, color: Colors.sage, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   title: { color: Colors.green, marginTop: 4 },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4 },

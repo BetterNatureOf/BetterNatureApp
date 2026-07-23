@@ -120,11 +120,11 @@ export default function FindChapter({ navigation }) {
               && user?.chapter_request_status === 'pending';
             return (
               <View key={c.id} style={styles.card}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{c.name}</Text>
-                  <Text style={styles.loc}>{[c.city, c.state, c.country_name || c.country].filter(Boolean).join(', ')}</Text>
-                  {c.president_name ? <Text style={styles.pres}>President: {c.president_name}</Text> : null}
-                  {c.description ? <Text style={styles.desc}>{c.description}</Text> : null}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.name} numberOfLines={1}>{c.name}</Text>
+                  <Text style={styles.loc} numberOfLines={1}>{[c.city, c.state, c.country_name || c.country].filter(Boolean).join(', ')}</Text>
+                  {c.president_name ? <Text style={styles.pres} numberOfLines={1}>President: {c.president_name}</Text> : null}
+                  {c.description ? <Text style={styles.desc} numberOfLines={2}>{c.description}</Text> : null}
                 </View>
                 {isMine ? (
                   <View style={styles.mineBadge}><Text style={styles.mineBadgeText}>Your chapter</Text></View>
@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
   },
   empty: { ...Type.body, color: Colors.gray, textAlign: 'center', paddingVertical: 24 },
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12,
     backgroundColor: Colors.white, borderRadius: Radius.xl, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: Colors.glassBorder, ...Shadows.card,
   },

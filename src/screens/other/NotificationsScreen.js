@@ -73,7 +73,7 @@ export default function NotificationsScreen({ navigation }) {
               {NOTIF_EMOJIS[notif.type] || '🔔'}
             </Text>
             <View style={styles.notifText}>
-              <Text style={styles.notifTitle}>{notif.title}</Text>
+              <Text style={styles.notifTitle} numberOfLines={1}>{notif.title}</Text>
               <Text style={styles.notifDesc} numberOfLines={2}>
                 {notif.description}
               </Text>

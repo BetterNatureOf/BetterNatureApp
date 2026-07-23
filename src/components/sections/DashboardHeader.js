@@ -18,8 +18,8 @@ export default function DashboardHeader({ user, chapterName, unreadCount, onNoti
           <Logo size={48} style={styles.logo} />
         </View>
         <View style={styles.greeting}>
-          <Text style={styles.welcome}>Welcome back,</Text>
-          <BrushText variant="screenTitle" style={styles.name}>
+          <Text style={styles.welcome} numberOfLines={1}>Welcome back,</Text>
+          <BrushText variant="screenTitle" style={styles.name} numberOfLines={1}>
             {user?.name || 'Volunteer'}
           </BrushText>
         </View>

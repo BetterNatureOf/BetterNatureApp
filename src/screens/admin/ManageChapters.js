@@ -593,11 +593,11 @@ export default function ManageChapters({ navigation }) {
                           onPress={() => navigation.navigate('ManageMembers', { editUserId: m.id })}
                           activeOpacity={0.85}
                         >
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.rosterName}>{m.name || '(unnamed)'}</Text>
-                            <Text style={styles.rosterMeta}>{m.email} · {labelForRole(m)}</Text>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.rosterName} numberOfLines={1}>{m.name || '(unnamed)'}</Text>
+                            <Text style={styles.rosterMeta} numberOfLines={1}>{m.email} · {labelForRole(m)}</Text>
                           </View>
-                          <Text style={styles.rosterStat}>{m.events_attended || 0} ev · {m.lbs_rescued || Math.round((m.meals_rescued || 0) / 1.2)} lbs · {m.hours_logged || 0}h</Text>
+                          <Text style={styles.rosterStat} numberOfLines={1}>{m.events_attended || 0} ev · {m.lbs_rescued || Math.round((m.meals_rescued || 0) / 1.2)} lbs · {m.hours_logged || 0}h</Text>
                           <Text style={styles.rosterChev}>›</Text>
                         </TouchableOpacity>
                       ))
