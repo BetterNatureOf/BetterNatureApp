@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Screen from '../../components/ui/Screen';
 import { notify } from '../../services/ui';
+import useAuthStore from '../../store/authStore';
 
 // Chapter applications submitted from the signup flow. We can't write
 // directly to /chapters here — the user is mid-signup and isn't an
@@ -18,7 +19,25 @@ import { notify } from '../../services/ui';
 // always "BetterNature <City>" — no free-form names, no access codes.
 
 export default function StartChapter({ navigation, route }) {
-  const userData = route?.params || {};
+  // Two entry points feed userData:
+  //   1. SignupStep2 → navigates here with the in-progress signup form
+  //      as params (name, email, phone, city, state, ...)
+  //   2. FindChapter → navigates with no params; fall back to the
+  //      signed-in user's profile so the application still carries
+  //      applicant_uid/email/name for the approve-flow to notify + auto-
+  //      elevate them to president.
+  const authUser = useAuthStore((s) => s.user);
+  const userData = (route?.params && Object.keys(route.params).length)
+    ? route.params
+    : (authUser ? {
+        uid: authUser.id,
+        full_name: authUser.name || '',
+        email: authUser.email || '',
+        phone: authUser.phone || '',
+        city: authUser.city || '',
+        state: authUser.state || '',
+        country: authUser.country || '',
+      } : {});
   const [city, setCity] = useState(userData?.city || '');
   const [state, setState] = useState(userData?.state || '');
   const [country, setCountry] = useState(userData?.country || '');
@@ -41,6 +60,10 @@ export default function StartChapter({ navigation, route }) {
         city: cityClean,
         state: state.trim(),
         country: country.trim() || null,
+        // uid may be undefined if the applicant is mid-signup (signup
+        // creates the Auth account in a later step). approveApp falls
+        // back to email lookup in that case.
+        applicant_uid: userData?.uid || authUser?.id || null,
         applicant_name: userData?.full_name || userData?.name || null,
         applicant_email: userData?.email || null,
         applicant_phone: userData?.phone || null,

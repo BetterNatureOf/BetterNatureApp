@@ -18,6 +18,8 @@ import { db } from '../../config/firebase';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import { updateProfile } from '../../services/auth';
 import { resyncAllChapters } from '../../services/chapterDenorm';
+import { grantRole } from '../../services/database';
+import { enqueueNotification } from '../../services/notify';
 
 export default function ChapterApprovals({ onApproved }) {
   const [apps, setApps] = useState([]);
@@ -43,12 +45,26 @@ export default function ChapterApprovals({ onApproved }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Resolve the applicant's uid from the application doc — the signup-
+  // flow entry point might not have had one yet (Auth account is
+  // created in a later signup step), so fall back to an email lookup.
+  async function resolveApplicantUid(app) {
+    if (app.applicant_uid) return app.applicant_uid;
+    const email = (app.applicant_email || '').trim().toLowerCase();
+    if (!email) return null;
+    try {
+      const snap = await getDocs(query(collection(db, 'users'), where('email', '==', email)));
+      return snap.docs[0]?.id || null;
+    } catch { return null; }
+  }
+
   async function approveApp(app) {
     setBusy(`app-${app.id}`);
     try {
       // Materialize the real chapter doc. Naming convention enforced:
-      // BetterNature <City>.
-      await addDoc(collection(db, 'chapters'), {
+      // BetterNature <City>. Capture the ref so we can wire the
+      // applicant as its inaugural president below.
+      const chapterRef = await addDoc(collection(db, 'chapters'), {
         name: `BetterNature ${app.city}`,
         city: app.city,
         state: app.state || null,
@@ -58,9 +74,53 @@ export default function ChapterApprovals({ onApproved }) {
         founded_at: serverTimestamp(),
         created_at: serverTimestamp(),
       });
+
+      // Auto-elevate the applicant to chapter president of the new
+      // chapter — otherwise the chapter has no leader on day one and
+      // the exec has to remember to promote them separately. grantRole
+      // preserves whatever prior primary role they had (member,
+      // executive, etc.) by dropping 'chapter_president' into roles[]
+      // when appropriate. Also stamps chapter_id so their dashboard
+      // context switches to the new chapter immediately.
+      const applicantUid = await resolveApplicantUid(app);
+      if (applicantUid) {
+        try { await grantRole(applicantUid, 'chapter_president'); } catch (e) { console.warn('grant president failed', e); }
+        try {
+          await updateProfile(applicantUid, {
+            chapter_id: chapterRef.id,
+            chapter: { id: chapterRef.id, name: `BetterNature ${app.city}` },
+          });
+        } catch (e) { console.warn('set chapter_id failed', e); }
+      }
+
+      // Notify the applicant in-app + email so they know the outcome
+      // without hovering over the app for 48 hours. If we couldn't
+      // resolve a uid (they never finished signup) the email in the
+      // notifications_outbox at StartChapter submit time is the only
+      // touchpoint they got — that's OK; the exec can also reach out.
+      if (applicantUid) {
+        try {
+          await enqueueNotification({
+            recipients: [applicantUid],
+            kind: 'chapter',
+            title: `BetterNature ${app.city} is live!`,
+            body:
+              `Your chapter application was approved. You're now the chapter president of BetterNature ${app.city}. ` +
+              `Open the app to invite your first members.`,
+            url: 'https://app.betternatureofficial.org/#/find-chapter',
+            data: { type: 'chapter_approved', chapterId: chapterRef.id },
+          });
+        } catch (e) { console.warn('applicant notify failed', e); }
+      }
+
       await updateDoc(doc(db, 'chapter_applications', app.id), {
-        status: 'approved', approved_at: serverTimestamp(),
+        status: 'approved',
+        approved_at: serverTimestamp(),
+        chapter_id: chapterRef.id,
       });
+      // Denorm the fresh chapter so its officers/roster/president_name
+      // show up on the public website page immediately.
+      try { await resyncAllChapters(); } catch {}
       await load();
       onApproved && onApproved();
     } catch (e) {
@@ -74,6 +134,21 @@ export default function ChapterApprovals({ onApproved }) {
       await updateDoc(doc(db, 'chapter_applications', app.id), {
         status: 'denied', denied_at: serverTimestamp(),
       });
+      // Tell the applicant so they don't sit refreshing indefinitely.
+      const applicantUid = await resolveApplicantUid(app);
+      if (applicantUid) {
+        try {
+          await enqueueNotification({
+            recipients: [applicantUid],
+            kind: 'chapter',
+            title: 'Chapter application update',
+            body:
+              `An executive reviewed your BetterNature ${app.city} application and wasn't able to approve it right now. ` +
+              `Email info@betternatureofficial.org if you'd like to discuss.`,
+            data: { type: 'chapter_denied' },
+          });
+        } catch (e) { console.warn('applicant deny notify failed', e); }
+      }
       await load();
     } catch (e) {
       Alert.alert('Could not deny', e.message || 'Try again.');
