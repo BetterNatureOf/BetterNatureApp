@@ -33,6 +33,7 @@ import usePickups from '../../hooks/usePickups';
 import { confirm } from '../../services/ui';
 import { getProfile } from '../../services/auth';
 import { ensureMyPartnerRecord } from '../../services/database';
+import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
 import Screen from '../../components/ui/Screen';
 
 export default function DashboardScreen({ navigation }) {
@@ -99,12 +100,19 @@ export default function DashboardScreen({ navigation }) {
   ) : null;
 
   // ── Building blocks ────────────────────────────────────────────────
+  const userLbs = user?.lbs_rescued || Math.round((user?.meals_rescued || 0) / 1.2);
+  const impactCaption = userLbs > 0
+    ? `That's about ${mealsFromLbs(userLbs).toLocaleString('en-US')} meals — enough to feed ~${familyDaysFromLbs(userLbs).toLocaleString('en-US')} famil${familyDaysFromLbs(userLbs) === 1 ? 'y' : 'ies'} for a day.`
+    : null;
   const stats = (
-    <View style={styles.statsRow}>
-      <StatCard number={user?.events_attended || 0} label="Events" color={Colors.green} style={styles.statItem} />
-      <StatCard number={user?.lbs_rescued || Math.round((user?.meals_rescued || 0) / 1.2)} label="Lbs of food rescued" color={Colors.sage} style={styles.statItem} />
-      <StatCard number={`${user?.hours_logged || 0}h`} label="Hours" color={Colors.pink} style={styles.statItem} />
-    </View>
+    <>
+      <View style={styles.statsRow}>
+        <StatCard number={user?.events_attended || 0} label="Events" color={Colors.green} style={styles.statItem} />
+        <StatCard number={userLbs} label="Lbs of food rescued" color={Colors.sage} style={styles.statItem} />
+        <StatCard number={`${user?.hours_logged || 0}h`} label="Hours" color={Colors.pink} style={styles.statItem} />
+      </View>
+      {impactCaption ? <Text style={styles.impactCaption}>{impactCaption}</Text> : null}
+    </>
   );
 
   const activePickups = (
@@ -182,9 +190,10 @@ export default function DashboardScreen({ navigation }) {
               contentDesktop already handles it. */}
           <View style={[styles.statsRow, styles.flushH]}>
             <StatCard number={user?.events_attended || 0} label="Events" color={Colors.green} style={styles.statItem} />
-            <StatCard number={user?.lbs_rescued || Math.round((user?.meals_rescued || 0) / 1.2)} label="Lbs of food rescued" color={Colors.sage} style={styles.statItem} />
+            <StatCard number={userLbs} label="Lbs of food rescued" color={Colors.sage} style={styles.statItem} />
             <StatCard number={`${user?.hours_logged || 0}h`} label="Hours" color={Colors.pink} style={styles.statItem} />
           </View>
+          {impactCaption ? <Text style={[styles.impactCaption, styles.flushH]}>{impactCaption}</Text> : null}
 
           <View style={[styles.twoCol, styles.flushH]}>
             {/* Left — primary workspace */}
@@ -342,6 +351,15 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   statItem: { flex: 1 },
+  impactCaption: {
+    paddingHorizontal: 24,
+    marginTop: 12,
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '500',
+    color: Colors.gray,
+    fontStyle: 'italic',
+  },
 
   // Desktop columns: 2:1 split. flex values, not fixed widths, so the
   // layout still adapts to ultra-wide and laptop screens alike.

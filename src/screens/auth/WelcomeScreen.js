@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button';
 import Logo from '../../components/ui/Logo';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { getOrgStats } from '../../services/orgStats';
+import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
 import { fetchAllMembers, fetchChapters } from '../../services/database';
 import Screen from '../../components/ui/Screen';
 
@@ -50,6 +51,20 @@ export default function WelcomeScreen({ navigation }) {
             BetterNature
           </BrushText>
           <Text style={styles.tagline}>{siteVal('hero.eyebrow', 'Food rescue \u00B7 Conservation \u00B7 Clean water')}</Text>
+
+          {/* Impact translation — the mini-stats show raw pounds but
+              raw pounds don't land the way "≈ 3k meals" does. This
+              is the first thing a new visitor sees, so it has to
+              answer "what does that actually mean?" for them. */}
+          {(() => {
+            const lbs = stats.lbs || Math.round((stats.meals || 0) / 1.2);
+            if (!lbs) return null;
+            return (
+              <Text style={styles.impactLine}>
+                ≈ {fmt(mealsFromLbs(lbs))} meals · ~{fmt(familyDaysFromLbs(lbs))} family-days fed
+              </Text>
+            );
+          })()}
 
           {/* Mini stats */}
           <View style={styles.statsRow}>
@@ -152,9 +167,17 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.5,
   },
+  impactLine: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 14,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
   statsRow: {
     flexDirection: 'row',
-    marginTop: 28,
+    marginTop: 20,
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 16,
     paddingVertical: 14,
