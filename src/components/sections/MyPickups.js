@@ -4,6 +4,28 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../ui/BrushText';
 import Icon from '../ui/Icon';
+import PickupCountdown from '../pickup/PickupCountdown';
+import { openInMaps, formatAddress } from '../../services/maps';
+
+function statusLabel(status) {
+  if (status === 'enroute') return 'EN ROUTE TO DROP-OFF';
+  if (status === 'claimed') return 'HEADING TO PICKUP';
+  return 'ASSIGNED TO YOU';
+}
+function fmtDate(pickup) {
+  const iso = pickup.scheduled_for || pickup.pickup_window_until;
+  if (!iso) return pickup.scheduled_date || '';
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch { return pickup.scheduled_date || ''; }
+}
+function fmtTime(pickup) {
+  const iso = pickup.scheduled_for || pickup.pickup_window_until;
+  if (!iso) return pickup.scheduled_time || '';
+  try {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  } catch { return pickup.scheduled_time || ''; }
+}
 
 /**
  * MyPickups — shows the volunteer's active/claimed pickups on their dashboard.
@@ -53,74 +75,84 @@ export default function MyPickups({ pickups = [], userId, onPickupPress, onClaim
         )}
       </View>
 
-      {/* Your active pickups */}
-      {myPickups.map((pickup) => (
-        <TouchableOpacity
-          key={pickup.id}
-          style={styles.card}
-          activeOpacity={0.8}
-          onPress={() => onPickupPress?.(pickup)}
-        >
-          <LinearGradient
-            colors={Colors.gradient.sage}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.statusBar}
+      {/* Your active pickups — pinned, one glance answers "what next?" */}
+      {myPickups.map((pickup) => {
+        const restAddr = pickup.restaurant_address || formatAddress({
+          street: pickup.restaurant_street,
+          city: pickup.restaurant_city,
+          state: pickup.restaurant_state,
+          zip: pickup.restaurant_zip,
+        });
+        const dropTarget = pickup.status === 'enroute'
+          ? (pickup.fridge_name || pickup.fridge_address || 'Chosen fridge')
+          : (pickup.fridge_name || 'You choose on arrival');
+        return (
+          <TouchableOpacity
+            key={pickup.id}
+            style={styles.card}
+            activeOpacity={0.8}
+            onPress={() => onPickupPress?.(pickup)}
           >
-            <Text style={styles.statusText}>ASSIGNED TO YOU</Text>
-          </LinearGradient>
+            <LinearGradient
+              colors={Colors.gradient.sage}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.statusBar}
+            >
+              <Text style={styles.statusText}>{statusLabel(pickup.status)}</Text>
+            </LinearGradient>
 
-          <View style={styles.cardBody}>
-            <View style={styles.restaurantRow}>
-              <View style={styles.iconWrap}>
-                <Text style={styles.icon}>{'\u{1F37D}'}</Text>
+            <View style={styles.cardBody}>
+              <View style={styles.urgencyRow}>
+                <PickupCountdown pickup={pickup} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.restaurantName}>{pickup.restaurant_name}</Text>
-                <Text style={styles.address}>{pickup.address}</Text>
+              <View style={styles.restaurantRow}>
+                <View style={styles.iconWrap}>
+                  <Icon name="clipboard" size={20} color={Colors.green} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.restaurantName} numberOfLines={1}>{pickup.restaurant_name}</Text>
+                  {restAddr ? <Text style={styles.address} numberOfLines={1}>{restAddr}</Text> : null}
+                </View>
+              </View>
+
+              <View style={styles.detailsGrid}>
+                <DetailCell label="Date" value={fmtDate(pickup)} />
+                <DetailCell label="Time" value={fmtTime(pickup)} />
+                <DetailCell label="Est. weight" value={pickup.estimated_weight_lbs ? `${pickup.estimated_weight_lbs} lbs` : '—'} />
+                <DetailCell label="Drop-off" value={dropTarget} />
+              </View>
+
+              <View style={styles.ctaRow}>
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  activeOpacity={0.85}
+                  onPress={() => onPickupPress?.(pickup)}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {pickup.status === 'enroute' ? 'Complete drop-off →' : 'Continue pickup →'}
+                  </Text>
+                </TouchableOpacity>
+                {restAddr ? (
+                  <TouchableOpacity
+                    style={styles.directionsBtn}
+                    activeOpacity={0.85}
+                    onPress={() => openInMaps({
+                      address: restAddr,
+                      lat: pickup.restaurant_lat,
+                      lng: pickup.restaurant_lng,
+                      label: pickup.restaurant_name,
+                    })}
+                  >
+                    <Icon name="pin" size={14} color={Colors.green} />
+                    <Text style={styles.directionsText}>Directions</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             </View>
-
-            <View style={styles.detailsGrid}>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailIcon}>{'\u{1F4C5}'}</Text>
-                <View>
-                  <Text style={styles.detailLabel}>Date</Text>
-                  <Text style={styles.detailValue}>{pickup.scheduled_date}</Text>
-                </View>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailIcon}>{'\u{1F552}'}</Text>
-                <View>
-                  <Text style={styles.detailLabel}>Time</Text>
-                  <Text style={styles.detailValue}>{pickup.scheduled_time}</Text>
-                </View>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailIcon}>{'\u{2696}'}</Text>
-                <View>
-                  <Text style={styles.detailLabel}>Est. Weight</Text>
-                  <Text style={styles.detailValue}>{pickup.estimated_weight_lbs} lbs</Text>
-                </View>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailIcon}>{'\u{2696}️'}</Text>
-                <View>
-                  <Text style={styles.detailLabel}>Lbs of food</Text>
-                  <Text style={styles.detailValue}>{pickup.estimated_weight_lbs} lbs</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.ctaRow}>
-              <View style={styles.directionsBtn}>
-                <Text style={styles.directionsIcon}>{'\u{1F4CD}'}</Text>
-                <Text style={styles.directionsText}>Get Directions</Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-      ))}
+          </TouchableOpacity>
+        );
+      })}
 
       {/* Available pickups to claim */}
       {available.length > 0 && (
@@ -137,12 +169,15 @@ export default function MyPickups({ pickups = [], userId, onPickupPress, onClaim
             >
               <View style={styles.availableLeft}>
                 <View style={[styles.iconWrapSmall, { backgroundColor: Colors.amberLight }]}>
-                  <Text style={styles.iconSmall}>{'\u{1F37D}'}</Text>
+                  <Icon name="clipboard" size={16} color={Colors.green} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.availableName}>{pickup.restaurant_name}</Text>
-                  <Text style={styles.availableSub}>
-                    {pickup.scheduled_date} {'\u00B7'} {pickup.scheduled_time} {'\u00B7'} {pickup.estimated_weight_lbs} lbs
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={styles.availableTitleRow}>
+                    <Text style={styles.availableName} numberOfLines={1}>{pickup.restaurant_name}</Text>
+                    <PickupCountdown pickup={pickup} style={styles.availableCountdown} />
+                  </View>
+                  <Text style={styles.availableSub} numberOfLines={1}>
+                    {fmtDate(pickup)} {'\u00B7'} {fmtTime(pickup)}{pickup.estimated_weight_lbs ? ` \u00B7 ${pickup.estimated_weight_lbs} lbs` : ''}
                   </Text>
                 </View>
               </View>
@@ -153,6 +188,17 @@ export default function MyPickups({ pickups = [], userId, onPickupPress, onClaim
           ))}
         </>
       )}
+    </View>
+  );
+}
+
+function DetailCell({ label, value }) {
+  return (
+    <View style={styles.detailItem}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.detailLabel}>{label}</Text>
+        <Text style={styles.detailValue} numberOfLines={1}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -278,20 +324,33 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 10, color: Colors.grayMid, fontWeight: '600' },
   detailValue: { fontSize: 14, fontWeight: '700', color: Colors.dark, marginTop: 1 },
 
+  urgencyRow: { marginBottom: 12 },
   ctaRow: {
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
   },
+  primaryBtn: {
+    backgroundColor: Colors.green,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexGrow: 1,
+    alignItems: 'center',
+  },
+  primaryBtnText: { color: Colors.white, fontWeight: '800', fontSize: 14, letterSpacing: 0.2 },
   directionsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: Colors.greenLight,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 14,
+    borderRadius: 12,
   },
   directionsIcon: { fontSize: 14 },
-  directionsText: { fontSize: 13, fontWeight: '600', color: Colors.green },
+  directionsText: { fontSize: 13, fontWeight: '700', color: Colors.green },
 
   // Available pickups
   availableHeader: {
@@ -327,7 +386,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconSmall: { fontSize: 16 },
-  availableName: { fontSize: 14, fontWeight: '600', color: Colors.dark },
+  availableTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  availableName: { fontSize: 14, fontWeight: '700', color: Colors.dark, flexShrink: 1 },
+  availableCountdown: { paddingHorizontal: 8, paddingVertical: 2 },
   availableSub: { fontSize: 11, color: Colors.grayMid, marginTop: 2 },
   claimBtn: {
     backgroundColor: Colors.pink,
