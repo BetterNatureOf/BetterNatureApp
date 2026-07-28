@@ -16,6 +16,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import AnimatedPressable from '../ui/AnimatedPressable';
 import Icon from '../ui/Icon';
 import Button from '../ui/Button';
+import PickupCountdown from './PickupCountdown';
 import { openInMaps, formatAddress } from '../../services/maps';
 
 export default function PickupCard({
@@ -48,6 +49,7 @@ export default function PickupCard({
         <View style={[styles.pill, pillTone(pickup.status)]}>
           <Text style={styles.pillText}>{prettyStatus(pickup.status)}</Text>
         </View>
+        <PickupCountdown pickup={pickup} />
         <View style={styles.headStats}>
           {weight ? <Text style={styles.headStat}>{weight} lb</Text> : null}
           <Text style={styles.headStatStrong}>{meals} meals</Text>
@@ -163,7 +165,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.glassBorder,
     ...Shadows.card,
   },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  head: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 14 },
   pill: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 99 },
   pillText: { fontSize: 11, fontWeight: '700', color: Colors.green, letterSpacing: 0.3 },
   headStats: { flexDirection: 'row', alignItems: 'center', gap: 10 },

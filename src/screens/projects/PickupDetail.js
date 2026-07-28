@@ -17,6 +17,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import PickupCard from '../../components/pickup/PickupCard';
 import PickupTimeline from '../../components/pickup/PickupTimeline';
 import PickupContacts from '../../components/pickup/PickupContacts';
+import PickupCountdown from '../../components/pickup/PickupCountdown';
 import FridgePicker from '../../components/ui/FridgePicker';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
@@ -247,6 +248,11 @@ export default function PickupDetail({ route, navigation }) {
           <Text style={styles.backText}>Back</Text>
         </AnimatedPressable>
         <BrushText variant="screenTitle" style={styles.title}>Pickup</BrushText>
+
+        {/* Countdown — remaining time in the restaurant's window.
+            Renders on every state (preview, claimed, enroute) so
+            volunteers see urgency BEFORE they claim too. */}
+        <PickupCountdown pickup={pickup} style={{ marginBottom: 12 }} />
 
         {/* Timeline — shows where in the flow this run is at a
             glance, on both restaurant and volunteer views. Only
