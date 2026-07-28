@@ -12,6 +12,7 @@ import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import FadeInView from '../../components/ui/FadeInView';
 import useAuthStore from '../../store/authStore';
 import { signOut, getProfile } from '../../services/auth';
+import { allRoles } from '../../services/roles';
 import { confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
@@ -85,11 +86,17 @@ export default function ProfileScreen({ navigation }) {
         <BrushText variant="screenTitle" style={styles.name}>
           {user?.name || 'Volunteer'}
         </BrushText>
-        <View style={styles.rolePill}>
-          <Text style={styles.roleText}>
-            {user?.role?.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()) ||
-              'Volunteer'}
-          </Text>
+        {/* Roles — primary + every supplemental as its own chip so a
+            user who holds exec+president+member sees all three, not
+            just the primary. */}
+        <View style={styles.roleRow}>
+          {(allRoles(user).length ? allRoles(user) : ['volunteer']).map((r) => (
+            <View key={r} style={styles.rolePill}>
+              <Text style={styles.roleText}>
+                {r.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              </Text>
+            </View>
+          ))}
         </View>
         {user?.chapter?.name && (
           <Text style={styles.chapter}>{user.chapter.name} Chapter</Text>
@@ -218,8 +225,14 @@ const styles = StyleSheet.create({
   },
   avatarInitial: { fontSize: 36, fontWeight: '700', color: Colors.green },
   name: { color: Colors.white, textAlign: 'center' },
+  roleRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+  },
   rolePill: {
-    marginTop: 6,
     backgroundColor: 'rgba(255,255,255,0.15)',
     paddingHorizontal: 14,
     paddingVertical: 5,

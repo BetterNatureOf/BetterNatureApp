@@ -25,6 +25,7 @@ import {
 import {
   getFirestore, doc, setDoc, getDoc, updateDoc, addDoc, collection,
   serverTimestamp, query, where, getDocs, orderBy, limit, increment,
+  arrayUnion,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
 // Same Firebase project as the app (see app.json → extra.firebase).
@@ -268,7 +269,25 @@ export async function inviteAdmin(email, invitedBy = '') {
   const existing = await getDocs(query(collection(db, 'users'), where('email', '==', e)));
   if (!existing.empty) {
     const userDoc = existing.docs[0];
-    await updateDoc(userDoc.ref, { role: 'admin' });
+    // Preserve whatever primary role the target already has (they might
+    // be a chapter president or an executive — clobbering role='admin'
+    // would strip that). If their primary is a trivial baseline like
+    // 'member' we upgrade the primary; otherwise 'admin' lands as a
+    // supplemental role via arrayUnion. Mirrors src/services/database.js
+    // grantRole() — kept inline here because website code can't import
+    // from src/.
+    const data = userDoc.data() || {};
+    const primary = data.role || '';
+    const extras = Array.isArray(data.roles) ? data.roles : [];
+    const trivial = new Set(['', 'member', 'volunteer']);
+    if (primary === 'admin' || extras.includes('admin')) {
+      return { promoted: true, uid: userDoc.id, noop: true };
+    }
+    if (trivial.has(primary)) {
+      await updateDoc(userDoc.ref, { role: 'admin' });
+    } else {
+      await updateDoc(userDoc.ref, { roles: arrayUnion('admin') });
+    }
     return { promoted: true, uid: userDoc.id };
   }
   const code = generateAdminCode();

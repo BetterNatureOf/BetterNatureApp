@@ -19,11 +19,24 @@ import useAuthStore from '../../store/authStore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { signOut } from '../../services/auth';
+import { hasRole } from '../../services/roles';
+
+// Roles that skip the approval gate — anyone with elevated privileges
+// (primary OR supplemental) doesn't need a member approval to reach
+// the app. Without the roles[] check, an executive who was ALSO given
+// a supplemental role via ManageMembers could get demoted-in-primary
+// to 'member' and end up locked out of the whole app despite the
+// supplemental exec role — the gate wraps every MainNavigator screen.
+const ELEVATED_ROLES = [
+  'executive', 'admin', 'super_admin',
+  'chapter_president', 'chapter_pres', 'chapter_vp', 'chapter_treas',
+  'chapter_vol_coord', 'chapter_sec',
+  'restaurant', 'partner',
+];
 
 function shouldBypass(user) {
   if (!user) return true; // not signed in — let auth navigator handle
-  const role = (user.role || 'member').toLowerCase();
-  if (role !== 'member') return true;
+  if (hasRole(user, ELEVATED_ROLES)) return true;
   // Legacy accounts (created before the gate) have no member_status.
   // Treat the absence of the field as 'approved' so we don't lock
   // existing volunteers out.

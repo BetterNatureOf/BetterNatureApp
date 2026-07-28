@@ -13,6 +13,7 @@
 // day one without us shipping yet another migration.
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
+import { grantRole } from './database';
 
 // EXPLICIT founder allowlist — no domain wildcard. Most chapter
 // volunteers will eventually have @betternatureofficial.org emails
@@ -38,8 +39,11 @@ export function isFounderEmail(email) {
 export async function selfPromoteToExecutive(uid) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   if (!uid) throw new Error('Not signed in');
+  // grantRole preserves any prior role (chapter_president, etc.) instead
+  // of clobbering the primary — a founder who's also a chapter president
+  // keeps that identity and gains executive as a supplemental role.
+  await grantRole(uid, 'executive');
   await updateDoc(doc(db, 'users', uid), {
-    role: 'executive',
     member_status: 'approved',
     promoted_at: serverTimestamp(),
     promoted_reason: 'self-promote launch',
@@ -62,15 +66,23 @@ export async function ensureFounderRole(authUserOrProfile) {
     if (!snap.exists()) return authUserOrProfile;
     const data = snap.data();
     const role = (data.role || '').toLowerCase();
+    const extras = Array.isArray(data.roles) ? data.roles.map((r) => (r || '').toLowerCase()) : [];
     const okRoles = new Set(['executive', 'admin', 'super_admin']);
-    if (okRoles.has(role)) return { id: uid, ...data };
+    // Already exec/admin somewhere (primary OR supplemental) — no-op.
+    if (okRoles.has(role) || extras.some((r) => okRoles.has(r))) {
+      return { id: uid, ...data };
+    }
+    // grantRole preserves whatever prior role they had — e.g. a founder
+    // who was also flagged 'chapter_president' keeps that as primary
+    // and gets 'executive' added to roles[].
+    await grantRole(uid, 'executive');
     await updateDoc(ref, {
-      role: 'executive',
       member_status: 'approved',
       promoted_at: serverTimestamp(),
       promoted_reason: 'founder bootstrap',
     });
-    return { id: uid, ...data, role: 'executive', member_status: 'approved' };
+    const fresh = await getDoc(ref);
+    return { id: uid, ...(fresh.exists() ? fresh.data() : { ...data, role: 'executive', member_status: 'approved' }) };
   } catch (e) {
     // Non-fatal — login still works, the user just can't write to
     // protected collections until this resolves. Log so we can debug

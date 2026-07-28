@@ -361,12 +361,18 @@ service cloud.firestore {
     }
 
     // ── admin_invites (website /admin.html) ──
-    // Only super admins create/list/revoke; signup flow needs to read+update
-    // its own doc to consume a one-time code, so we allow read by anyone
-    // who knows the email (codes are still verified server-side via
-    // consumeInviteCode before promotion).
+    // A one-time code lets someone sign up as an admin at /admin.html.
+    // Reads are locked to (a) super-admins managing invites and (b) the
+    // authenticated user whose own email matches the invite doc id —
+    // otherwise the plaintext `code` field is exposed to anyone who
+    // knows or guesses an invited email, which defeats the whole point
+    // of the one-time code. Doc ids are always lowercased before write,
+    // so we lowercase the token email for comparison too.
     match /admin_invites/{email} {
-      allow read: if true;
+      allow read: if isSuperAdmin()
+                  || (request.auth != null
+                      && request.auth.token.email != null
+                      && request.auth.token.email.lower() == email);
       allow write: if isSuperAdmin();
     }
 

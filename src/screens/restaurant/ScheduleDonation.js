@@ -19,6 +19,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
 import { requireVerifiedId } from '../../services/idGate';
+import ContractGate from '../../components/ui/ContractGate';
 import { notify, notifyThen, confirm } from '../../services/ui';
 import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
@@ -229,6 +230,7 @@ export default function ScheduleDonation({ navigation }) {
   }
 
   return (
+    <ContractGate kind="restaurant">
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
        <ResponsiveContainer maxWidth={760}>
@@ -393,6 +395,7 @@ export default function ScheduleDonation({ navigation }) {
        </ResponsiveContainer>
       </Screen>
     </KeyboardAvoidingView>
+    </ContractGate>
   );
 }
 

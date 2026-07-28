@@ -26,6 +26,7 @@ import Screen from '../../components/ui/Screen';
 import {
   fetchChapters, fetchAllChapters, createChapter, updateChapter, deleteChapter,
   fetchAllMembers, fetchEvents, fetchPickups,
+  grantRole, revokeRole,
 } from '../../services/database';
 import { listFridges } from '../../services/fridges';
 import { updateProfile } from '../../services/auth';
@@ -138,15 +139,25 @@ export default function ManageChapters({ navigation }) {
   async function assignOfficer(chapter, person, slotKey) {
     if (!person?.id) return;
     try {
-      // Demote any current holder of this slot.
+      // Demote any current holder of this slot. revokeRole peels the
+      // slot out of whichever field (primary or roles[]) actually holds
+      // it, so an executive who was ALSO chapter president loses only
+      // the president role and keeps executive intact.
       const current = members.find((u) =>
         u.chapter_id === chapter.id
-        && (u.role === slotKey || (slotKey === 'chapter_president' && u.role === 'chapter_pres'))
+        && (
+          u.role === slotKey
+          || (Array.isArray(u.roles) && u.roles.includes(slotKey))
+          || (slotKey === 'chapter_president' && u.role === 'chapter_pres')
+        )
       );
       if (current && current.id !== person.id) {
-        await updateProfile(current.id, { role: 'member' });
+        await revokeRole(current.id, slotKey);
       }
-      await updateProfile(person.id, { role: slotKey });
+      // grantRole preserves the new officer's existing privileges —
+      // if they were an executive, executive stays as primary and
+      // the officer slot becomes a supplemental role.
+      await grantRole(person.id, slotKey);
       load();
       notify('Officer updated', `${person.name || 'Member'} is now ${labelForRole(slotKey)} of ${chapter.name}.`);
     } catch (e) {
@@ -157,7 +168,7 @@ export default function ManageChapters({ navigation }) {
     const slot = (team || []).find((t) => t.role.key === slotKey);
     if (!slot?.person) return;
     try {
-      await updateProfile(slot.person.id, { role: 'member' });
+      await revokeRole(slot.person.id, slotKey);
       load();
       notify('Officer cleared', `${slot.person.name || 'Member'} is no longer ${labelForRole(slotKey)}.`);
     } catch (e) {

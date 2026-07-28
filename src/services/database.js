@@ -16,6 +16,7 @@ import {
   limit as fbLimit,
   serverTimestamp,
   runTransaction,
+  arrayUnion,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { bumpOrgStats } from './orgStats';
@@ -2042,6 +2043,57 @@ export async function updateUserRole(userId, role) {
         restaurant_status: 'approved',
       });
     } catch (e) { console.warn('restaurant promotion sync', e); }
+  }
+}
+
+// Give a user a role while preserving whatever privilege they already
+// had. Every prior elevation path in the app (inviteAdmin, assignOfficer,
+// selfPromoteToExecutive) blindly overwrote the primary `role` field —
+// which silently stripped chapter-president status from execs, member
+// status from newly-minted admins, and so on. Callers should route
+// through here instead: if the current primary is a trivial baseline
+// (empty / member / volunteer) we upgrade the primary in place, and
+// otherwise we add the new role to roles[] as a supplemental so nothing
+// they already had gets lost.
+//
+// Idempotent — safe to call again with the same role.
+const TRIVIAL_PRIMARIES = new Set(['', 'member', 'volunteer']);
+export async function grantRole(userId, newRole) {
+  if (!isFirebaseConfigured || !userId || !newRole) return;
+  const snap = await getDoc(doc(db, 'users', userId));
+  if (!snap.exists()) return;
+  const u = snap.data();
+  const primary = u.role || '';
+  const extras = Array.isArray(u.roles) ? u.roles : [];
+  if (primary === newRole || extras.includes(newRole)) return;
+  if (TRIVIAL_PRIMARIES.has(primary)) {
+    await updateDoc(doc(db, 'users', userId), { role: newRole });
+  } else {
+    await updateDoc(doc(db, 'users', userId), { roles: arrayUnion(newRole) });
+  }
+}
+
+// Revoke a role from wherever it lives — primary or roles[]. If we
+// pull the primary out, promote the first supplemental into the primary
+// slot (or fall back to 'member' when there's nothing left) so the user
+// never ends up with an empty role. Idempotent.
+export async function revokeRole(userId, roleToDrop) {
+  if (!isFirebaseConfigured || !userId || !roleToDrop) return;
+  const snap = await getDoc(doc(db, 'users', userId));
+  if (!snap.exists()) return;
+  const u = snap.data();
+  const primary = u.role || '';
+  const prevExtras = Array.isArray(u.roles) ? u.roles : [];
+  const filteredExtras = prevExtras.filter((r) => r !== roleToDrop);
+  const updates = {};
+  if (primary === roleToDrop) {
+    updates.role = filteredExtras[0] || 'member';
+    updates.roles = filteredExtras.slice(1);
+  } else if (filteredExtras.length !== prevExtras.length) {
+    updates.roles = filteredExtras;
+  }
+  if (Object.keys(updates).length) {
+    await updateDoc(doc(db, 'users', userId), updates);
   }
 }
 

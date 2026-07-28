@@ -30,7 +30,11 @@ export function hasRole(user, target) {
 
 export function isExec(user)      { return hasRole(user, EXEC_ROLES); }
 export function isPresident(user) { return hasRole(user, PRES_ROLES); }
-export function isMember(user)    { return hasRole(user, 'member') || !!user; }
+// Truly holds 'member' as a role — the `|| !!user` fallback was a bug
+// that made this return true for every signed-in user, defeating the
+// point of the check. If you want "is this a signed-in user with any
+// role", check `!!user` directly at the call site instead.
+export function isMember(user)    { return hasRole(user, 'member'); }
 
 // Build the merged role set so UIs that need to display every role
 // can show chips ("Executive", "President", "Member") without

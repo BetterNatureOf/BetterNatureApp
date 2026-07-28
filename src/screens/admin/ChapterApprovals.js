@@ -17,6 +17,7 @@ import {
 import { db } from '../../config/firebase';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import { updateProfile } from '../../services/auth';
+import { resyncAllChapters } from '../../services/chapterDenorm';
 
 export default function ChapterApprovals({ onApproved }) {
   const [apps, setApps] = useState([]);
@@ -93,6 +94,12 @@ export default function ChapterApprovals({ onApproved }) {
       await updateDoc(doc(db, 'chapter_join_requests', req.id), {
         status: 'approved', approved_at: serverTimestamp(),
       });
+      // Denorm resync so the website's public chapter page (which reads
+      // chapters/{id}.member_count / roster / president_name) reflects
+      // the move immediately. Previously this only happened when an
+      // exec had ManageChapters open in another tab — if nobody did,
+      // the chapter's public listing stayed stale indefinitely.
+      try { await resyncAllChapters(); } catch (e) { console.warn('denorm resync', e); }
       await load();
       onApproved && onApproved();
     } catch (e) {
