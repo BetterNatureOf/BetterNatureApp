@@ -26,11 +26,12 @@ export function subscribePasswordRequest(fn) {
   return () => { if (listener === fn) listener = null; };
 }
 function emitPasswordRequest(payload) {
-  if (listener) listener(payload);
-  else {
-    console.warn('[passwordConfirm] No <PasswordConfirmHost /> mounted; falling back to allow');
-    payload.resolve(true);
-  }
+  if (listener) { listener(payload); return; }
+  // Fail closed — never resolve(true) here. If the host isn't mounted
+  // (dev misconfig; can't happen in a shipped build) we deny the
+  // destructive action rather than replicate the old fail-open bug.
+  console.warn('[passwordConfirm] No <PasswordConfirmHost /> mounted; denying request');
+  payload.resolve(false);
 }
 
 async function reauth(password) {
