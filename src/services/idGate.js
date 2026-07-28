@@ -95,7 +95,14 @@ export function requireVerifiedId(user, navigation) {
 // site). Currently unused but exposed so callers can opt out cleanly
 // instead of duplicating the logic.
 export function requireWaiverOnly(user, navigation) {
+  // Multi-role aware — matches requireVerifiedId above. A church with
+  // primary 'member' and supplemental 'partner' must bypass here too,
+  // else refactoring the fallthrough below would silently start
+  // blocking them.
   if (user?.role === 'restaurant' || user?.role === 'partner') return true;
+  if (Array.isArray(user?.roles) && (
+       user.roles.includes('partner') || user.roles.includes('restaurant')
+     )) return true;
   if (!user?.id_document_url) return requireVerifiedId(user, navigation);
   if (user.verification_status && user.verification_status !== 'approved') return requireVerifiedId(user, navigation);
   if (!user?.waiver_signed) return requireVerifiedId(user, navigation);

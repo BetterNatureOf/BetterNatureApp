@@ -143,6 +143,6 @@ export function buildReceiptText(r) {
     ``,
     `No goods or services were provided in exchange for this contribution.`,
     `${ORG_INFO.legalName} is a 501(c)(3) tax-exempt nonprofit.`,
-    ORG_INFO.ein ? `EIN: ${ORG_INFO.ein}` : `EIN: pending IRS determination`,
+    `EIN: ${ORG_INFO.ein}`,
   ].join('\n');
 }
