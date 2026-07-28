@@ -221,6 +221,63 @@ export default function RestDashboard({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* Action-required banner — the highest-urgency thing the
+            restaurant can do is confirm a volunteer who's arrived. If
+            that button is buried three pickup rows down the list,
+            they miss it. Pin the newest awaiting-confirmation pickup
+            up top with an inline Confirm CTA so the moment the
+            volunteer walks in, one tap closes the handoff. */}
+        {(() => {
+          const needsConfirm = pickups.filter(
+            (p) => (p.status === 'claimed' || p.status === 'enroute') && !p.verified_by_restaurant_at
+          );
+          if (needsConfirm.length === 0) return null;
+          const p = needsConfirm[0];
+          const more = needsConfirm.length - 1;
+          return (
+            <View style={styles.attentionBanner}>
+              <View style={styles.attentionHeadRow}>
+                <View style={styles.attentionIcon}>
+                  <Icon name="alert" size={18} color="#8E1B1B" />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.attentionEyebrow}>ACTION REQUIRED</Text>
+                  <Text style={styles.attentionTitle} numberOfLines={2}>
+                    A volunteer claimed your {p.estimated_weight_lbs ? `${p.estimated_weight_lbs}-lb ` : ''}post
+                    {p.claimant_name ? ` — ${p.claimant_name} is on the way` : ''}
+                  </Text>
+                  <Text style={styles.attentionBody}>
+                    Confirm as soon as they arrive so their volunteer hours start counting.
+                    {more > 0 ? ` (${more} more waiting below.)` : ''}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.attentionActions}>
+                <TouchableOpacity
+                  style={styles.attentionPrimaryBtn}
+                  activeOpacity={0.85}
+                  onPress={() => handleConfirmPickup(p)}
+                  disabled={verifyingId === p.id}
+                >
+                  <Text style={styles.attentionPrimaryBtnText}>
+                    {verifyingId === p.id ? 'Confirming…' : 'Confirm pickup happened'}
+                  </Text>
+                </TouchableOpacity>
+                {p.claimant_phone ? (
+                  <TouchableOpacity
+                    style={styles.attentionSecondaryBtn}
+                    activeOpacity={0.85}
+                    onPress={() => Linking.openURL(`tel:${p.claimant_phone}`).catch(() => {})}
+                  >
+                    <Icon name="phone" size={14} color="#8E1B1B" />
+                    <Text style={styles.attentionSecondaryBtnText}>Call volunteer</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          );
+        })()}
+
         {/* Onboarding banner — only shows until restaurant_complete flips */}
         {!profileComplete ? (
           <AnimatedPressable
@@ -423,6 +480,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F4D58A',
   },
+  attentionBanner: {
+    backgroundColor: '#FCE3E3',
+    borderRadius: Radius.lg,
+    padding: 16,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#F5B5B5',
+  },
+  attentionHeadRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  attentionIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: 'rgba(142,27,27,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  attentionEyebrow: {
+    fontSize: 10.5, fontWeight: '800', letterSpacing: 1.4, color: '#8E1B1B',
+  },
+  attentionTitle: { fontWeight: '800', color: '#5B0F0F', fontSize: 15, marginTop: 2, letterSpacing: -0.2 },
+  attentionBody: { ...Type.caption, color: '#8E1B1B', marginTop: 4 },
+  attentionActions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 12 },
+  attentionPrimaryBtn: {
+    backgroundColor: '#8E1B1B',
+    paddingVertical: 12, paddingHorizontal: 18,
+    borderRadius: 10,
+    flexGrow: 1,
+    alignItems: 'center',
+  },
+  attentionPrimaryBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  attentionSecondaryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 12, paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1, borderColor: '#8E1B1B',
+  },
+  attentionSecondaryBtnText: { color: '#8E1B1B', fontWeight: '800', fontSize: 13 },
   bannerIcon: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: 'rgba(122,84,0,0.12)',
