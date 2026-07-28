@@ -51,6 +51,41 @@
     font-size: 15px;
   }
   .description b { display: block; font-size: 18px; margin-bottom: 4px; }
+  .impact-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-60);
+    margin: 24px 0 10px;
+  }
+  .impact-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 0 0 8px;
+  }
+  .impact-tile {
+    background: var(--cream);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 12px;
+    text-align: center;
+  }
+  .impact-tile .n {
+    display: block;
+    font-size: 20px; font-weight: 800; color: var(--forest);
+    letter-spacing: -0.01em;
+  }
+  .impact-tile .l {
+    display: block;
+    font-size: 10.5px; color: var(--ink-60);
+    margin-top: 4px; font-weight: 600; letter-spacing: 0.02em;
+  }
+  .impact-note {
+    font-size: 11px; color: var(--ink-60); font-style: italic;
+    margin: 6px 0 0;
+  }
+  @media (max-width: 520px) {
+    .impact-grid { grid-template-columns: repeat(2, 1fr); }
+  }
   .legal {
     font-size: 12px; color: var(--ink-60); margin-top: 28px; line-height: 1.6;
     border-left: 3px solid var(--pink); padding-left: 14px;
@@ -95,6 +130,25 @@ const db = getFirestore(app);
 const fmtDate = (iso) => iso
   ? new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   : '';
+const fmtN = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
+
+// Multipliers match src/services/orgStats.js — the canonical numbers
+// used everywhere else in the app. Family-days is a display-only
+// derivation (3 meals ≈ one 3-person household fed for a day).
+const MEALS_PER_LB = 1.2;
+const CO2_LB_PER_LB = 3.8;
+const WATER_GAL_PER_LB = 175;
+const MEALS_PER_FAMILY_DAY = 3;
+function impactFromLbs(lbs) {
+  const l = Number(lbs) || 0;
+  const meals = l * MEALS_PER_LB;
+  return {
+    meals: fmtN(meals),
+    familyDays: fmtN(meals / MEALS_PER_FAMILY_DAY),
+    co2: fmtN(l * CO2_LB_PER_LB),
+    water: fmtN(l * WATER_GAL_PER_LB),
+  };
+}
 
 function render(r) {
   const ein = (r.org && r.org.ein) ? r.org.ein : 'pending IRS determination';
@@ -126,6 +180,22 @@ function render(r) {
       <b>${r.weight_lbs} lbs of prepared / perishable food</b>
       Equivalent to approximately ${r.meals_equivalent} meals served.
     </div>
+
+    ${(() => {
+      const i = impactFromLbs(r.weight_lbs);
+      return `
+        <p class="impact-title">Community &amp; environmental impact</p>
+        <div class="impact-grid">
+          <div class="impact-tile"><span class="n">${i.meals}</span><span class="l">Meals</span></div>
+          <div class="impact-tile"><span class="n">${i.familyDays}</span><span class="l">Family-days fed</span></div>
+          <div class="impact-tile"><span class="n">${i.co2}</span><span class="l">Lbs CO₂ avoided</span></div>
+          <div class="impact-tile"><span class="n">${i.water}</span><span class="l">Gal water saved</span></div>
+        </div>
+        <p class="impact-note">
+          Estimates use Feeding America / EPA WARM / Water Footprint Network baselines. Family-day = 3 meals (three-person household).
+        </p>
+      `;
+    })()}
 
     <p class="legal">
       <b>No goods or services were provided in exchange for this contribution.</b><br/>
