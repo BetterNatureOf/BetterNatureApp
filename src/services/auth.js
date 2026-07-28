@@ -24,6 +24,7 @@ export {
   unlinkProvider,
   setPasswordOnCurrentUser,
   addLinkedGoogleEmail,
+  mergeAndLinkGoogleEmail,
   removeLinkedGoogleEmail,
   getLinkedGoogleEmails,
   onAuthStateChange,

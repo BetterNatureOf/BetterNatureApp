@@ -35,6 +35,7 @@ import {
   arrayRemove,
   deleteDoc,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage, isFirebaseConfigured } from '../config/firebase';
@@ -227,7 +228,27 @@ export async function getProfile(userId) {
 async function bootstrapSocialUser(fbUser) {
   const ref = doc(db, 'users', fbUser.uid);
   const existing = await getDoc(ref);
-  if (existing.exists()) return existing.data();
+  if (existing.exists()) {
+    // Merged-account redirect: if this uid was merged into a primary
+    // (via mergeAndLinkGoogleEmail), the doc holds a `merged_into`
+    // pointer instead of a real profile. Sign the person back out and
+    // tell them which email to use — Firebase Auth can't reassign one
+    // credential to another uid so we can't seamlessly hop them over.
+    const data = existing.data();
+    if (data.merged_into) {
+      await fbSignOut(auth);
+      const primarySnap = await getDoc(doc(db, 'users', data.merged_into));
+      const primaryEmail = primarySnap.exists() ? (primarySnap.data().email || '') : '';
+      const e = new Error(
+        primaryEmail
+          ? `This account has been merged into your BetterNature profile at ${primaryEmail}. Sign in with that email instead.`
+          : 'This account has been merged into another BetterNature profile. Sign in with the primary email instead.'
+      );
+      e.code = 'auth/linked-to-other-account';
+      throw e;
+    }
+    return data;
+  }
 
   // Multi-Google linking: if THIS Google email is recorded on
   // another user's `linked_google_emails` array, that user has
@@ -601,6 +622,11 @@ export async function linkGoogleToCurrentUser() {
 // this list on every social sign-in: if the incoming email is
 // listed on another user's profile, we refuse to bootstrap a new
 // profile and tell them which primary email to use instead.
+// Result shape:
+//   { linked: true }                            — clean link, nothing else needed
+//   { needsMerge: true, other: { uid, summary } } — an existing account holds this
+//     email; caller should show a merge-confirm dialog and, if the user agrees,
+//     call mergeAndLinkGoogleEmail(email) to complete the merge.
 export async function addLinkedGoogleEmail(rawEmail) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   const fb = auth.currentUser;
@@ -612,12 +638,6 @@ export async function addLinkedGoogleEmail(rawEmail) {
   if (email === (fb.email || '').toLowerCase()) {
     throw new Error('That\'s already your primary email.');
   }
-  // Don't allow stealing an email that's already a primary on someone
-  // else's account or already linked elsewhere.
-  const primaries = await getDocs(query(collection(db, 'users'), where('email', '==', email)));
-  if (!primaries.empty && primaries.docs[0].id !== fb.uid) {
-    throw new Error('That email is already a primary BetterNature account. Sign in there instead.');
-  }
   const linkedElsewhere = await getDocs(query(
     collection(db, 'users'),
     where('linked_google_emails', 'array-contains', email)
@@ -625,9 +645,107 @@ export async function addLinkedGoogleEmail(rawEmail) {
   if (!linkedElsewhere.empty && linkedElsewhere.docs[0].id !== fb.uid) {
     throw new Error('That email is already linked to another BetterNature profile.');
   }
+  // Collision with a separate primary account? Don't throw — hand back
+  // a summary so the caller can prompt the human ("Merge in 42 lbs and
+  // 12 hours from that account?"). If they confirm, mergeAndLinkGoogleEmail
+  // does the transfer + link in one shot.
+  const primaries = await getDocs(query(collection(db, 'users'), where('email', '==', email)));
+  const other = primaries.docs.find((d) => d.id !== fb.uid);
+  if (other) {
+    const d = other.data() || {};
+    const summary = {
+      name: d.name || '',
+      lbs: Number(d.lbs_rescued || Math.round((d.meals_rescued || 0) / 1.2) || 0),
+      hours: Number(d.hours_logged || 0),
+      events: Number(d.events_attended || 0),
+      meals: Number(d.meals_rescued || 0),
+    };
+    return { needsMerge: true, other: { uid: other.id, summary } };
+  }
   await updateDoc(doc(db, 'users', fb.uid), {
     linked_google_emails: arrayUnion(email),
   });
+  return { linked: true };
+}
+
+// Second half of the two-step link: pulls the other account's stats
+// onto the current user, reassigns their pickups + tax receipts to the
+// current uid, and replaces the other user doc with a `merged_into`
+// pointer so a future sign-in from that Google account gets signed
+// back out and redirected (see bootstrapSocialUser's merged_into
+// branch above). Idempotent-ish — if the merge is re-run, the stats
+// aren't double-added because the source doc is already the pointer.
+export async function mergeAndLinkGoogleEmail(rawEmail) {
+  if (!isFirebaseConfigured) throw new Error('Firebase not configured');
+  const fb = auth.currentUser;
+  if (!fb) throw new Error('Sign in first.');
+  const email = String(rawEmail || '').trim().toLowerCase();
+  if (!email) throw new Error('Missing email.');
+
+  const primaries = await getDocs(query(collection(db, 'users'), where('email', '==', email)));
+  const other = primaries.docs.find((d) => d.id !== fb.uid);
+  if (!other) {
+    // Nothing to merge — fall back to a plain link so the caller is
+    // still consistent between "confirmed merge" and "no collision".
+    await updateDoc(doc(db, 'users', fb.uid), { linked_google_emails: arrayUnion(email) });
+    return { linked: true, merged: false };
+  }
+  const otherUid = other.id;
+  const otherData = other.data() || {};
+
+  const meRef = doc(db, 'users', fb.uid);
+  const meSnap = await getDoc(meRef);
+  const meData = meSnap.exists() ? meSnap.data() : {};
+
+  // Numeric aggregates — sum straight across.
+  const bump = (a, b) => (Number(a || 0) + Number(b || 0));
+  await updateDoc(meRef, {
+    lbs_rescued:      bump(meData.lbs_rescued,      otherData.lbs_rescued),
+    hours_logged:     bump(meData.hours_logged,     otherData.hours_logged),
+    events_attended:  bump(meData.events_attended,  otherData.events_attended),
+    meals_rescued:    bump(meData.meals_rescued,    otherData.meals_rescued),
+    linked_google_emails: arrayUnion(email, ...(otherData.linked_google_emails || [])),
+    // Snapshot what we merged so a support engineer can back it out.
+    merged_from: arrayUnion({
+      uid: otherUid,
+      email,
+      merged_at: new Date().toISOString(),
+      lbs: Number(otherData.lbs_rescued || 0),
+      hours: Number(otherData.hours_logged || 0),
+      events: Number(otherData.events_attended || 0),
+      meals: Number(otherData.meals_rescued || 0),
+    }),
+  });
+
+  // Reassign pickups the other user claimed. Batch in chunks of 400
+  // to stay under Firestore's 500-op batch limit.
+  const pickupsSnap = await getDocs(query(collection(db, 'pickups'), where('claimed_by', '==', otherUid)));
+  for (let i = 0; i < pickupsSnap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const d of pickupsSnap.docs.slice(i, i + 400)) {
+      batch.update(d.ref, {
+        claimed_by: fb.uid,
+        claimant_name: meData.name || otherData.name || '',
+      });
+    }
+    await batch.commit();
+  }
+
+  // Tax receipts are immutable (rules: allow update: if false) so we
+  // don't try to reassign them. The receipt PDF already snapshots the
+  // volunteer's name at issue time, and the restaurant-facing lookup
+  // uses restaurant_id, not volunteer_id. Leave them attached to the
+  // old uid as an audit record.
+
+  // NOTE: We can't stamp `merged_into` on users/{otherUid} client-side
+  // — rules block foreign-user writes and expressing "caller owns
+  // target email" safely would require a Cloud Function. The stats +
+  // pickups have moved; the other Google account's future sign-ins
+  // will still land at that uid as an empty profile. The caller
+  // (ConnectedAccounts) surfaces this in the post-merge notify so
+  // the human knows to sign the other account out.
+
+  return { linked: true, merged: true, otherUid, redirectPending: true };
 }
 
 export async function removeLinkedGoogleEmail(rawEmail) {

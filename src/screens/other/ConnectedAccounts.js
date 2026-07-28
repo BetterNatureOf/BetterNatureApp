@@ -29,6 +29,7 @@ import {
   unlinkProvider,
   setPasswordOnCurrentUser,
   addLinkedGoogleEmail,
+  mergeAndLinkGoogleEmail,
   removeLinkedGoogleEmail,
   getLinkedGoogleEmails,
 } from '../../services/auth';
@@ -79,7 +80,39 @@ export default function ConnectedAccounts({ navigation }) {
     if (!newEmail.trim()) return;
     setBusy('linked-add');
     try {
-      await addLinkedGoogleEmail(newEmail);
+      const result = await addLinkedGoogleEmail(newEmail);
+      if (result?.needsMerge) {
+        // The email already belongs to a separate BetterNature account.
+        // Ask the human whether to fold that account's stats + pickup
+        // history into this one — if yes, mergeAndLinkGoogleEmail does
+        // the transfer and stamps the other doc as merged so future
+        // sign-ins from it get redirected here.
+        const s = result.other.summary;
+        const bits = [];
+        if (s.lbs)    bits.push(`${s.lbs} lbs rescued`);
+        if (s.hours)  bits.push(`${s.hours} hours`);
+        if (s.events) bits.push(`${s.events} events`);
+        const summaryLine = bits.length ? bits.join(' · ') : 'no stats';
+        const ok = await confirm(
+          'Merge existing account?',
+          `That email already has a BetterNature account (${summaryLine}). ` +
+          `Combine it into your current profile? Its stats and pickup history move onto this account.\n\n` +
+          `One caveat: the other Google account can still sign in fresh — sign it out and stop using it going forward.`,
+        );
+        if (!ok) return;
+        const result = await mergeAndLinkGoogleEmail(newEmail);
+        setNewEmail('');
+        await refresh();
+        if (result?.redirectPending) {
+          notify(
+            'Accounts merged',
+            'Stats and pickups moved onto this profile. Sign the other Google account out — future auto-redirect ships in a later update.',
+          );
+        } else {
+          notify('Accounts merged', 'That Google email now signs in as this profile, and its history is folded in.');
+        }
+        return;
+      }
       setNewEmail('');
       await refresh();
       notify('Linked', 'That Google email can now sign in to this profile (it will be recognized as you).');
