@@ -2110,12 +2110,41 @@ export async function updateUserChapter(userId, chapterId) {
   await updateDoc(doc(db, 'users', userId), { chapter_id: chapterId });
 }
 
+// Soft-delete a user. The Firebase client SDK can't delete another
+// user's Auth account (only Admin SDK can), so a hard-delete of just
+// the users/{uid} doc would let the "removed" person sign right back
+// in with a bare {id,email} profile and land on the volunteer app as
+// an unreviewed member — the approval-gate bypass for missing
+// member_status let them straight through.
+//
+// Instead we stamp disabled:true + demote them to a locked-out role
+// so every gate treats them as rejected. Reversible from Manage
+// Members if the removal was a mistake.
 export async function removeUser(userId) {
   if (useMock()) {
     const idx = mockMembers.findIndex((u) => u.id === userId);
     if (idx >= 0) mockMembers.splice(idx, 1);
     return;
   }
-  // Profile only — auth deletion needs admin SDK / Firebase console.
-  await deleteDoc(doc(db, 'users', userId));
+  await updateDoc(doc(db, 'users', userId), {
+    disabled: true,
+    disabled_at: serverTimestamp(),
+    member_status: 'rejected',
+    // Peel off elevated privileges so a re-enable doesn't accidentally
+    // restore admin/exec access without a fresh promotion.
+    role: 'member',
+    roles: [],
+  });
+}
+
+// Reverse a soft-delete. Clears the disabled flag; leaves member_status
+// at 'pending' so the exec has to explicitly re-approve them, which is
+// the safer default than auto-restoring approval.
+export async function restoreUser(userId) {
+  if (useMock()) return;
+  await updateDoc(doc(db, 'users', userId), {
+    disabled: false,
+    disabled_at: null,
+    member_status: 'pending',
+  });
 }

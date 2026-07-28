@@ -36,6 +36,11 @@ const ELEVATED_ROLES = [
 
 function shouldBypass(user) {
   if (!user) return true; // not signed in — let auth navigator handle
+  // Soft-deleted accounts never bypass — an exec explicitly disabled
+  // them. Without this check they'd sneak past via the legacy
+  // member_status == null branch below (which was itself a workaround
+  // for grandfathering pre-gate accounts).
+  if (user.disabled === true) return false;
   if (hasRole(user, ELEVATED_ROLES)) return true;
   // Legacy accounts (created before the gate) have no member_status.
   // Treat the absence of the field as 'approved' so we don't lock
@@ -56,10 +61,12 @@ export default function MemberApprovalGate({ children }) {
     setChecking(true);
     try {
       const snap = await getDoc(doc(db, 'users', user.id));
-      const next = snap.exists() ? (snap.data().member_status ?? 'approved') : 'approved';
+      const data = snap.exists() ? snap.data() : {};
+      const next = data.member_status ?? 'approved';
       setStatus(next);
-      if (next !== user.member_status) {
-        setUser({ ...user, member_status: next });
+      const disabled = data.disabled === true;
+      if (next !== user.member_status || disabled !== !!user.disabled) {
+        setUser({ ...user, member_status: next, disabled });
       }
     } catch {}
     setChecking(false);
@@ -81,17 +88,22 @@ export default function MemberApprovalGate({ children }) {
   }
 
   const rejected = status === 'rejected';
+  const disabled = user?.disabled === true;
 
   return (
     <View style={styles.container}>
       <View style={styles.card}>
         <BrushText variant="screenTitle" style={styles.title}>
-          {rejected ? 'Application not accepted' : 'Application pending'}
+          {disabled
+            ? 'Account disabled'
+            : rejected ? 'Application not accepted' : 'Application pending'}
         </BrushText>
         <Text style={styles.body}>
-          {rejected
-            ? 'A BetterNature executive reviewed your application and was unable to approve it at this time. Email info@betternatureofficial.org if you believe this is a mistake.'
-            : "Thanks for joining BetterNature! An executive will review your application. Your dashboard will unlock automatically the moment you're approved."}
+          {disabled
+            ? 'This BetterNature account has been disabled by an executive. Email info@betternatureofficial.org if you believe this is a mistake.'
+            : rejected
+              ? 'A BetterNature executive reviewed your application and was unable to approve it at this time. Email info@betternatureofficial.org if you believe this is a mistake.'
+              : "Thanks for joining BetterNature! An executive will review your application. Your dashboard will unlock automatically the moment you're approved."}
         </Text>
 
         <View style={styles.statusRow}>
@@ -101,7 +113,7 @@ export default function MemberApprovalGate({ children }) {
           </Text>
         </View>
 
-        {!rejected && (
+        {!rejected && !disabled && (
           <Button title="Check again" onPress={refresh} loading={checking} style={{ marginTop: 18 }} />
         )}
         <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>

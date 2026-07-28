@@ -76,7 +76,7 @@ service cloud.firestore {
     }
     function touchesPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['role','roles','member_status','verification_status','restaurant_status']);
+        .hasAny(['role','roles','member_status','verification_status','restaurant_status','disabled','disabled_at']);
     }
     match /users/{uid} {
       allow read: if isSignedIn();

@@ -12,6 +12,7 @@ import {
   updateUserRole,
   updateUserChapter,
   removeUser,
+  restoreUser,
 } from '../../services/database';
 import { updateProfile } from '../../services/auth';
 import Screen from '../../components/ui/Screen';
@@ -241,20 +242,42 @@ export default function ManageMembers({ navigation, route }) {
   }
 
   function handleRemove(member) {
+    // Toggle instead of terminal delete — removeUser is now a soft
+    // disable (client SDK can't delete Auth accounts, so hard-deleting
+    // the user doc would let them sign right back in as a bare
+    // profile). Executives that want a real hard delete still need to
+    // do it from the Firebase console.
+    if (member.disabled) {
+      Alert.alert(
+        'Restore member?',
+        `Bring ${member.name || 'this member'} back? They'll land in the pending queue for you to re-approve.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Restore',
+            onPress: async () => {
+              try { await restoreUser(member.id); load(); }
+              catch (e) { Alert.alert('Error', e?.message || 'Failed to restore'); }
+            },
+          },
+        ],
+      );
+      return;
+    }
     Alert.alert(
-      'Remove Member',
-      `Remove ${member.name} from the organization? This cannot be undone.`,
+      'Disable member?',
+      `${member.name || 'This member'} will lose access to the app. Their pickups and receipts stay for the record, and you can restore access anytime from this same button.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Remove',
+          text: 'Disable',
           style: 'destructive',
           onPress: async () => {
             try {
               await removeUser(member.id);
               load();
             } catch (e) {
-              Alert.alert('Error', e?.message || 'Failed to remove');
+              Alert.alert('Error', e?.message || 'Failed to disable');
             }
           },
         },
