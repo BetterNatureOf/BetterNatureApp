@@ -866,18 +866,22 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
   });
   // Ping the volunteer that the restaurant confirmed pickup. Gives
   // them a visible "half-way" milestone — the restaurant has signed
-  // off, all that's left is the drop.
+  // off, all that's left is the drop. Route through enqueueNotification
+  // (not a raw addDoc) so push + email also fire — the volunteer might
+  // have already left the restaurant lot and be back in their car with
+  // the app closed.
   try {
     const snap = await getDoc(ref);
     const pk = snap.exists() ? snap.data() : null;
     if (pk?.claimed_by) {
-      await addDoc(collection(db, 'notifications'), {
-        user_id: pk.claimed_by,
+      const { enqueueNotification } = await import('./notify');
+      await enqueueNotification({
+        recipients: [pk.claimed_by],
+        kind: 'pickup',
         title: 'Pickup confirmed by restaurant',
         body: `${pk.restaurant_name || 'The restaurant'} just confirmed you picked up the food. Drop it off to finish the run.`,
+        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
         data: { type: 'pickup_verified', pickupId },
-        read: false,
-        created_at: serverTimestamp(),
       });
     }
   } catch (e) { console.warn('verify notify volunteer', e); }
