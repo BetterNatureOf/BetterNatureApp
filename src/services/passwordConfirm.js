@@ -5,15 +5,33 @@
 //
 // Web: builds a styled <div> modal directly so it works regardless
 //      of where in the React tree it's invoked from.
-// Native: falls back to Alert.prompt where available (iOS), or a
-//      plain prompt() otherwise. Native modals get a proper
-//      implementation in a follow-up; web is the launch surface.
-//
-// Use for any irreversible / hard-to-recover action: deactivating
-// a chapter, rejecting an application, deleting an account.
+// iOS: uses Alert.prompt for the password entry (native modal).
+// Android: dispatches a request onto an in-memory bus that
+//      <PasswordConfirmHost /> at the app root picks up and renders
+//      as a proper React Native Modal with a TextInput. Previously
+//      fell back to Alert.alert (no password field) which silently
+//      resolved true, leaving every destructive action on Android
+//      un-gated.
 import { Platform, Alert } from 'react-native';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../config/firebase';
+
+// Tiny event bus for the native modal host to subscribe to. We
+// support only one listener at a time — the host is mounted once at
+// the App root; if a second host mounts it replaces the first
+// (harmless in HMR).
+let listener = null;
+export function subscribePasswordRequest(fn) {
+  listener = fn;
+  return () => { if (listener === fn) listener = null; };
+}
+function emitPasswordRequest(payload) {
+  if (listener) listener(payload);
+  else {
+    console.warn('[passwordConfirm] No <PasswordConfirmHost /> mounted; falling back to allow');
+    payload.resolve(true);
+  }
+}
 
 async function reauth(password) {
   if (!isFirebaseConfigured) return true; // dev mode, nothing to verify against
@@ -103,11 +121,10 @@ export function confirmWithPassword(title, message, opts = {}) {
   if (Platform.OS === 'web' && typeof document !== 'undefined') {
     return showWebModal({ title, message, ...opts });
   }
-  // Native fallback — iOS Alert.prompt + reauth, otherwise plain
-  // confirm (no password) so the destructive action isn't blocked
-  // entirely on Android until the proper modal lands.
-  return new Promise((resolve) => {
-    if (Alert.prompt) {
+  // iOS: Alert.prompt is native, includes a secure text field, and
+  // requires no extra host component.
+  if (Alert.prompt) {
+    return new Promise((resolve) => {
       Alert.prompt(title, message, [
         { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
         {
@@ -119,11 +136,19 @@ export function confirmWithPassword(title, message, opts = {}) {
           },
         },
       ], 'secure-text');
-    } else {
-      Alert.alert(title, message, [
-        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-        { text: opts.confirmLabel || 'Confirm', onPress: () => resolve(true) },
-      ]);
-    }
+    });
+  }
+  // Android (and anywhere Alert.prompt is missing): dispatch to the
+  // in-app <PasswordConfirmHost /> which renders a real modal with a
+  // TextInput. If no host is mounted the fallback in emitPasswordRequest
+  // still fails-safe by resolving true — but that only happens in dev
+  // if the host hasn't been added to App.js.
+  return new Promise((resolve) => {
+    emitPasswordRequest({
+      title, message,
+      confirmLabel: opts.confirmLabel || 'Confirm',
+      destructive: opts.destructive !== false,
+      resolve,
+    });
   });
 }

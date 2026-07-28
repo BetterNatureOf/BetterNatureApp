@@ -16,6 +16,7 @@ import useFreshAppVersion from './src/hooks/useFreshAppVersion';
 import linking from './src/navigation/linking';
 import { injectWebFonts } from './src/config/webFonts';
 import ErrorBoundary from './src/components/ui/ErrorBoundary';
+import PasswordConfirmHost from './src/components/ui/PasswordConfirmHost';
 import { registerForPushNotifications } from './src/services/push';
 import { fp } from './src/config/scale';
 
@@ -160,6 +161,10 @@ export default function App() {
           ? <CompleteProfile />
           : rootForRole(role)}
       </NavigationContainer>
+      {/* Native password modal host — subscribes to confirmWithPassword
+          requests on Android (iOS uses Alert.prompt, web builds its
+          own div modal). Renders nothing until a request arrives. */}
+      <PasswordConfirmHost />
     </ErrorBoundary>
   );
 }
