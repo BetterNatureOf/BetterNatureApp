@@ -14,6 +14,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import useAuthStore from '../../store/authStore';
 import { createPickup, ensureMyPartnerRecord } from '../../services/database';
+import { mealsFromLbs, co2FromLbs, humanImpactPhrase } from '../../services/impact';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
@@ -292,9 +293,14 @@ export default function ScheduleDonation({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={styles.preview}>
-          ≈ {Math.round(weight * 1.2)} meals · {Math.round(weight * 3.8)} lbs CO₂ avoided
-        </Text>
+        <View style={styles.impactBox}>
+          <Text style={styles.impactHead}>
+            ≈ {mealsFromLbs(weight).toLocaleString('en-US')} meals · {co2FromLbs(weight).toLocaleString('en-US')} lbs CO₂ avoided
+          </Text>
+          {humanImpactPhrase(weight) ? (
+            <Text style={styles.impactSub}>{humanImpactPhrase(weight)}</Text>
+          ) : null}
+        </View>
 
         {/* Pickup timing — mutually exclusive modes */}
         <Text style={styles.sectionLabel}>When can volunteers pick this up?</Text>
@@ -460,6 +466,16 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 15, fontWeight: '600', color: Colors.dark },
   chipTextOn: { color: Colors.white },
   preview: { ...Type.caption, marginTop: 10, color: Colors.gray },
+  impactBox: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: Colors.greenLight,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(27,94,63,0.14)',
+  },
+  impactHead: { fontSize: 13, fontWeight: '800', color: '#1B5E3F', letterSpacing: 0.2 },
+  impactSub: { fontSize: 12, fontWeight: '600', color: '#1B5E3F', marginTop: 4, opacity: 0.85 },
 
   submit: { marginTop: 24 },
   uploadingHint: {

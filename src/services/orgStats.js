@@ -11,6 +11,14 @@
 //   1 lb of food rescued      → 1.2 meal kits
 //   1 lb of food rescued      → 3.8 lbs CO₂ avoided
 //   1 lb of food rescued      → 175 gallons water footprint saved
+//
+// These are the canonical numbers — any presentation layer that
+// converts pounds into other units (impact.js, receipts, hero
+// tiles) must import from here so we never drift.
+export const MEALS_PER_LB = 1.2;
+export const CO2_LB_PER_LB = 3.8;
+export const WATER_GAL_PER_LB = 175;
+
 import {
   doc,
   getDoc,
@@ -76,9 +84,9 @@ export async function bumpOrgStats({
 
   if (lbs) {
     updates.lbs = increment(lbs);
-    if (meals === undefined) updates.meals = increment(Math.round(lbs * 1.2));
-    if (co2 === undefined) updates.co2 = increment(Math.round(lbs * 3.8));
-    if (water === undefined) updates.water = increment(Math.round(lbs * 175));
+    if (meals === undefined) updates.meals = increment(Math.round(lbs * MEALS_PER_LB));
+    if (co2 === undefined) updates.co2 = increment(Math.round(lbs * CO2_LB_PER_LB));
+    if (water === undefined) updates.water = increment(Math.round(lbs * WATER_GAL_PER_LB));
   }
   if (meals !== undefined && lbs === undefined) updates.meals = increment(meals);
   if (co2 !== undefined && lbs === undefined) updates.co2 = increment(co2);
