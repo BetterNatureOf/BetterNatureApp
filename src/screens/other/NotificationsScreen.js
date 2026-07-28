@@ -9,8 +9,9 @@
 //
 // The URL format is
 //   https://app.betternatureofficial.org/#/pickups/{id}   (canonical)
-//   https://app.betternatureofficial.org/#/pickup/{id}    (legacy singular; still emitted)
-// We accept both for backward compatibility.
+//   https://app.betternatureofficial.org/#/pickup/{id}    (legacy singular from
+//     notifications persisted before the emitter was aligned)
+// We accept both — the singular is only kept for old rows in Firestore.
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';

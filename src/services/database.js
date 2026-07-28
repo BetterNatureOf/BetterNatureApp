@@ -502,7 +502,7 @@ export async function createPickup(pickup) {
         kind: 'pickup',
         title: 'New pickup available!',
         body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
-        url: `https://app.betternatureofficial.org/#/pickup/${ref.id}`,
+        url: `https://app.betternatureofficial.org/#/pickups/${ref.id}`,
         data: { type: 'new_pickup', pickupId: ref.id },
         skipInApp: false,
       });
@@ -695,7 +695,7 @@ export async function claimPickup(pickupId, userId) {
       kind: 'pickup',
       title: 'You claimed a pickup',
       body: `Pickup at ${pk.restaurant_name || 'the restaurant'}. Address: ${pk.restaurant_address || 'see app'}. Open the app for the route.`,
-      url: `https://app.betternatureofficial.org/#/pickup/${pickupId}`,
+      url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
       data: { type: 'pickup_claimed', pickupId },
     });
   } catch (e) { console.warn('claim notify', e); }
