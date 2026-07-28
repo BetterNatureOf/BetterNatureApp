@@ -169,6 +169,22 @@ export default function ChapterApprovals({ onApproved }) {
       await updateDoc(doc(db, 'chapter_join_requests', req.id), {
         status: 'approved', approved_at: serverTimestamp(),
       });
+      // Tell the requester their move went through — otherwise they'd
+      // sit on their old chapter's dashboard until they notice things
+      // have shifted.
+      if (req.user_id) {
+        try {
+          await enqueueNotification({
+            recipients: [req.user_id],
+            kind: 'chapter',
+            title: `Welcome to ${req.to_chapter_name || 'your new chapter'}`,
+            body:
+              `Your chapter switch was approved. You now see pickups and events for ${req.to_chapter_name || 'this chapter'}.`,
+            url: 'https://app.betternatureofficial.org/#/home',
+            data: { type: 'chapter_join_approved', chapterId: req.to_chapter_id },
+          });
+        } catch (e) { console.warn('join notify failed', e); }
+      }
       // Denorm resync so the website's public chapter page (which reads
       // chapters/{id}.member_count / roster / president_name) reflects
       // the move immediately. Previously this only happened when an
@@ -193,6 +209,19 @@ export default function ChapterApprovals({ onApproved }) {
       await updateDoc(doc(db, 'chapter_join_requests', req.id), {
         status: 'denied', denied_at: serverTimestamp(),
       });
+      if (req.user_id) {
+        try {
+          await enqueueNotification({
+            recipients: [req.user_id],
+            kind: 'chapter',
+            title: 'Chapter switch update',
+            body:
+              `Your request to switch to ${req.to_chapter_name || 'a different chapter'} wasn't approved. ` +
+              `You're still with your current chapter — email info@betternatureofficial.org if you'd like to talk through it.`,
+            data: { type: 'chapter_join_denied' },
+          });
+        } catch (e) { console.warn('join deny notify failed', e); }
+      }
       await load();
     } catch (e) {
       Alert.alert('Could not deny', e.message || 'Try again.');
