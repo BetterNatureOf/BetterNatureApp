@@ -132,3 +132,15 @@ export function possessiveFor(user) {
   const key = user?.partner_type || user?.restaurant_type;
   return `your ${partnerTypeFor(key).possessive}`;
 }
+
+// Partner types whose people are almost always also volunteers in the
+// community sense — a church congregation, a garden's members, a
+// school's students. Signing up as one of these grants a dual-role
+// account (primary 'restaurant' for the partner portal AND supplemental
+// 'member' + 'partner' so the volunteer app + Post-surplus tools both
+// work). Pure businesses (a for-profit restaurant, a hotel, a
+// corporate kitchen) get partner-only access.
+const DUAL_ROLE_KEYS = new Set(['church', 'community_garden', 'school', 'food_bank', 'other']);
+export function isDualRolePartnerType(key) {
+  return DUAL_ROLE_KEYS.has(key);
+}

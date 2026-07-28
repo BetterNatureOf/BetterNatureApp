@@ -18,7 +18,7 @@ import { signUp, updateProfile } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
 import useAuthStore, { ROLES } from '../../store/authStore';
 import Screen from '../../components/ui/Screen';
-import { PARTNER_TYPES } from '../../config/partnerTypes';
+import { PARTNER_TYPES, isDualRolePartnerType } from '../../config/partnerTypes';
 
 export default function RestaurantSignup({ navigation }) {
   const setUser = useAuthStore((s) => s.setUser);
@@ -106,14 +106,26 @@ export default function RestaurantSignup({ navigation }) {
       // 3) Mirror restaurant_id + restaurant_status + chapter_id on
       //    the user doc so the dashboard gate + ScheduleDonation
       //    flow can read them on login without a join.
+      //
+      //    For partner types that are almost always also volunteers
+      //    in the community sense (churches, gardens, schools, food
+      //    banks, other), also stamp roles:['member','partner'] so
+      //    the account can toggle between the volunteer view and the
+      //    donor portal without an exec having to manually promote
+      //    them via ManageMembers first. Pure businesses (a for-profit
+      //    restaurant, a hotel, a corporate kitchen) get partner-only.
       if (uid) {
         try {
+          const supplementalRoles = isDualRolePartnerType(form.partner_type)
+            ? ['member', 'partner']
+            : [];
           await updateProfile(uid, {
             restaurant_id: created?.id || null,
             restaurant_status: 'pending',
             chapter_id: form.chapter_id,
             chapter_name: chosen?.name || '',
             partner_type: form.partner_type,
+            ...(supplementalRoles.length ? { roles: supplementalRoles } : {}),
           });
         } catch {}
       }

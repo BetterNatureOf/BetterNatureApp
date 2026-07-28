@@ -209,7 +209,17 @@ export async function getProfile(userId) {
   const snap = await getDoc(doc(db, 'users', userId));
   if (!snap.exists()) return null;
   const data = snap.data();
-  return { id: snap.id, ...data, role: normalizeRole(data.role) };
+  const normalized = normalizeRole(data.role);
+  // Persist the normalized role back onto the doc if it drifted (e.g.
+  // a website signup wrote role:'volunteer' / 'partner'). Without this
+  // writeback, admin lists render the raw label ('volunteer' with no
+  // ROLE_OPTIONS chip highlight) and no exec can fix it via the UI.
+  // Non-fatal — if the update fails (offline, rule denial for a
+  // non-self read) we still return the normalized value in memory.
+  if (data.role && data.role !== normalized) {
+    try { await updateDoc(doc(db, 'users', userId), { role: normalized }); } catch {}
+  }
+  return { id: snap.id, ...data, role: normalized };
 }
 
 // Bootstraps a users/{uid} doc the first time a social sign-in lands.
