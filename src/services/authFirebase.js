@@ -119,7 +119,7 @@ export async function emailAlreadyRegistered(email) {
   }
 }
 
-export async function signUp({ email, password, name, phone, city, state, country, zip, role, referralCode }) {
+export async function signUp({ email, password, name, phone, city, state, country, zip, role, referralCode, dob, age_band, guardian_required }) {
   if (!isFirebaseConfigured) {
     const user = makeMockUser({ email, name, phone, city, zip, role });
     return { user, session: { user } };
@@ -167,6 +167,14 @@ export async function signUp({ email, password, name, phone, city, state, countr
     referral_code: generateReferralCode(),
     referrals_count: 0,
     referred_by: null,
+    // Blueprint §26.4 — age band + guardian consent state. dob is
+    // authoritative; age_band is a derived shortcut so queries + rules
+    // don't recompute on every read. guardian_required drives the
+    // pending guardian-consent step (Phase 2 flow).
+    dob: dob || null,
+    age_band: age_band || 'unknown',
+    guardian_required: !!guardian_required,
+    guardian_consent_status: guardian_required ? 'pending' : 'not_required',
     created_at: serverTimestamp(),
   };
   // Stamp the normalized phone alongside the raw value so the duplicate

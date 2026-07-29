@@ -2105,6 +2105,22 @@ export async function grantRole(userId, newRole) {
   } else {
     await updateDoc(doc(db, 'users', userId), { roles: arrayUnion(newRole) });
   }
+  // ── Dual-write ────────────────────────────────────────────────
+  // Legacy user.role / user.roles[] stays authoritative for readers
+  // through slice 3. This shadow write creates a first-class
+  // RoleAssignment row so slice 3's cutover can flip readers over
+  // without another migration. Best-effort — a rules failure here
+  // doesn't break the primary write above.
+  try {
+    const { upsertRoleAssignment, defaultScopeFor } = await import('./roleAssignments');
+    const scope = defaultScopeFor(newRole, { chapterId: u.chapter_id });
+    await upsertRoleAssignment({
+      user_id: userId,
+      role_key: newRole,
+      scope_id: scope,
+      chapter_name: u.chapter?.name || u.chapter_name || '',
+    });
+  } catch (e) { console.warn('grantRole shadow-write', e?.message); }
 }
 
 // Revoke a role from wherever it lives — primary or roles[]. If we
@@ -2129,6 +2145,15 @@ export async function revokeRole(userId, roleToDrop) {
   if (Object.keys(updates).length) {
     await updateDoc(doc(db, 'users', userId), updates);
   }
+  // ── Dual-write ────────────────────────────────────────────────
+  // End the RoleAssignment for the revoked role in the user's current
+  // scope. If the role was scoped nationally (exec/admin), end the
+  // national one; otherwise end the chapter-scoped one.
+  try {
+    const { endRoleAssignment, defaultScopeFor } = await import('./roleAssignments');
+    const scope = defaultScopeFor(roleToDrop, { chapterId: u.chapter_id });
+    await endRoleAssignment({ user_id: userId, role_key: roleToDrop, scope_id: scope, reason: 'revoked' });
+  } catch (e) { console.warn('revokeRole shadow-write', e?.message); }
 }
 
 export async function updateUserChapter(userId, chapterId) {
@@ -2141,7 +2166,27 @@ export async function updateUserChapter(userId, chapterId) {
     }
     return;
   }
+  // Snapshot the prior chapter so the dual-write can end the old
+  // membership before opening the new one. Non-fatal if we can't.
+  let priorChapterId = null;
+  try {
+    const snap = await getDoc(doc(db, 'users', userId));
+    priorChapterId = snap.exists() ? (snap.data().chapter_id || null) : null;
+  } catch {}
   await updateDoc(doc(db, 'users', userId), { chapter_id: chapterId });
+  // ── Dual-write ────────────────────────────────────────────────
+  // End the prior Membership (if the user is moving chapters) and
+  // upsert the new one. Chapter name is best-effort — the OrgUnit
+  // ensured inside upsertMembership carries the authoritative name.
+  try {
+    const { upsertMembership, endMembership } = await import('./memberships');
+    if (priorChapterId && priorChapterId !== chapterId) {
+      await endMembership({ user_id: userId, org_unit_id: priorChapterId });
+    }
+    if (chapterId) {
+      await upsertMembership({ user_id: userId, org_unit_id: chapterId });
+    }
+  } catch (e) { console.warn('updateUserChapter shadow-write', e?.message); }
 }
 
 // Soft-delete a user. The Firebase client SDK can't delete another

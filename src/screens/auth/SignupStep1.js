@@ -18,6 +18,8 @@ import { phoneAlreadyRegistered } from '../../services/duplicates';
 import { notify } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 import CityStateAutocomplete from '../../components/ui/CityStateAutocomplete';
+import DatePicker from '../../components/ui/DatePicker';
+import { validateDob, dobToIso, ageBandFor, guardianRequired } from '../../services/ageBands';
 
 export default function SignupStep1({ navigation }) {
   const [checking, setChecking] = useState(false);
@@ -25,6 +27,7 @@ export default function SignupStep1({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [dob, setDob] = useState(null); // JS Date instance from DatePicker
   const [scope, setScope] = useState('national'); // 'national' | 'international'
   const [city, setCity] = useState('');
   const [state, setStateVal] = useState('');
@@ -51,6 +54,11 @@ export default function SignupStep1({ navigation }) {
     const digits = (phone || '').replace(/\D/g, '');
     if (!phone.trim()) e.phone = 'Phone is required';
     else if (digits.length < 7) e.phone = 'Enter a valid phone number';
+    // DOB — required for age-band derivation. Blueprint §26.4 requires
+    // guardian consent for under-18 accounts, so we can't route the
+    // signup correctly without knowing age.
+    const dobCheck = validateDob(dob);
+    if (!dobCheck.ok) e.dob = dobCheck.reason;
     if (!city.trim()) e.city = 'City is required';
     if (scope === 'national' && !state.trim()) e.state = 'State is required';
     setErrors(e);
@@ -103,7 +111,16 @@ export default function SignupStep1({ navigation }) {
       setChecking(false);
     }
     setBanner(null);
-    navigation.navigate('SignupStep2', { name, email, password, phone, city, state, country, zip });
+    // dob → ISO string + derived age_band so SignupStep3 and signUp()
+    // can persist both without recomputing. guardian_required drives
+    // the pending guardian-consent step (Phase 2 scope).
+    const payload = {
+      name, email, password, phone, city, state, country, zip,
+      dob: dobToIso(dob),
+      age_band: ageBandFor(dob),
+      guardian_required: guardianRequired(dob),
+    };
+    navigation.navigate('SignupStep2', payload);
   }
 
   return (
@@ -158,6 +175,22 @@ export default function SignupStep1({ navigation }) {
           error={errors.phone}
           keyboardType="phone-pad"
         />
+
+        {/* Date of birth — required so we can route under-18 signups
+            through guardian consent. Derived age_band goes to signup
+            payload; the DOB itself is stored on the user doc. */}
+        <Text style={styles.label}>Date of birth *</Text>
+        <DatePicker
+          value={dob}
+          onChange={setDob}
+          placeholder="MM / DD / YYYY"
+        />
+        {errors.dob ? <Text style={styles.dobError}>{errors.dob}</Text> : null}
+        {dob && guardianRequired(dob) ? (
+          <Text style={styles.dobHint}>
+            You're under 18 — a parent or guardian will be asked to co-sign your account after signup.
+          </Text>
+        ) : null}
 
         {/* National / International toggle. National constrains the
             city autocomplete to the US and shows the State + ZIP
@@ -266,6 +299,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 12 },
   halfInput: { flex: 1 },
   label: { ...Type.label, color: Colors.dark, marginBottom: 6, marginTop: 4 },
+  dobError: { color: '#B91C3D', fontSize: 12.5, marginTop: 6, fontWeight: '600' },
+  dobHint: { color: Colors.gray, fontSize: 12.5, marginTop: 6, lineHeight: 18, fontStyle: 'italic' },
   scopeRow: { flexDirection: 'row', gap: 8, marginBottom: 14, backgroundColor: '#F7F5EF', padding: 4, borderRadius: 999 },
   scopeChip: { flex: 1, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999, alignItems: 'center' },
   scopeChipActive: { backgroundColor: Colors.white, shadowColor: '#000', shadowOpacity: 0.06, shadowOffset: { width: 0, height: 1 }, shadowRadius: 3, elevation: 2 },

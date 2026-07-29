@@ -391,6 +391,51 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── org_units (Phase 1 slice 2 — dual-write shadow index) ──
+    // Chapters + partners write shadow OrgUnit rows here so scope-
+    // aware permissions have a single referent. Reads open (public
+    // chapter directory reads through this eventually). Writes gated
+    // to the same principals that can already touch the underlying
+    // chapter/partner: exec/admin OR the signed-in user creating a
+    // partner OrgUnit for their own restaurant/church.
+    match /org_units/{unit_id} {
+      allow read: if true;
+      allow create, update: if isExec()
+        || (isSignedIn() && request.resource.data.type == 'chapter')
+        || (isSignedIn() && request.resource.data.type == 'partner');
+      allow delete: if isAdmin();
+    }
+
+    // ── memberships (Phase 1 slice 2) ──
+    // A row per (user × org_unit). Owner can read + create/update
+    // their own row (matches how updateUserChapter dual-writes from
+    // the signed-in user's session). Exec can touch any row for
+    // admin ops. Nobody deletes — historical record per blueprint §1.
+    match /memberships/{id} {
+      allow read: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if isExec()
+        || (isSignedIn() && request.resource.data.user_id == request.auth.uid);
+      allow update: if isExec()
+        || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow delete: if false;
+    }
+
+    // ── role_assignments (Phase 1 slice 2) ──
+    // Shadow of user.role + user.roles[] as first-class rows with
+    // scope + start/end. Reads open to the assignee + exec.
+    // Creates + updates gated to exec-initiated flows (grantRole,
+    // revokeRole in database.js call these under exec context) OR
+    // the assignee themselves (bootstrap self-writes during signup).
+    // Nobody deletes — ended assignments carry status:ended.
+    match /role_assignments/{id} {
+      allow read: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if isExec()
+        || (isSignedIn() && request.resource.data.user_id == request.auth.uid);
+      allow update: if isExec()
+        || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow delete: if false;
+    }
+
     // Deny-by-default for anything else
     match /{document=**} {
       allow read, write: if false;

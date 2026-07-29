@@ -61,6 +61,12 @@ export default function SignupStep3({ route }) {
         state: userData.state,
         country: userData.country,
         zip: userData.zip,
+        // Blueprint §26.4 — DOB + derived age_band collected in Step 1.
+        // Empty for accounts created before this slice; the You →
+        // Identity screen prompts them to fill it in (Phase 2 backfill).
+        dob: userData.dob,
+        age_band: userData.age_band,
+        guardian_required: userData.guardian_required,
       });
 
       // Upload is best-effort — never block account creation. If
