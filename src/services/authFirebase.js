@@ -585,11 +585,18 @@ export async function changePassword(currentPassword, newPassword) {
 }
 
 // One-tap "send me a reset email" — used for OAuth users or when the user
-// forgot their current password.
+// forgot their current password. Firebase v9+ deliberately succeeds
+// silently for non-existent emails to avoid a user-enumeration hint,
+// so the main real errors here are invalid-email and network — both
+// caught by friendlyAuthError.
 export async function sendResetEmail(email) {
   if (!isFirebaseConfigured) throw new Error('Firebase not configured');
   if (!email) throw new Error('Enter your email.');
-  await sendPasswordResetEmail(auth, email);
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (e) {
+    throw friendlyAuthError(e);
+  }
 }
 
 // Hard delete: nukes the Firestore profile + the Firebase Auth user.
