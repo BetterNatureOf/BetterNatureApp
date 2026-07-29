@@ -31,6 +31,7 @@ import Screen from '../../components/ui/Screen';
 import LiveOps from '../admin/LiveOps';
 import Icon from '../../components/ui/Icon';
 import { mealsFromLbs } from '../../services/impact';
+import WorkspaceChip from '../../components/ui/WorkspaceChip';
 
 const SERIF = Platform.select({
   ios: 'Georgia',
@@ -135,6 +136,11 @@ export default function ExecutiveDashboard({ navigation }) {
     <ContractGate kind="executive">
     <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
       <ResponsiveContainer maxWidth={780}>
+        <WorkspaceChip
+          user={user}
+          workspaceName="BetterNature National"
+          scope="national"
+        />
         <IdentityStrip
           eyebrow="Executive"
           greeting={timeOfDayGreeting()}

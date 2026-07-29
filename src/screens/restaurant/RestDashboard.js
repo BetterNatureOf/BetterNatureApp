@@ -35,6 +35,7 @@ import { notify, notifyThen, confirm } from '../../services/ui';
 import Icon from '../../components/ui/Icon';
 import Screen from '../../components/ui/Screen';
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
+import WorkspaceChip from '../../components/ui/WorkspaceChip';
 
 // Warm serif — hero numbers + hero primary lines. See member dashboard
 // for the rationale; must match visually across the four dashboards.
@@ -162,6 +163,11 @@ export default function RestDashboard({ navigation }) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.green} />}
     >
       <ResponsiveContainer maxWidth={720}>
+        <WorkspaceChip
+          user={user}
+          workspaceName={orgName}
+          scope="partner"
+        />
         <IdentityStrip
           eyebrow={`${partnerType.label} partner`}
           name={orgName}

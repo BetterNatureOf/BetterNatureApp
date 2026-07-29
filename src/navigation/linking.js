@@ -63,7 +63,8 @@ const screens = {
   DriverSetup: 'driver-setup',
   SignContract: 'contracts/sign/:kind',
   ContractView: 'contracts/view/:kind',
-  MyContracts: 'profile/contracts',
+  MyContracts:     'profile/contracts',   // legacy slug
+  AgreementCenter: 'you/agreements',      // new IA slug
   ManageContracts: 'admin/contracts',
   GlobalHistory: 'admin/history',
   Broadcast: 'admin/broadcast',

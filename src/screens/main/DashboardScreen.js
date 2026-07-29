@@ -34,6 +34,7 @@ import { ensureMyPartnerRecord, fetchRecentlyCompletedPickups } from '../../serv
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
 import PickupCountdown from '../../components/pickup/PickupCountdown';
 import { openInMaps, formatAddress } from '../../services/maps';
+import WorkspaceChip from '../../components/ui/WorkspaceChip';
 
 // ── Warm serif stack ────────────────────────────────────────────────
 // Used only on hero numbers + hero primary lines so those moments
@@ -134,6 +135,7 @@ export default function DashboardScreen({ navigation }) {
 
   return (
     <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+      <WorkspaceChip user={user} scope="chapter" />
       <IdentityStrip
         greeting={heroGreeting}
         name={firstName(user)}

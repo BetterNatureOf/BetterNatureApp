@@ -24,6 +24,7 @@ import ContractGate from '../../components/ui/ContractGate';
 import Screen from '../../components/ui/Screen';
 import LiveOps from '../admin/LiveOps';
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
+import WorkspaceChip from '../../components/ui/WorkspaceChip';
 
 const SERIF = Platform.select({
   ios: 'Georgia',
@@ -104,6 +105,11 @@ export default function PresidentDashboard({ navigation }) {
     <ContractGate kind="president">
     <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
       <ResponsiveContainer maxWidth={720}>
+        <WorkspaceChip
+          user={user}
+          workspaceName={chapterName}
+          scope="chapter"
+        />
         <IdentityStrip
           eyebrow={`President · ${chapterName}`}
           greeting={timeOfDayGreeting()}

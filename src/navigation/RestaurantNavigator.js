@@ -13,7 +13,7 @@ import RestaurantOnboarding from '../screens/restaurant/RestaurantOnboarding';
 import NotificationsScreen from '../screens/other/NotificationsScreen';
 import SignContract from '../screens/auth/SignContract';
 import ContractView from '../screens/contracts/ContractView';
-import MyContracts from '../screens/contracts/MyContracts';
+import AgreementCenter from '../screens/contracts/AgreementCenter';
 
 const Stack = createStackNavigator();
 
@@ -33,7 +33,9 @@ export default function RestaurantNavigator() {
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="SignContract" component={SignContract} />
       <Stack.Screen name="ContractView" component={ContractView} />
-      <Stack.Screen name="MyContracts" component={MyContracts} />
+      {/* MyContracts kept as alias; AgreementCenter is the real screen. */}
+      <Stack.Screen name="MyContracts" component={AgreementCenter} />
+      <Stack.Screen name="AgreementCenter" component={AgreementCenter} />
     </Stack.Navigator>
   );
 }

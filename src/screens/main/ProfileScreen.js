@@ -17,6 +17,7 @@ import { confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
 const MENU_ITEMS = [
+  { key: 'agreements', label: 'Agreement Center', icon: 'file', screen: 'AgreementCenter' },
   { key: 'refer', label: 'Bring a friend', icon: 'gift', screen: 'Refer' },
   { key: 'find', label: 'Find / switch chapter', icon: 'pin', screen: 'FindChapter' },
   { key: 'receipts', label: 'Tax receipts', icon: 'file', screen: 'MyTaxReceipts' },

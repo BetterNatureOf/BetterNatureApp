@@ -48,7 +48,7 @@ import LiabilityWaiver from '../screens/auth/LiabilityWaiver';
 import DriverSetup from '../screens/auth/DriverSetup';
 import SignContract from '../screens/auth/SignContract';
 import ContractView from '../screens/contracts/ContractView';
-import MyContracts from '../screens/contracts/MyContracts';
+import AgreementCenter from '../screens/contracts/AgreementCenter';
 import ManageContracts from '../screens/admin/ManageContracts';
 import GlobalHistory from '../screens/admin/GlobalHistory';
 import BroadcastScreen from '../screens/admin/BroadcastScreen';
@@ -92,14 +92,22 @@ function PresMetricsScreen(props) {
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
+// Tab-icon glyphs \u2014 same across tab renames. "Do" replaces the old
+// "Projects" label per IA v2; "You" replaces "Profile". "Belong" is a
+// planned tab that lands with Phase 1 slice 2; today it's still
+// implicit under Home \u2192 chapter, but the label vocabulary is aligned
+// here so a mid-flight rename doesn't blow up icon lookups.
 const TAB_ICONS = {
   Home: { default: '\u25CB', active: '\u25CF' },     // circle outline / filled
-  Projects: { default: '\u25B3', active: '\u25B2' },  // triangle outline / filled
-  Impact: { default: '\u2606', active: '\u2605' },     // star outline / filled
-  Donate: { default: '\u2661', active: '\u2665' },     // heart outline / filled
-  Org: { default: '\u25A1', active: '\u25A0' },        // square outline / filled
+  Do:      { default: '\u25B3', active: '\u25B2' }, // triangle outline / filled
+  Projects:{ default: '\u25B3', active: '\u25B2' }, // legacy alias
+  Belong:  { default: '\u25C7', active: '\u25C6' }, // diamond outline / filled
+  Impact:  { default: '\u2606', active: '\u2605' }, // star outline / filled
+  Donate:  { default: '\u2661', active: '\u2665' }, // heart outline / filled
+  Org:     { default: '\u25A1', active: '\u25A0' }, // square outline / filled
   Chapter: { default: '\u25A1', active: '\u25A0' },
-  Profile: { default: '\u2299', active: '\u2299' },    // circled dot
+  You:     { default: '\u2299', active: '\u2299' }, // circled dot
+  Profile: { default: '\u2299', active: '\u2299' }, // legacy alias
 };
 
 function TabIcon({ label, focused }) {
@@ -181,7 +189,7 @@ function MainTabs() {
         name="Projects"
         component={ProjectsScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="Projects" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon label="Do" focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -213,7 +221,7 @@ function MainTabs() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="Profile" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon label="You" focused={focused} />,
         }}
       />
     </Tab.Navigator>
@@ -271,7 +279,11 @@ export default function MainNavigator() {
       <Stack.Screen name="DriverSetup" component={DriverSetup} />
       <Stack.Screen name="SignContract" component={SignContract} />
       <Stack.Screen name="ContractView" component={ContractView} />
-      <Stack.Screen name="MyContracts" component={MyContracts} />
+      {/* MyContracts kept as an alias for links persisted in older
+          notifications / bookmarks — the actual component is now
+          AgreementCenter, which supersedes it (Phase 1 IA slice). */}
+      <Stack.Screen name="MyContracts" component={AgreementCenter} />
+      <Stack.Screen name="AgreementCenter" component={AgreementCenter} />
       <Stack.Screen name="ManageContracts" component={ManageContracts} />
       <Stack.Screen name="GlobalHistory" component={GlobalHistory} />
       <Stack.Screen name="Broadcast" component={BroadcastScreen} />

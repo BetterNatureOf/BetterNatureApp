@@ -165,8 +165,8 @@ export default function SettingsScreen({ navigation }) {
       <TouchableOpacity onPress={() => navigation.navigate('ConnectedAccounts')}>
         <Text style={styles.linkItem}>Connected accounts (Google, Apple, email)</Text>
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => navigation.navigate('MyContracts')}>
-        <Text style={styles.linkItem}>Your signed agreements</Text>
+      <TouchableOpacity onPress={() => navigation.navigate('AgreementCenter')}>
+        <Text style={styles.linkItem}>Agreement Center</Text>
       </TouchableOpacity>
 
       {/* Founder-only role switcher. Explicit allowlist — no
