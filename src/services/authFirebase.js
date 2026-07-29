@@ -71,6 +71,36 @@ function friendlyAuthError(err) {
   if (code === 'auth/weak-password')   return new Error('Password is too weak. Use at least 6 characters.');
   if (code === 'auth/network-request-failed') return new Error('No network — check your connection and try again.');
   if (code === 'auth/too-many-requests') return new Error('Too many attempts. Wait a minute and try again.');
+  // Sign-in codes (Firebase v9+ collapsed a bunch of them into
+  // 'auth/invalid-credential' so we treat that + the legacy 'wrong-
+  // password' / 'user-not-found' identically). "Wrong email or
+  // password" is deliberately vague — telling the user which one was
+  // wrong is a small user-enumeration hint we don't need to give.
+  if (code === 'auth/wrong-password'
+      || code === 'auth/invalid-credential'
+      || code === 'auth/user-not-found') {
+    return new Error('Wrong email or password. Try again, or tap "Forgot password" to reset.');
+  }
+  if (code === 'auth/user-disabled') {
+    return new Error(
+      'This account has been disabled. Email info@betternatureofficial.org if you believe this is a mistake.'
+    );
+  }
+  if (code === 'auth/requires-recent-login') {
+    return new Error('For security, sign out and back in before making this change.');
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return new Error('Sign-in was cancelled.');
+  }
+  if (code === 'auth/account-exists-with-different-credential') {
+    return new Error(
+      'You already have an account with a different sign-in method. ' +
+      'Try signing in with Google or your password.'
+    );
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return new Error('That sign-in method isn’t enabled. Try another option.');
+  }
   return err;
 }
 
@@ -182,7 +212,12 @@ export async function signIn({ email, password }) {
     const user = makeMockUser({ email });
     return { user, session: { user } };
   }
-  const cred = await signInWithEmailAndPassword(auth, email, password);
+  let cred;
+  try {
+    cred = await signInWithEmailAndPassword(auth, email, password);
+  } catch (e) {
+    throw friendlyAuthError(e);
+  }
   const profile = await getProfile(cred.user.uid);
   return {
     user: profile || { id: cred.user.uid, email: cred.user.email },
@@ -383,7 +418,16 @@ export async function signInWithGoogle({ restrictDomain } = {}) {
   if (restrictDomain) provider.setCustomParameters({ hd: restrictDomain });
   let cred;
   try { cred = await signInWithPopup(auth, provider); }
-  catch (e) { throw await explainLinkingError(e); }
+  catch (e) {
+    // Two-tier friendly-ing: linking errors first (they carry a
+    // pending credential the caller can complete-link with), then
+    // the generic auth code map. Whichever short-circuits first
+    // gives the human something they can act on instead of a
+    // 'FirebaseError: auth/…' string.
+    const linkErr = await explainLinkingError(e);
+    if (linkErr !== e) throw linkErr;
+    throw friendlyAuthError(e);
+  }
   if (restrictDomain && !cred.user.email?.toLowerCase().endsWith(`@${restrictDomain.toLowerCase()}`)) {
     await fbSignOut(auth);
     throw new Error(`Use a @${restrictDomain} Google account.`);
