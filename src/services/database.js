@@ -355,18 +355,41 @@ export async function checkInVolunteer({
     await bumpOrgStats({ events: 1, hours, meals });
   } catch (e) { console.warn('org stats bump (checkin)', e); }
 
-  // 4. Notification
-  await addDoc(collection(db, 'notifications'), {
-    user_id: userId,
-    title: 'Hours logged!',
-    body:
-      `You were checked in for ${hours}h` +
-      (meals > 0 ? ` and ${meals} meals rescued` : '') +
-      '. Keep it up!',
-    data: { type: 'checkin_confirmed', eventId },
-    read: false,
-    created_at: serverTimestamp(),
-  });
+  // 4. Notification — via enqueueNotification so push + email fire
+  //    alongside the in-app row (volunteers often want the check-in
+  //    receipt in their email for chapter records). enqueueNotification
+  //    itself calls dropInApp which writes to the notifications
+  //    collection, so no separate raw addDoc.
+  try {
+    const { enqueueNotification } = await import('./notify');
+    await enqueueNotification({
+      recipients: [userId],
+      kind: 'general',
+      title: 'Hours logged!',
+      body:
+        `You were checked in for ${hours}h` +
+        (meals > 0 ? ` and ${meals} meals rescued` : '') +
+        '. Keep it up!',
+      data: { type: 'checkin_confirmed', eventId },
+    });
+  } catch (e) {
+    // Failure fallback so the volunteer still sees the confirmation
+    // in-app even if push+email routing blew up.
+    console.warn('checkin notify failed, writing raw', e);
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        user_id: userId,
+        title: 'Hours logged!',
+        body:
+          `You were checked in for ${hours}h` +
+          (meals > 0 ? ` and ${meals} meals rescued` : '') +
+          '. Keep it up!',
+        data: { type: 'checkin_confirmed', eventId },
+        read: false,
+        created_at: serverTimestamp(),
+      });
+    } catch {}
+  }
 }
 
 export async function markNoShow(signupId) {
@@ -770,16 +793,20 @@ export async function cancelClaim(pickupId, reason = '') {
       });
     } catch (e) { console.warn('drop penalty failed', e); }
   }
-  // Tell the restaurant — best-effort.
+  // Tell the restaurant — via enqueueNotification so push + email fire.
+  // Best-effort. Restaurant needs a real ping here so they know their
+  // food is unclaimed and might not get picked up in time.
   try {
     if (pk.restaurant_id) {
-      await addDoc(collection(db, 'notifications'), {
-        user_id: pk.restaurant_id,
+      const { enqueueNotification } = await import('./notify');
+      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      await enqueueNotification({
+        recipients: [linkedUid],
+        kind: 'pickup',
         title: 'Pickup released',
         body: `Your pickup is back on the board — looking for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
+        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
         data: { type: 'pickup_released', pickupId },
-        read: false,
-        created_at: serverTimestamp(),
       });
     }
   } catch (e) { console.warn('cancel-claim notify', e); }
@@ -816,16 +843,20 @@ export async function cancelPickup(pickupId, reason = '') {
     });
     return data;
   });
-  // If a volunteer had claimed it, let them know.
+  // If a volunteer had claimed it, let them know — via push + email
+  // so they don't drive to a restaurant that no longer has the food.
+  // This is the highest-priority notification in the entire cancel
+  // flow.
   try {
     if (pk.claimed_by) {
-      await addDoc(collection(db, 'notifications'), {
-        user_id: pk.claimed_by,
+      const { enqueueNotification } = await import('./notify');
+      await enqueueNotification({
+        recipients: [pk.claimed_by],
+        kind: 'pickup',
         title: 'Pickup cancelled',
-        body: `${pk.restaurant_name || 'The restaurant'} cancelled their pickup.${reason ? ' Reason: ' + reason : ''}`,
+        body: `${pk.restaurant_name || 'The restaurant'} cancelled their pickup.${reason ? ' Reason: ' + reason : ''} Don't drive out.`,
+        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
         data: { type: 'pickup_cancelled', pickupId },
-        read: false,
-        created_at: serverTimestamp(),
       });
     }
   } catch (e) { console.warn('cancel-pickup notify', e); }
@@ -945,13 +976,15 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
         } catch {}
       }
       const dropOff = pk.fridge_name ? ` and dropping at ${pk.fridge_name}` : '';
-      await addDoc(collection(db, 'notifications'), {
-        user_id: pk.restaurant_id,
+      const { enqueueNotification } = await import('./notify');
+      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      await enqueueNotification({
+        recipients: [linkedUid],
+        kind: 'pickup',
         title: 'Volunteer is on the way',
         body: `${volunteerName || 'A volunteer'} is heading to your restaurant${dropOff}.`,
+        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
         data: { type: 'pickup_enroute', pickupId },
-        read: false,
-        created_at: serverTimestamp(),
       });
     }
   } catch (e) { console.warn('restaurant enroute notify', e); }
@@ -1087,42 +1120,39 @@ export async function completePickup(pickupId, actualWeightLbs) {
       await bumpOrgStats({ lbs: weight, hours: hoursEarned, events: 1 });
     } catch (e) { console.warn('org stats bump (pickup)', e); }
 
-    await addDoc(collection(db, 'notifications'), {
-      user_id: pk.claimed_by,
-      title: 'Pickup complete!',
-      body: `You rescued ~${meals} meals from ${pk.restaurant_name}. Amazing work!`,
-      data: { type: 'pickup_complete', pickupId },
-      read: false,
-      created_at: serverTimestamp(),
-    });
+    // Volunteer celebration — via enqueueNotification so push + email
+    // fire alongside the in-app row. This is often the moment they
+    // decide whether to do a second pickup that day.
+    try {
+      const { enqueueNotification } = await import('./notify');
+      await enqueueNotification({
+        recipients: [pk.claimed_by],
+        kind: 'pickup',
+        title: 'Pickup complete!',
+        body: `You rescued ~${meals} meals from ${pk.restaurant_name}. Amazing work!`,
+        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
+        data: { type: 'pickup_complete', pickupId },
+      });
+    } catch (e) { console.warn('volunteer complete notify', e); }
 
-    // Mirror the win to the restaurant so they see real-time proof their
-    // surplus made it to a fridge. Best-effort — never blocks completion
-    // (volunteer's activity log is already written by this point).
+    // Mirror the win to the restaurant so they see real-time proof
+    // their surplus made it to a fridge. Best-effort — never blocks
+    // completion. Single enqueueNotification call: the earlier code
+    // wrote BOTH a raw addDoc AND an enqueueNotification, producing
+    // two duplicate rows in the restaurant's inbox for every rescue.
     if (pk.restaurant_id) {
       try {
         const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-        await addDoc(collection(db, 'notifications'), {
-          user_id: pk.restaurant_id,
+        const { enqueueNotification } = await import('./notify');
+        const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+        await enqueueNotification({
+          recipients: [linkedUid],
+          kind: 'general',
           title: 'Your surplus made it',
           body: `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Your tax receipt is on the way.`,
+          url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
           data: { type: 'pickup_delivered_restaurant', pickupId, meals, lbs: weight },
-          read: false,
-          created_at: serverTimestamp(),
         });
-        // Push + email the restaurant too (best-effort).
-        try {
-          const { enqueueNotification } = await import('./notify');
-          // Restaurant docs may store the linked user_id; if so, use it.
-          const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-          await enqueueNotification({
-            recipients: [linkedUid],
-            kind: 'general',
-            title: 'Your donation just landed',
-            body: `Your donation just landed${dropOff}. ~${meals} meals rescued. Your tax receipt is on the way.`,
-            data: { type: 'restaurant_delivered', pickupId },
-          });
-        } catch {}
       } catch (e) { console.warn('restaurant delivered notify', e); }
     }
 
