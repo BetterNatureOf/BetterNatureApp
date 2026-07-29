@@ -1,51 +1,83 @@
+// Chapter president home — direction v1.
+//
+// Same design language as the member + restaurant dashboards. President
+// state is less obviously "one thing at a time" than the member's — they
+// juggle a chapter — so the hero is a pulse card instead of a single
+// action. It answers "how's my chapter doing right now?" at a glance,
+// with a supporting "needs your attention this week" list surfacing the
+// exec-approvals-side patterns (pending join requests, events without
+// RSVPs, unclaimed pickups sitting too long).
+//
+// LiveOps stays embedded — it's the operational hub during a run.
+// Tools grid is compact and secondary.
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
-import BrushText from '../../components/ui/BrushText';
-import StatCard from '../../components/ui/StatCard';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
-import { fetchEvents, fetchPickups, fetchChapterById } from '../../services/database';
+import { fetchEvents, fetchPickups, fetchChapterById, fetchRecentlyCompletedPickups } from '../../services/database';
 import { signOut } from '../../services/auth';
 import Icon from '../../components/ui/Icon';
 import { confirm } from '../../services/ui';
 import ContractGate from '../../components/ui/ContractGate';
 import Screen from '../../components/ui/Screen';
 import LiveOps from '../admin/LiveOps';
+import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
 
-const ACTIONS = [
-  { key: 'events', label: 'Manage Events', icon: 'calendar', desc: 'Create and edit chapter events', screen: 'PresEvents', color: Colors.green },
-  { key: 'members', label: 'Chapter Members', icon: 'users', desc: 'View and manage your members', screen: 'PresMembers', color: Colors.sage },
-  { key: 'checklist', label: 'Chapter Checklist', icon: 'check-circle', desc: 'Track your chapter setup progress', screen: 'ChapterChecklist', color: Colors.sky },
-  { key: 'broadcast', label: 'Send Announcement', icon: 'bell', desc: 'Notify your chapter members', screen: 'PresBroadcast', color: Colors.pink },
-  { key: 'reports', label: 'Chapter Reports', icon: 'trending', desc: 'Hours, meals, donations this month', screen: 'PresReports', color: Colors.amber },
-  { key: 'metrics', label: 'Edit Metrics', icon: 'sparkles', desc: 'Adjust auto-tracked totals or add manual ones', screen: 'PresMetrics', color: Colors.green },
-  { key: 'finance', label: 'Chapter Finance', icon: 'trending', desc: 'Donations attributed to your chapter + CSV exports', screen: 'PresFinance', color: Colors.green },
+const SERIF = Platform.select({
+  ios: 'Georgia',
+  android: 'serif',
+  default: 'Georgia, "Iowan Old Style", "Palatino Linotype", serif',
+});
+
+const TOOLS = [
+  { key: 'events',    icon: 'calendar',  title: 'Events',            to: 'PresEvents' },
+  { key: 'members',   icon: 'users',     title: 'Members',           to: 'PresMembers' },
+  { key: 'checklist', icon: 'check',     title: 'Chapter checklist', to: 'ChapterChecklist' },
+  { key: 'broadcast', icon: 'bell',      title: 'Announcement',      to: 'PresBroadcast' },
+  { key: 'reports',   icon: 'clipboard', title: 'Reports',           to: 'PresReports' },
+  { key: 'metrics',   icon: 'star',      title: 'Edit metrics',      to: 'PresMetrics' },
+  { key: 'finance',   icon: 'gift',      title: 'Chapter finance',   to: 'PresFinance' },
 ];
+
+function firstName(user) { return (user?.name || 'President').split(' ')[0]; }
+function timeOfDayGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning,';
+  if (h < 17) return 'Hi';
+  if (h < 22) return 'Good evening,';
+  return 'Hey';
+}
 
 export default function PresidentDashboard({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.signOut);
-  const { isWide, isDesktop } = useBreakpoint();
+  const { isDesktop } = useBreakpoint();
   const [chapter, setChapter] = useState(null);
   const [events, setEvents] = useState([]);
   const [pickups, setPickups] = useState([]);
+  const [completedWeek, setCompletedWeek] = useState([]);
 
   useEffect(() => {
     async function load() {
+      const chId = user?.chapter_id;
+      if (!chId) return;
       try {
-        const ch = await fetchChapterById(user?.chapter_id);
+        const [ch, ev, pk, done] = await Promise.all([
+          fetchChapterById(chId),
+          fetchEvents(chId),
+          fetchPickups(chId),
+          fetchRecentlyCompletedPickups({ chapterId: chId, hours: 24 * 7 }),
+        ]);
         setChapter(ch);
-        const ev = await fetchEvents(user?.chapter_id);
-        setEvents(ev);
-        const pk = await fetchPickups(user?.chapter_id);
-        setPickups(pk);
-      } catch (e) {}
+        setEvents(ev || []);
+        setPickups(pk || []);
+        setCompletedWeek(done || []);
+      } catch {}
     }
     load();
-  }, []);
+  }, [user?.chapter_id]);
 
   async function handleSignOut() {
     const ok = await confirm('Sign Out', 'Sign out of the president portal?');
@@ -54,114 +86,271 @@ export default function PresidentDashboard({ navigation }) {
     clearAuth();
   }
 
+  const chapterName = chapter?.name || 'Your chapter';
+  const memberCount = chapter?.member_count || 0;
+  const weekLbs = completedWeek.reduce((s, p) => s + (p.actual_weight_lbs || p.estimated_weight_lbs || 0), 0);
+  const weekLbsRounded = Math.round(weekLbs);
+  const unclaimedCount = pickups.filter((p) => p.status === 'available').length;
+  const now = new Date();
+  const upcoming = (events || [])
+    .filter((e) => {
+      const d = new Date(`${e.date}T${e.time || '00:00'}`);
+      return d > now;
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 2);
+
   return (
     <ContractGate kind="president">
-    <Screen contentStyle={styles.content}>
-      <ResponsiveContainer maxWidth={1100}>
-        {/* Header */}
-        <LinearGradient
-          colors={Colors.gradient.green}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerCard}
-        >
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.eyebrow}>President {'\u00B7'} {chapter?.name || 'Your Chapter'}</Text>
-              <BrushText variant="screenTitle" style={styles.title}>
-                Welcome, {user?.name?.split(' ')[0] || 'President'}!
-              </BrushText>
-            </View>
-            <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
-              <Text style={styles.signOut}>Sign out</Text>
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
+    <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+      <ResponsiveContainer maxWidth={720}>
+        <IdentityStrip
+          eyebrow={`President · ${chapterName}`}
+          greeting={timeOfDayGreeting()}
+          name={firstName(user)}
+          avatarInitial={(user?.name || '?')[0].toUpperCase()}
+          onSignOut={handleSignOut}
+        />
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <StatCard number={String(chapter?.member_count || 0)} label="Members" color={Colors.sage} style={styles.stat} />
-          <StatCard number={String(events.length)} label="Events" color={Colors.green} style={styles.stat} />
-          <StatCard number={String(pickups.length)} label="Pickups" color={Colors.pink} style={styles.stat} />
-        </View>
+        <PulseHero
+          chapterName={chapterName}
+          weekLbs={weekLbsRounded}
+          weekRuns={completedWeek.length}
+          memberCount={memberCount}
+        />
 
-        {/* Live operations — every pickup currently in motion for
-            this chapter, every volunteer currently out. */}
+        <NeedsAttention
+          unclaimedCount={unclaimedCount}
+          upcomingEvents={upcoming}
+          onEventPress={(event) => navigation.navigate('EventDetail', { event })}
+          onOpenPickups={() => navigation.navigate('Home')}
+        />
+
         <LiveOps chapterId={user?.chapter_id} navigation={navigation} />
 
-        {/* Tools */}
-        <BrushText variant="sectionHeader" style={styles.sectionHeader}>
-          Chapter Tools
-        </BrushText>
-
-        <View style={[styles.grid, isWide && styles.gridWide]}>
-          {ACTIONS.map((item) => (
-            <TouchableOpacity
-              key={item.key}
-              style={[
-                styles.card,
-                isWide && styles.cardWide,
-                isDesktop && styles.cardDesktop,
-              ]}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate(item.screen)}
-            >
-              <View style={[styles.emojiWrap, { backgroundColor: item.color + '15' }]}>
-                <Icon name={item.icon} size={22} color={item.color} strokeWidth={2.25} />
-              </View>
-              <Text style={styles.label}>{item.label}</Text>
-              <Text style={styles.desc}>{item.desc}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <ToolsRow navigation={navigation} />
       </ResponsiveContainer>
     </Screen>
     </ContractGate>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.cream,
-    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
-  },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
-  headerCard: {
-    borderRadius: Radius.xl,
-    padding: 24,
-    marginBottom: 20,
-  },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  eyebrow: { ...Type.eyebrow, color: 'rgba(255,255,255,0.55)', fontSize: 10 },
-  title: { color: Colors.white, marginTop: 4 },
-  signOutBtn: { paddingVertical: 6, paddingHorizontal: 10 },
-  signOut: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '600' },
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 28 },
-  stat: { flex: 1, minWidth: 100 },
-  sectionHeader: { color: Colors.green, marginBottom: 14 },
+function IdentityStrip({ eyebrow, greeting, name, avatarInitial, onSignOut }) {
+  return (
+    <View style={styles.idStrip}>
+      <View style={styles.avatar}><Text style={styles.avatarText}>{avatarInitial}</Text></View>
+      <View style={styles.greeting}>
+        <Text style={styles.greetingK} numberOfLines={1}>{eyebrow}</Text>
+        <Text style={styles.greetingT} numberOfLines={1}>{greeting} {name}</Text>
+      </View>
+      <TouchableOpacity onPress={onSignOut} style={styles.signOutBtn}>
+        <Text style={styles.signOutTxt}>Sign out</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
-  grid: { flexDirection: 'column', gap: 12 },
-  gridWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+// Pulse hero — forest ground, warm serif for the pounds number. Reads
+// "your chapter did X this week" at a glance without needing to open
+// reports.
+function PulseHero({ chapterName, weekLbs, weekRuns, memberCount }) {
+  const hasActivity = weekLbs > 0 || weekRuns > 0;
+  const meals = mealsFromLbs(weekLbs);
+  return (
+    <View style={styles.pulseHero}>
+      <Text style={styles.pulseEyebrow}>This week · {chapterName}</Text>
+      {hasActivity ? (
+        <>
+          <Text style={styles.pulseNum}>
+            {weekLbs.toLocaleString('en-US')}
+            <Text style={styles.pulseNumUnit}> lbs rescued</Text>
+          </Text>
+          <Text style={styles.pulseBody}>
+            <Text style={styles.pulseBodyEm}>{weekRuns} run{weekRuns === 1 ? '' : 's'}</Text>
+            {meals > 0 ? ` · about ${meals.toLocaleString('en-US')} meals` : ''}
+            {memberCount > 0 ? ` · ${memberCount} member${memberCount === 1 ? '' : 's'} strong` : ''}
+            .
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.pulseNum}>A quiet week so far.</Text>
+          <Text style={styles.pulseBody}>
+            {memberCount > 0
+              ? `${memberCount} member${memberCount === 1 ? '' : 's'} on the roster. `
+              : ''}
+            Send an announcement or post an event to get the week moving.
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
+// Needs-your-attention list — the president's inbox distilled to
+// today's next moves. Renders only rows that actually have signal.
+function NeedsAttention({ unclaimedCount, upcomingEvents, onEventPress, onOpenPickups }) {
+  const items = [];
+  if (unclaimedCount > 0) {
+    items.push({
+      key: 'unclaimed',
+      icon: 'clipboard',
+      title: `${unclaimedCount} pickup${unclaimedCount === 1 ? '' : 's'} waiting for a volunteer`,
+      body: 'Nudge your chapter or post an announcement so they don\'t expire.',
+      onPress: onOpenPickups,
+    });
+  }
+  for (const e of upcomingEvents) {
+    items.push({
+      key: `event-${e.id}`,
+      icon: 'calendar',
+      title: e.title || 'Upcoming event',
+      body: `${e.date}${e.time ? ` · ${e.time}` : ''}${e.location ? ` · ${e.location}` : ''}`,
+      onPress: () => onEventPress(e),
+    });
+  }
+  if (items.length === 0) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardEyebrow}>What's next</Text>
+        <Text style={styles.cardTitle}>You're all caught up.</Text>
+        <Text style={styles.cardMeta}>No pickups sitting unclaimed and no events on the calendar right now.</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardEyebrow}>What's next</Text>
+      <View style={{ marginTop: 6 }}>
+        {items.map((it, i) => (
+          <TouchableOpacity
+            key={it.key}
+            style={[styles.attnRow, i > 0 && styles.attnRowBorder]}
+            onPress={it.onPress}
+            activeOpacity={0.85}
+          >
+            <View style={styles.attnIcon}>
+              <Icon name={it.icon} size={16} color={Colors.green} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.attnTitle} numberOfLines={1}>{it.title}</Text>
+              <Text style={styles.attnBody} numberOfLines={2}>{it.body}</Text>
+            </View>
+            <Icon name="chevron" size={16} color={Colors.grayMid} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ToolsRow({ navigation }) {
+  return (
+    <View style={styles.toolsCard}>
+      <Text style={styles.cardEyebrow}>Manage chapter</Text>
+      <View style={styles.toolsGrid}>
+        {TOOLS.map((t) => (
+          <TouchableOpacity
+            key={t.key}
+            style={styles.toolItem}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate(t.to)}
+          >
+            <View style={styles.toolIcon}>
+              <Icon name={t.icon} size={16} color={Colors.green} strokeWidth={2} />
+            </View>
+            <Text style={styles.toolLabel}>{t.title}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { padding: 20, paddingTop: 60, paddingBottom: 60, gap: 12 },
+  contentDesktop: { paddingHorizontal: 40, maxWidth: 720, alignSelf: 'center', width: '100%' },
+
+  idStrip: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
+  avatar: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.green,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { color: Colors.cream, fontFamily: SERIF, fontSize: 16, fontWeight: '500' },
+  greeting: { flex: 1, minWidth: 0 },
+  greetingK: { fontSize: 11, color: Colors.gray, letterSpacing: 0.1, textTransform: 'uppercase', fontWeight: '700' },
+  greetingT: { fontSize: 16, fontWeight: '600', color: Colors.dark, marginTop: 1 },
+  signOutBtn: { paddingVertical: 6, paddingHorizontal: 10 },
+  signOutTxt: { fontSize: 13, color: Colors.pink, fontWeight: '600' },
+
+  pulseHero: {
+    backgroundColor: Colors.green,
+    borderRadius: 22,
+    padding: 22,
+    marginTop: 6,
+    gap: 8,
+  },
+  pulseEyebrow: {
+    fontSize: 10.5, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.65)',
+  },
+  pulseNum: {
+    fontFamily: SERIF, fontSize: 40, lineHeight: 42,
+    color: Colors.cream, fontWeight: '500', letterSpacing: -0.6, marginTop: 4,
+  },
+  pulseNumUnit: {
+    fontFamily: undefined,
+    fontSize: 14, fontWeight: '500', letterSpacing: 0,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  pulseBody: {
+    fontSize: 14.5, lineHeight: 21,
+    color: 'rgba(255,255,255,0.85)', marginTop: 4,
+  },
+  pulseBodyEm: { color: Colors.cream, fontWeight: '700' },
+
   card: {
-    backgroundColor: Colors.white,
-    borderRadius: Radius.xl,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-    ...Shadows.card,
+    backgroundColor: Colors.white, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: Colors.glassBorder,
   },
-  cardWide: { flexBasis: '47%', flexGrow: 1, minWidth: 240 },
-  cardDesktop: { flexBasis: '31%' },
-  emojiWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
+  cardEyebrow: {
+    fontSize: 10.5, fontWeight: '800', letterSpacing: 1.4,
+    textTransform: 'uppercase', color: Colors.gray, marginBottom: 6,
   },
-  emoji: { fontSize: 24 },
-  label: { fontSize: 16, fontWeight: '700', color: Colors.dark, letterSpacing: -0.2 },
-  desc: { ...Type.caption, marginTop: 4 },
+  cardTitle: { fontSize: 15, fontWeight: '600', color: Colors.dark, lineHeight: 20 },
+  cardMeta: { fontSize: 12.5, color: Colors.gray, marginTop: 4 },
+
+  attnRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 10,
+  },
+  attnRowBorder: { borderTopWidth: 0.5, borderTopColor: Colors.glassBorder },
+  attnIcon: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  attnTitle: { fontSize: 14, fontWeight: '600', color: Colors.dark },
+  attnBody: { fontSize: 12.5, color: Colors.gray, marginTop: 2 },
+
+  toolsCard: {
+    backgroundColor: Colors.white, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+  },
+  toolsGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8,
+  },
+  toolItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+    minWidth: '47%',
+  },
+  toolIcon: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  toolLabel: { fontSize: 13.5, fontWeight: '600', color: Colors.dark, flex: 1 },
 });

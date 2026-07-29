@@ -1,75 +1,125 @@
-import React, { useEffect, useState, useCallback } from 'react';
+// Executive home — direction v1.
+//
+// Same design language as the other three. Exec sees the whole org, so
+// the hero is an org-wide pulse card and the supporting content leans
+// on what an exec is uniquely a bottleneck for: pending approvals.
+//
+// Order:
+//   - IdentityStrip
+//   - PulseHero (org-wide activity this week: lbs, runs, chapters active)
+//   - PendingApprovals card (chapter apps, restaurant apps, join requests)
+//   - KPI trio (this month's dollars raised + all-time lbs — quiet)
+//   - LiveOps (org-wide)
+//   - Tools grid (compact, secondary)
+import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from '../../config/firebase';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
-import BrushText from '../../components/ui/BrushText';
-import StatCard from '../../components/ui/StatCard';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useBreakpoint from '../../hooks/useBreakpoint';
 import useAuthStore from '../../store/authStore';
-import { fetchChapters, fetchAllMembers, fetchRestaurants, fetchAllDonations, fetchOrgMetrics } from '../../services/database';
+import {
+  fetchChapters, fetchAllMembers, fetchRestaurants, fetchAllDonations,
+  fetchOrgMetrics, fetchRecentlyCompletedPickups,
+} from '../../services/database';
 import { signOut } from '../../services/auth';
 import { confirm } from '../../services/ui';
 import ContractGate from '../../components/ui/ContractGate';
 import Screen from '../../components/ui/Screen';
 import LiveOps from '../admin/LiveOps';
+import Icon from '../../components/ui/Icon';
+import { mealsFromLbs } from '../../services/impact';
+
+const SERIF = Platform.select({
+  ios: 'Georgia',
+  android: 'serif',
+  default: 'Georgia, "Iowan Old Style", "Palatino Linotype", serif',
+});
 
 const TOOLS = [
-  { key: 'chapters', label: 'Manage Chapters', emoji: '\u{1F4CD}', desc: 'Approve, edit, or close chapters', screen: 'ManageChapters', color: Colors.sage },
-  { key: 'members', label: 'Manage Members', emoji: '\u{1F465}', desc: 'Promote presidents, edit roles', screen: 'ManageMembers', color: Colors.green },
-  { key: 'restaurants', label: 'Manage Restaurants', emoji: '\u{1F37D}', desc: 'Approve restaurant partner applications', screen: 'ManageRestaurants', color: Colors.amber },
-  { key: 'broadcast', label: 'Org-wide Broadcast', emoji: '\u{1F4E2}', desc: 'Send a message to every chapter', screen: 'Broadcast', color: Colors.pink },
-  { key: 'history', label: 'Global History', emoji: '\u{1F30D}', desc: 'All events, pickups, donations', screen: 'GlobalHistory', color: Colors.sky },
-  { key: 'reports', label: 'Export Reports', emoji: '\u{1F4C4}', desc: 'PDF / CSV financial and impact reports', screen: 'ExportReports', color: Colors.grayMid },
-  { key: 'finance', label: 'Donations & Finance', emoji: '\u{1F4B5}', desc: 'Track Apple Pay and recurring donors', screen: 'ExecFinance', color: Colors.green },
-  { key: 'metrics', label: 'Impact Metrics', emoji: '\u{1F4C8}', desc: 'Edit org-wide impact numbers', screen: 'ExecMetrics', color: Colors.sage },
-  { key: 'bnmap', label: 'BN Map', emoji: '\u{1F5FA}️', desc: 'Food-insecurity heatmap and fridge network', screen: 'BNMap', color: Colors.pink },
-  { key: 'website', label: 'Website content', emoji: '\u{1F310}', desc: 'Edit hero, programs, contact — replaces the old admin.html', screen: 'WebsiteContent', color: Colors.green },
-  { key: 'settings', label: 'Org Settings', emoji: '\u2699\uFE0F', desc: 'Brand, contact, legal, integrations', screen: 'Settings', color: Colors.grayMid },
+  { key: 'chapters',    icon: 'pin',       title: 'Chapters',         to: 'ManageChapters' },
+  { key: 'members',     icon: 'users',     title: 'Members',          to: 'ManageMembers' },
+  { key: 'restaurants', icon: 'clipboard', title: 'Partners',         to: 'ManageRestaurants' },
+  { key: 'bnmap',       icon: 'pin',       title: 'BN map',           to: 'BNMap' },
+  { key: 'broadcast',   icon: 'bell',      title: 'Org broadcast',    to: 'Broadcast' },
+  { key: 'history',     icon: 'clipboard', title: 'Global history',   to: 'GlobalHistory' },
+  { key: 'reports',     icon: 'clipboard', title: 'Export reports',   to: 'ExportReports' },
+  { key: 'finance',     icon: 'gift',      title: 'Finance',          to: 'ExecFinance' },
+  { key: 'metrics',     icon: 'star',      title: 'Impact metrics',   to: 'ExecMetrics' },
+  { key: 'website',     icon: 'building',  title: 'Website content',  to: 'WebsiteContent' },
+  { key: 'settings',    icon: 'settings',  title: 'Org settings',     to: 'Settings' },
 ];
 
-function fmtMoney(n) {
-  return `$${(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+function firstName(u) { return (u?.name || 'Exec').split(' ')[0]; }
+function timeOfDayGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning,';
+  if (h < 17) return 'Hi';
+  if (h < 22) return 'Good evening,';
+  return 'Hey';
+}
+function fmtMoney(n) { return `$${(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`; }
+
+// Pending-approval counts for the exec's "needs attention" card.
+// Individual queries so a rule failure on one collection doesn't
+// wipe the whole card.
+async function fetchPendingCounts() {
+  if (!isFirebaseConfigured) return { chapterApps: 0, joinRequests: 0, restaurants: 0 };
+  const out = { chapterApps: 0, joinRequests: 0, restaurants: 0 };
+  await Promise.all([
+    getDocs(query(collection(db, 'chapter_applications'), where('status', '==', 'pending')))
+      .then((s) => { out.chapterApps = s.size; }).catch(() => {}),
+    getDocs(query(collection(db, 'chapter_join_requests'), where('status', '==', 'pending')))
+      .then((s) => { out.joinRequests = s.size; }).catch(() => {}),
+    getDocs(query(collection(db, 'restaurants'), where('status', '==', 'pending')))
+      .then((s) => { out.restaurants = s.size; }).catch(() => {}),
+  ]);
+  return out;
 }
 
 export default function ExecutiveDashboard({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.signOut);
-  const { isWide, isDesktop } = useBreakpoint();
-  const [stats, setStats] = useState({ chapters: 0, members: 0, restaurants: 0 });
-  const [finance, setFinance] = useState({ raised: 0, lbsRescued: 0 });
+  const { isDesktop } = useBreakpoint();
+  const [counts, setCounts] = useState({ chapters: 0, members: 0, partners: 0 });
+  const [raised, setRaised] = useState(0);
+  const [totalLbs, setTotalLbs] = useState(0);
+  const [weekLbs, setWeekLbs] = useState(0);
+  const [weekRuns, setWeekRuns] = useState(0);
+  const [activeChapters, setActiveChapters] = useState(0);
+  const [pending, setPending] = useState({ chapterApps: 0, joinRequests: 0, restaurants: 0 });
 
   const load = useCallback(async () => {
     try {
-      const [chapters, members, restaurants, donations, metrics] =
-        await Promise.all([
-          fetchChapters(),
-          fetchAllMembers(),
-          fetchRestaurants(),
-          fetchAllDonations(),
-          fetchOrgMetrics({ scope: 'org' }),
-        ]);
-      setStats({
-        chapters: chapters.length,
-        members: members.length,
-        restaurants: restaurants.length,
-      });
+      const [chapters, members, restaurants, donations, metrics, weekDone, pend] = await Promise.all([
+        fetchChapters(),
+        fetchAllMembers(),
+        fetchRestaurants(),
+        fetchAllDonations(),
+        fetchOrgMetrics({ scope: 'org' }),
+        fetchRecentlyCompletedPickups({ hours: 24 * 7 }),
+        fetchPendingCounts(),
+      ]);
+      setCounts({ chapters: chapters.length, members: members.length, partners: restaurants.length });
+      setRaised(donations.reduce((s, d) => s + (d.amount || 0), 0));
+      // All-time lbs — prefer the org metric, fall back to a legacy meals divide.
       const lbsMetric = metrics.find((m) => m.key === 'lbs_rescued_org')
         || metrics.find((m) => m.key === 'meals_rescued_org');
-      // If the only metric we have is the legacy meals one, divide
-      // by 1.2 to surface as pounds.
-      const isLegacyMeals = lbsMetric?.key === 'meals_rescued_org';
-      const lbsValue = lbsMetric ? (isLegacyMeals ? Math.round(lbsMetric.value / 1.2) : lbsMetric.value) : 0;
-      setFinance({
-        raised: donations.reduce((s, d) => s + (d.amount || 0), 0),
-        lbsRescued: lbsValue,
-      });
-    } catch (e) {}
+      if (lbsMetric) {
+        const legacy = lbsMetric.key === 'meals_rescued_org';
+        setTotalLbs(legacy ? Math.round(lbsMetric.value / 1.2) : lbsMetric.value);
+      }
+      // This week's pulse — chapter count with activity + lbs total
+      const wLbs = weekDone.reduce((s, p) => s + (p.actual_weight_lbs || p.estimated_weight_lbs || 0), 0);
+      setWeekLbs(Math.round(wLbs));
+      setWeekRuns(weekDone.length);
+      const activeSet = new Set(weekDone.map((p) => p.chapter_id).filter(Boolean));
+      setActiveChapters(activeSet.size);
+      setPending(pend);
+    } catch {}
   }, []);
-
-  // Refresh every time the screen comes into focus so newly-created
-  // accounts, chapters, and restaurants appear without a manual reload.
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function handleSignOut() {
@@ -79,160 +129,328 @@ export default function ExecutiveDashboard({ navigation }) {
     clearAuth();
   }
 
+  const totalPending = pending.chapterApps + pending.joinRequests + pending.restaurants;
+
   return (
     <ContractGate kind="executive">
-    <Screen contentStyle={styles.content}>
-      <ResponsiveContainer maxWidth={1200}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.eyebrow}>Executive {'\u00B7'} C-Suite</Text>
-            <BrushText variant="screenTitle" style={styles.title}>
-              Hi {user?.name?.split(' ')[0] || 'Exec'},
-            </BrushText>
-            <Text style={styles.subtitle}>Here's the org at a glance.</Text>
-          </View>
-          <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
-            <Text style={styles.signOut}>Sign out</Text>
-          </TouchableOpacity>
-        </View>
+    <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+      <ResponsiveContainer maxWidth={780}>
+        <IdentityStrip
+          eyebrow="Executive"
+          greeting={timeOfDayGreeting()}
+          name={firstName(user)}
+          avatarInitial={(user?.name || '?')[0].toUpperCase()}
+          onSignOut={handleSignOut}
+        />
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <StatCard number={String(stats.chapters)} label="Chapters" color={Colors.sage} style={styles.stat} />
-          <StatCard number={String(stats.members)} label="Members" color={Colors.green} style={styles.stat} />
-          <StatCard number={String(stats.restaurants)} label="Partners" color={Colors.pink} style={styles.stat} />
-        </View>
+        <PulseHero
+          weekLbs={weekLbs}
+          weekRuns={weekRuns}
+          activeChapters={activeChapters}
+          totalChapters={counts.chapters}
+        />
 
-        {/* KPI Cards */}
-        <View style={[styles.kpis, isWide && styles.kpisWide]}>
-          <LinearGradient
-            colors={Colors.gradient.green}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.kpi}
-          >
-            <Text style={styles.kpiLabel}>This month</Text>
-            <Text style={styles.kpiValue}>{fmtMoney(finance.raised)}</Text>
-            <Text style={styles.kpiCaption}>raised across chapters</Text>
-          </LinearGradient>
-          <LinearGradient
-            colors={Colors.gradient.sage}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.kpi}
-          >
-            <Text style={styles.kpiLabel}>Pounds of food rescued</Text>
-            <Text style={styles.kpiValue}>{finance.lbsRescued.toLocaleString()}</Text>
-            <Text style={styles.kpiCaption}>in the last 30 days</Text>
-          </LinearGradient>
-        </View>
+        {totalPending > 0 && (
+          <PendingApprovalsCard
+            pending={pending}
+            onOpenChapters={() => navigation.navigate('ManageChapters')}
+            onOpenPartners={() => navigation.navigate('ManageRestaurants')}
+          />
+        )}
 
-        {/* Live operations — every pickup currently in motion, every
-            volunteer currently out on a route. Org-wide for execs. */}
+        <KpiTrio
+          raised={raised}
+          totalLbs={totalLbs}
+          members={counts.members}
+        />
+
         <LiveOps navigation={navigation} />
 
-        {/* Tools */}
-        <BrushText variant="sectionHeader" style={styles.sectionHeader}>
-          Executive Tools
-        </BrushText>
+        {user?.chapter_id && (
+          <TouchableOpacity
+            style={styles.chapterShortcut}
+            onPress={() => navigation.navigate('PresidentDashboard')}
+            activeOpacity={0.88}
+          >
+            <View style={styles.chapterShortcutIcon}>
+              <Icon name="pin" size={16} color={Colors.green} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.chapterShortcutTitle}>Also chapter president</Text>
+              <Text style={styles.chapterShortcutBody}>Open the president view for your own chapter.</Text>
+            </View>
+            <Icon name="chevron" size={16} color={Colors.grayMid} />
+          </TouchableOpacity>
+        )}
 
-        <View style={[styles.grid, isWide && styles.gridWide]}>
-          {/* If this exec is also assigned as a chapter's president
-              (i.e. they have a chapter_id), surface a shortcut into
-              the president view alongside the org-wide tools. */}
-          {user?.chapter_id ? (
-            <TouchableOpacity
-              style={[styles.card, isWide && styles.cardWide, isDesktop && styles.cardDesktop]}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('PresidentDashboard')}
-            >
-              <View style={[styles.emojiWrap, { backgroundColor: Colors.green + '15' }]}>
-                <Text style={styles.emoji}>{'\u{1F3DB}️'}</Text>
-              </View>
-              <Text style={styles.label}>My Chapter (President view)</Text>
-              <Text style={styles.desc}>Events, members, reports, and metrics for the chapter you lead.</Text>
-            </TouchableOpacity>
-          ) : null}
-          {TOOLS.map((item) => (
-            <TouchableOpacity
-              key={item.key}
-              style={[
-                styles.card,
-                isWide && styles.cardWide,
-                isDesktop && styles.cardDesktop,
-              ]}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate(item.screen)}
-            >
-              <View style={[styles.emojiWrap, { backgroundColor: item.color + '15' }]}>
-                <Text style={styles.emoji}>{item.emoji}</Text>
-              </View>
-              <Text style={styles.label}>{item.label}</Text>
-              <Text style={styles.desc}>{item.desc}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <ToolsGrid navigation={navigation} />
       </ResponsiveContainer>
     </Screen>
     </ContractGate>
   );
 }
 
+function IdentityStrip({ eyebrow, greeting, name, avatarInitial, onSignOut }) {
+  return (
+    <View style={styles.idStrip}>
+      <View style={styles.avatar}><Text style={styles.avatarText}>{avatarInitial}</Text></View>
+      <View style={styles.greeting}>
+        <Text style={styles.greetingK}>{eyebrow}</Text>
+        <Text style={styles.greetingT} numberOfLines={1}>{greeting} {name}</Text>
+      </View>
+      <TouchableOpacity onPress={onSignOut} style={styles.signOutBtn}>
+        <Text style={styles.signOutTxt}>Sign out</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function PulseHero({ weekLbs, weekRuns, activeChapters, totalChapters }) {
+  const hasActivity = weekLbs > 0 || weekRuns > 0;
+  const meals = mealsFromLbs(weekLbs);
+  return (
+    <View style={styles.pulseHero}>
+      <Text style={styles.pulseEyebrow}>This week · org-wide</Text>
+      {hasActivity ? (
+        <>
+          <Text style={styles.pulseNum}>
+            {weekLbs.toLocaleString('en-US')}
+            <Text style={styles.pulseNumUnit}> lbs rescued</Text>
+          </Text>
+          <Text style={styles.pulseBody}>
+            <Text style={styles.pulseBodyEm}>{weekRuns} run{weekRuns === 1 ? '' : 's'}</Text>
+            {meals > 0 ? ` · about ${meals.toLocaleString('en-US')} meals` : ''}
+            {activeChapters > 0 && totalChapters > 0
+              ? ` · ${activeChapters} of ${totalChapters} chapter${totalChapters === 1 ? '' : 's'} active`
+              : ''}
+            .
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.pulseNum}>Quiet week across the org.</Text>
+          <Text style={styles.pulseBody}>
+            {totalChapters > 0
+              ? `${totalChapters} chapter${totalChapters === 1 ? '' : 's'} on the board and no completed runs yet — a broadcast might help.`
+              : 'Approve the first chapter to get things moving.'}
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
+function PendingApprovalsCard({ pending, onOpenChapters, onOpenPartners }) {
+  const rows = [];
+  if (pending.chapterApps > 0) {
+    rows.push({
+      key: 'ch-app',
+      icon: 'pin',
+      title: `${pending.chapterApps} chapter application${pending.chapterApps === 1 ? '' : 's'}`,
+      body: 'Founders waiting on your green light.',
+      onPress: onOpenChapters,
+    });
+  }
+  if (pending.joinRequests > 0) {
+    rows.push({
+      key: 'jr',
+      icon: 'users',
+      title: `${pending.joinRequests} chapter join request${pending.joinRequests === 1 ? '' : 's'}`,
+      body: 'Members asking to switch chapters.',
+      onPress: onOpenChapters,
+    });
+  }
+  if (pending.restaurants > 0) {
+    rows.push({
+      key: 'rest',
+      icon: 'clipboard',
+      title: `${pending.restaurants} partner application${pending.restaurants === 1 ? '' : 's'}`,
+      body: 'Restaurants and community partners awaiting review.',
+      onPress: onOpenPartners,
+    });
+  }
+  if (rows.length === 0) return null;
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardEyebrow}>Needs your review</Text>
+      <View style={{ marginTop: 6 }}>
+        {rows.map((r, i) => (
+          <TouchableOpacity
+            key={r.key}
+            style={[styles.attnRow, i > 0 && styles.attnRowBorder]}
+            onPress={r.onPress}
+            activeOpacity={0.85}
+          >
+            <View style={styles.attnIcon}>
+              <Icon name={r.icon} size={16} color={Colors.pink} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.attnTitle} numberOfLines={1}>{r.title}</Text>
+              <Text style={styles.attnBody} numberOfLines={2}>{r.body}</Text>
+            </View>
+            <Icon name="chevron" size={16} color={Colors.grayMid} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// Quiet KPI trio — money / lbs / members. No gradient banners; these
+// numbers are informative, not the emotional beat of the screen.
+function KpiTrio({ raised, totalLbs, members }) {
+  return (
+    <View style={styles.kpiRow}>
+      <View style={styles.kpiCell}>
+        <Text style={styles.kpiNum}>{fmtMoney(raised)}</Text>
+        <Text style={styles.kpiLabel}>Raised · month</Text>
+      </View>
+      <View style={styles.kpiDiv} />
+      <View style={styles.kpiCell}>
+        <Text style={styles.kpiNum}>{(totalLbs || 0).toLocaleString('en-US')}</Text>
+        <Text style={styles.kpiLabel}>Lbs · all-time</Text>
+      </View>
+      <View style={styles.kpiDiv} />
+      <View style={styles.kpiCell}>
+        <Text style={styles.kpiNum}>{(members || 0).toLocaleString('en-US')}</Text>
+        <Text style={styles.kpiLabel}>Members</Text>
+      </View>
+    </View>
+  );
+}
+
+function ToolsGrid({ navigation }) {
+  return (
+    <View style={styles.toolsCard}>
+      <Text style={styles.cardEyebrow}>Executive tools</Text>
+      <View style={styles.toolsGrid}>
+        {TOOLS.map((t) => (
+          <TouchableOpacity
+            key={t.key}
+            style={styles.toolItem}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate(t.to)}
+          >
+            <View style={styles.toolIcon}>
+              <Icon name={t.icon} size={16} color={Colors.green} strokeWidth={2} />
+            </View>
+            <Text style={styles.toolLabel}>{t.title}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.cream,
-    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
+  content: { padding: 20, paddingTop: 60, paddingBottom: 60, gap: 12 },
+  contentDesktop: { paddingHorizontal: 40, maxWidth: 780, alignSelf: 'center', width: '100%' },
+
+  idStrip: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
+  avatar: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.green,
+    alignItems: 'center', justifyContent: 'center',
   },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 24 },
-  eyebrow: { ...Type.eyebrow, color: Colors.pink, fontSize: 11 },
-  title: { color: Colors.green, marginTop: 4 },
-  subtitle: { ...Type.body, color: Colors.gray, marginTop: 2 },
+  avatarText: { color: Colors.cream, fontFamily: SERIF, fontSize: 16, fontWeight: '500' },
+  greeting: { flex: 1, minWidth: 0 },
+  greetingK: { fontSize: 11, color: Colors.pink, letterSpacing: 0.1, textTransform: 'uppercase', fontWeight: '700' },
+  greetingT: { fontSize: 16, fontWeight: '600', color: Colors.dark, marginTop: 1 },
   signOutBtn: { paddingVertical: 6, paddingHorizontal: 10 },
-  signOut: { fontSize: 13, color: Colors.pink, fontWeight: '600' },
+  signOutTxt: { fontSize: 13, color: Colors.pink, fontWeight: '600' },
 
-  // Wrap-friendly stat grid — 3 across on tablet+, 2 up on phone
-  // with a min-width safeguard so the numbers stay readable.
-  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  stat: { flex: 1, minWidth: 100 },
-
-  // KPI cards — flex-wrap so a phone drops the second card below.
-  kpis: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 28 },
-  kpisWide: { gap: 16 },
-  kpi: {
-    flex: 1,
-    minWidth: 220,
-    borderRadius: Radius.xl,
-    padding: 22,
+  pulseHero: {
+    backgroundColor: Colors.green,
+    borderRadius: 22, padding: 22, marginTop: 6, gap: 8,
   },
-  kpiLabel: { ...Type.eyebrow, color: 'rgba(255,255,255,0.55)', fontSize: 10 },
-  kpiValue: { color: '#fff', fontSize: 30, fontWeight: '800', marginTop: 6, fontFamily: 'Caveat-Bold' },
-  kpiCaption: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4, fontWeight: '500' },
+  pulseEyebrow: {
+    fontSize: 10.5, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.65)',
+  },
+  pulseNum: {
+    fontFamily: SERIF, fontSize: 40, lineHeight: 42,
+    color: Colors.cream, fontWeight: '500', letterSpacing: -0.6, marginTop: 4,
+  },
+  pulseNumUnit: {
+    fontFamily: undefined,
+    fontSize: 14, fontWeight: '500', letterSpacing: 0,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  pulseBody: {
+    fontSize: 14.5, lineHeight: 21,
+    color: 'rgba(255,255,255,0.85)', marginTop: 4,
+  },
+  pulseBodyEm: { color: Colors.cream, fontWeight: '700' },
 
-  sectionHeader: { color: Colors.green, marginBottom: 14 },
-  grid: { flexDirection: 'column', gap: 12 },
-  gridWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   card: {
-    backgroundColor: Colors.white,
-    borderRadius: Radius.xl,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-    ...Shadows.card,
+    backgroundColor: Colors.white, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: Colors.glassBorder,
   },
-  cardWide: { flexBasis: '47%', flexGrow: 1, minWidth: 240 },
-  cardDesktop: { flexBasis: '23%' },
-  emojiWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
+  cardEyebrow: {
+    fontSize: 10.5, fontWeight: '800', letterSpacing: 1.4,
+    textTransform: 'uppercase', color: Colors.gray, marginBottom: 6,
   },
-  emoji: { fontSize: 24 },
-  label: { fontSize: 16, fontWeight: '700', color: Colors.dark, letterSpacing: -0.2 },
-  desc: { ...Type.caption, marginTop: 4 },
+  attnRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 10,
+  },
+  attnRowBorder: { borderTopWidth: 0.5, borderTopColor: Colors.glassBorder },
+  attnIcon: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: '#FDF0F3',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  attnTitle: { fontSize: 14, fontWeight: '600', color: Colors.dark },
+  attnBody: { fontSize: 12.5, color: Colors.gray, marginTop: 2 },
+
+  kpiRow: {
+    backgroundColor: Colors.white, borderRadius: 18,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+    padding: 16, flexDirection: 'row', alignItems: 'center',
+  },
+  kpiCell: { flex: 1, alignItems: 'center' },
+  kpiNum: {
+    fontFamily: SERIF, fontSize: 24, lineHeight: 26,
+    color: Colors.dark, fontWeight: '500', letterSpacing: -0.3,
+  },
+  kpiLabel: {
+    fontSize: 10.5, fontWeight: '600', color: Colors.gray,
+    marginTop: 6, letterSpacing: 0.3, textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  kpiDiv: { width: 1, height: 30, backgroundColor: Colors.glassBorder },
+
+  chapterShortcut: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.white, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+  },
+  chapterShortcutIcon: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  chapterShortcutTitle: { fontSize: 14, fontWeight: '700', color: Colors.dark },
+  chapterShortcutBody: { fontSize: 12.5, color: Colors.gray, marginTop: 2 },
+
+  toolsCard: {
+    backgroundColor: Colors.white, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+  },
+  toolsGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8,
+  },
+  toolItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+    minWidth: '30%',
+    flexGrow: 1,
+  },
+  toolIcon: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: Colors.greenLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  toolLabel: { fontSize: 13, fontWeight: '600', color: Colors.dark, flex: 1 },
 });
