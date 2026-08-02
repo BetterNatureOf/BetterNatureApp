@@ -187,13 +187,17 @@ export default function PickupDetail({ route, navigation }) {
   }
 
   async function handleDelivered() {
-    // Sanity-check the actual weight before we ship a tax receipt
-    // to the partner. If the volunteer enters something wildly off
-    // from the restaurant's estimate, force a confirmation — the
-    // partner's receipt should match the food they actually gave.
-    const w = weight ? parseFloat(weight) : undefined;
+    // Client-side weight check — required now (service enforces too).
+    const w = weight ? parseFloat(weight) : NaN;
+    if (!Number.isFinite(w) || w <= 0) {
+      notify('Weight required', 'Enter the actual pounds you delivered — the tax receipt reads from this number.');
+      return;
+    }
+    // Sanity-check drift from the restaurant's estimate before the
+    // receipt ships. Every partner receipt should match the food they
+    // actually gave; a 30%+ drift is worth one confirmation tap.
     const est = Number(pickup?.estimated_weight_lbs || 0);
-    if (w != null && Number.isFinite(w) && est > 0) {
+    if (est > 0) {
       const drift = Math.abs(w - est) / est;
       if (drift > 0.3) {
         const ok = await confirm(
@@ -209,21 +213,38 @@ export default function PickupDetail({ route, navigation }) {
       await refresh();
       // Pull the freshly bumped user doc so Profile / Impact /
       // Leaderboard show the updated lbs_rescued + hours the moment
-      // the volunteer pops back. Without this the screens stay stuck
-      // on the pre-pickup numbers until the next sign-in.
+      // the volunteer pops back.
       try {
         if (user?.id) {
           const fresh = await getProfile(user.id);
           if (fresh && setUser) setUser({ ...user, ...fresh });
         }
       } catch (e) { console.warn('user refresh after pickup', e); }
-      // Instead of navigating away immediately, stay on the screen
-       // — the completion card (rendered below when status ===
-       // 'completed') shows their impact + tax receipt link so the
-       // volunteer sees proof of the run before they leave.
-       notify('Delivered', 'Nice run. Your impact is logged.');
+      notify('Delivered', 'Nice run. Your impact is logged.');
     } catch (e) {
-      notify('Could not complete', e?.message || 'Try again.');
+      // Map service-layer guard codes → actionable messages. Anything
+      // unmapped falls through to the raw error string.
+      const code = e?.code || '';
+      if (code === 'handoff_not_confirmed') {
+        notify(
+          'Restaurant needs to confirm first',
+          "You can only mark delivered after the restaurant confirms you picked up the food. Ask them to open their app and tap 'Confirm pickup happened.'"
+        );
+      } else if (code === 'not_enroute') {
+        notify(
+          'Tap "I\'m on my way" first',
+          "The pickup has to be marked en route before you can mark it delivered — that's how the restaurant knows the food's already out."
+        );
+      } else if (code === 'weight_required') {
+        notify('Weight required', 'Enter the actual pounds you delivered before submitting.');
+      } else if (code === 'claimant_disabled') {
+        notify(
+          'Account disabled',
+          'This account has been disabled. Email info@betternatureofficial.org to sort it out.'
+        );
+      } else {
+        notify('Could not complete', e?.message || 'Try again.');
+      }
     } finally { setBusy(false); }
   }
 

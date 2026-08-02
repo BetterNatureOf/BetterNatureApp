@@ -992,7 +992,13 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
   return fresh;
 }
 
-export async function completePickup(pickupId, actualWeightLbs) {
+// Completion guards — the four "correctness gate" checks from the
+// drop-off audit. Each throws a coded Error the caller can distinguish
+// so PickupDetail can render an actionable message per failure mode.
+// Pass { override: true } from admin/exec backfill paths (Phase 2
+// Approval Inbox → Force-complete). Do NOT expose override in the
+// volunteer UI.
+export async function completePickup(pickupId, actualWeightLbs, { override = false } = {}) {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     if (pk) {
@@ -1049,12 +1055,61 @@ export async function completePickup(pickupId, actualWeightLbs) {
         throw err;
       }
       if (data.status === 'cancelled') throw new Error('That pickup was cancelled.');
+
+      // Gate #2 — status must be 'enroute' (volunteer has actually
+      // hit the road with the food). Skipping this let a volunteer
+      // go claimed → completed directly, bypassing the on-the-way
+      // step the restaurant is waiting on.
+      if (!override && data.status !== 'enroute') {
+        const err = new Error('NOT_ENROUTE');
+        err.code = 'not_enroute';
+        throw err;
+      }
+
+      // Gate #1 — restaurant must have physically confirmed the
+      // handoff via verifyPickupByRestaurant. Without this a
+      // volunteer could mint hours + a tax receipt for a pickup
+      // that never actually happened. Real fraud vector, not
+      // theoretical.
+      if (!override && !data.verified_by_restaurant_at) {
+        const err = new Error('HANDOFF_NOT_CONFIRMED');
+        err.code = 'handoff_not_confirmed';
+        throw err;
+      }
+
+      // Gate #3 — a real weight is required. Silent fallback to
+      // estimated_weight_lbs meant every partner tax receipt could
+      // be an estimate, not a measurement. Restaurants trust the
+      // receipt number; it has to be real.
+      const parsed = Number(actualWeightLbs);
+      if (!override && (!Number.isFinite(parsed) || parsed <= 0)) {
+        const err = new Error('WEIGHT_REQUIRED');
+        err.code = 'weight_required';
+        throw err;
+      }
+
+      // Gate #8 — soft-deleted volunteer can't complete pickups.
+      // We snapshot their user doc inside the tx so the disabled
+      // check is atomic with the pickup write. Skipping the check
+      // let a disabled account still bump hours + collect a receipt
+      // on a pickup they had claimed before the disable.
+      if (!override && data.claimed_by) {
+        const uSnap = await tx.get(doc(db, 'users', data.claimed_by));
+        if (uSnap.exists() && uSnap.data().disabled === true) {
+          const err = new Error('CLAIMANT_DISABLED');
+          err.code = 'claimant_disabled';
+          throw err;
+        }
+      }
+
       const claimedAtMs = data.claimed_at?.toDate
         ? data.claimed_at.toDate().getTime()
         : data.claimed_at ? new Date(data.claimed_at).getTime() : Date.now();
       const elapsedH = (Date.now() - claimedAtMs) / 3600000;
       hoursEarned = Math.max(0.25, Math.min(3, +elapsedH.toFixed(2)));
-      weight = (actualWeightLbs || data.estimated_weight_lbs || 0);
+      weight = override
+        ? (actualWeightLbs || data.estimated_weight_lbs || 0)
+        : parsed;
       tx.update(pkRef, {
         status: 'completed',
         actual_weight_lbs: weight,
