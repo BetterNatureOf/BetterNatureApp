@@ -2121,6 +2121,16 @@ export async function grantRole(userId, newRole) {
       chapter_name: u.chapter?.name || u.chapter_name || '',
     });
   } catch (e) { console.warn('grantRole shadow-write', e?.message); }
+  try {
+    const { logAuditEvent, AUDIT_ACTIONS } = await import('./audit');
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.ROLE_GRANTED,
+      resource_type: 'user', resource_id: userId,
+      prior: { role: primary, roles: extras },
+      next: { role_granted: newRole },
+      scope_org_unit_id: u.chapter_id || null,
+    });
+  } catch {}
 }
 
 // Revoke a role from wherever it lives — primary or roles[]. If we
@@ -2154,6 +2164,16 @@ export async function revokeRole(userId, roleToDrop) {
     const scope = defaultScopeFor(roleToDrop, { chapterId: u.chapter_id });
     await endRoleAssignment({ user_id: userId, role_key: roleToDrop, scope_id: scope, reason: 'revoked' });
   } catch (e) { console.warn('revokeRole shadow-write', e?.message); }
+  try {
+    const { logAuditEvent, AUDIT_ACTIONS } = await import('./audit');
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.ROLE_REVOKED,
+      resource_type: 'user', resource_id: userId,
+      prior: { role: primary, roles: prevExtras },
+      next: { role_revoked: roleToDrop },
+      scope_org_unit_id: u.chapter_id || null,
+    });
+  } catch {}
 }
 
 export async function updateUserChapter(userId, chapterId) {
@@ -2187,6 +2207,16 @@ export async function updateUserChapter(userId, chapterId) {
       await upsertMembership({ user_id: userId, org_unit_id: chapterId });
     }
   } catch (e) { console.warn('updateUserChapter shadow-write', e?.message); }
+  try {
+    const { logAuditEvent, AUDIT_ACTIONS } = await import('./audit');
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.MEMBERSHIP_CHANGED,
+      resource_type: 'user', resource_id: userId,
+      prior: { chapter_id: priorChapterId },
+      next: { chapter_id: chapterId },
+      scope_org_unit_id: chapterId || priorChapterId || null,
+    });
+  } catch {}
 }
 
 // Soft-delete a user. The Firebase client SDK can't delete another
@@ -2214,6 +2244,13 @@ export async function removeUser(userId) {
     role: 'member',
     roles: [],
   });
+  try {
+    const { logAuditEvent, AUDIT_ACTIONS } = await import('./audit');
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.USER_DISABLED,
+      resource_type: 'user', resource_id: userId,
+    });
+  } catch {}
 }
 
 // Reverse a soft-delete. Clears the disabled flag; leaves member_status
@@ -2226,4 +2263,11 @@ export async function restoreUser(userId) {
     disabled_at: null,
     member_status: 'pending',
   });
+  try {
+    const { logAuditEvent, AUDIT_ACTIONS } = await import('./audit');
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.USER_RESTORED,
+      resource_type: 'user', resource_id: userId,
+    });
+  } catch {}
 }

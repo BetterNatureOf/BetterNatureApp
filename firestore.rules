@@ -420,6 +420,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── audit_events (Phase 1 slice 3) ──
+    // Blueprint §17 AuditEvent entity. Append-only observability;
+    // no updates, no deletes. Any signed-in user can WRITE (client
+    // code across the app fires audit rows best-effort from the
+    // authenticated context that performed the recorded action).
+    // Reads are exec-only — this is the accountability record, not
+    // a general activity feed.
+    match /audit_events/{id} {
+      allow read: if isExec();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
     // ── role_assignments (Phase 1 slice 2) ──
     // Shadow of user.role + user.roles[] as first-class rows with
     // scope + start/end. Reads open to the assignee + exec.

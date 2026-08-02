@@ -32,6 +32,7 @@ import PickupDetail from '../screens/projects/PickupDetail';
 
 import ChapterChecklist from '../screens/chapter/ChapterChecklist';
 import FindChapter from '../screens/main/FindChapter';
+import BelongScreen from '../screens/main/BelongScreen';
 import VolunteerTaxReceipts from '../screens/main/VolunteerTaxReceipts';
 
 import RestDashboard from '../screens/restaurant/RestDashboard';
@@ -192,11 +193,15 @@ function MainTabs() {
           tabBarIcon: ({ focused }) => <TabIcon label="Do" focused={focused} />,
         }}
       />
+      {/* Belong tab — Phase 1 slice 3. Chapter directory + memberships
+          + workspace switcher landing. Replaces the Impact tab in the
+          new IA; Impact still exists as a stack screen accessible from
+          Home dashboard's chapter pulse card. */}
       <Tab.Screen
-        name="Impact"
-        component={ImpactScreen}
+        name="Belong"
+        component={BelongScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="Impact" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon label="Belong" focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -241,6 +246,10 @@ export default function MainNavigator() {
     <MemberApprovalGate>
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
+      {/* Impact demoted from tab (Belong takes its slot) but kept as
+          a stack screen so links from the chapter-pulse card + any
+          future deep-link land somewhere real. */}
+      <Stack.Screen name="Impact" component={ImpactScreen} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Stack.Screen name="ProjectDetail" component={ProjectDetail} />
       <Stack.Screen name="Iris" component={IrisScreen} />
