@@ -1029,7 +1029,43 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
 // Pass { override: true } from admin/exec backfill paths (Phase 2
 // Approval Inbox → Force-complete). Do NOT expose override in the
 // volunteer UI.
-export async function completePickup(pickupId, actualWeightLbs, { override = false } = {}) {
+// #9 from drop-off audit — allow the fridge choice to change between
+// enroute and completion. Real-world: volunteer picked fridge A when
+// setting enroute, arrives to find it full/broken/closed, ends up at
+// fridge B. Old code froze the choice at enroute time and the tax
+// receipt named the wrong fridge. This mutates the pickup's fridge_*
+// fields in place (only while status === 'enroute') so completePickup
+// reads the correct fridge into the completion write + receipt.
+export async function updatePickupFridge(pickupId, fridgeId) {
+  if (useMock() || !isFirebaseConfigured) return;
+  if (!pickupId || !fridgeId) return;
+  const pkRef = doc(db, 'pickups', pickupId);
+  const fSnap = await getDoc(doc(db, 'fridges', fridgeId));
+  if (!fSnap.exists()) throw new Error('That fridge no longer exists.');
+  const f = fSnap.data();
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(pkRef);
+    if (!snap.exists()) throw new Error('Pickup not found');
+    const data = snap.data();
+    if (data.status !== 'enroute') {
+      throw new Error('You can only change the fridge while a pickup is in progress.');
+    }
+    tx.update(pkRef, {
+      fridge_id: fridgeId,
+      fridge_name: f.name || '',
+      fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
+      fridge_lat: f.lat ?? null,
+      fridge_lng: f.lng ?? null,
+      fridge_changed_at: new Date().toISOString(),
+    });
+  });
+}
+
+// completePickup now takes optional dropoffPhotoUrl + fridgeId so the
+// volunteer can attach a "the food is IN the fridge" proof photo (#11
+// from drop-off audit) and change the destination fridge in the same
+// action (#9 fallback path — updatePickupFridge is the standalone).
+export async function completePickup(pickupId, actualWeightLbs, { override = false, dropoffPhotoUrl = null, fridgeId = null } = {}) {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     if (pk) {
@@ -1064,6 +1100,27 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
   }
 
   const pkRef = doc(db, 'pickups', pickupId);
+
+  // If the caller passed a fridgeId override, pre-fetch the fridge
+  // doc so the transaction has name / address / coords to stamp. Done
+  // outside the tx because fridge docs are stable enough that a race
+  // between this read and the completion write is a non-issue.
+  let fridgeOverride = null;
+  if (fridgeId) {
+    try {
+      const fSnap = await getDoc(doc(db, 'fridges', fridgeId));
+      if (fSnap.exists()) {
+        const f = fSnap.data();
+        fridgeOverride = {
+          fridge_id: fridgeId,
+          fridge_name: f.name || '',
+          fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
+          fridge_lat: f.lat ?? null,
+          fridge_lng: f.lng ?? null,
+        };
+      }
+    } catch (e) { console.warn('completePickup fridge lookup', e?.message); }
+  }
 
   // IDEMPOTENT completion via transaction. Without this, a flaky
   // connection or fast double-tap can trigger completePickup twice:
@@ -1148,12 +1205,20 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
       weight = override
         ? (actualWeightLbs || data.estimated_weight_lbs || 0)
         : parsed;
-      tx.update(pkRef, {
+      const updates = {
         status: 'completed',
         actual_weight_lbs: weight,
         completed_at: now,
         hours_earned: hoursEarned,
-      });
+      };
+      if (dropoffPhotoUrl) updates.dropoff_photo_url = dropoffPhotoUrl;
+      // Late fridge change (see updatePickupFridge). fridgeOverride
+      // carries the enriched name / address / coords we pre-fetched
+      // outside the tx so the receipt reads correctly.
+      if (fridgeOverride && fridgeOverride.fridge_id !== data.fridge_id) {
+        Object.assign(updates, fridgeOverride, { fridge_changed_at: now });
+      }
+      tx.update(pkRef, updates);
       return data;
     });
   } catch (e) {

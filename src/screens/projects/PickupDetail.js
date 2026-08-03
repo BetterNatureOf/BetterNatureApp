@@ -24,7 +24,9 @@ import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant } from '../../services/database';
+import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge } from '../../services/database';
+import { uploadPickupPhoto } from '../../services/pickupPhotos';
+import * as ImagePicker from 'expo-image-picker';
 import { getProfile } from '../../services/auth';
 import { openInMaps, openDirections, getCurrentPosition, milesBetween } from '../../services/maps';
 import { requireVerifiedId } from '../../services/idGate';
@@ -39,7 +41,11 @@ export default function PickupDetail({ route, navigation }) {
   const [pickup, setPickup] = useState(route?.params?.pickup || null);
   const [busy, setBusy] = useState(false);
   const [chosenFridge, setChosenFridge] = useState(null);
+  const [showFridgeChange, setShowFridgeChange] = useState(false);
   const [weight, setWeight] = useState('');
+  const [dropoffPhotoUri, setDropoffPhotoUri] = useState(null); // local, pre-upload
+  const [uploadedDropoffUrl, setUploadedDropoffUrl] = useState(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
   const [myLoc, setMyLoc] = useState(null);
   // Restaurant verifying that the volunteer just walked in to pick up.
   const [verifying, setVerifying] = useState(false);
@@ -186,6 +192,54 @@ export default function PickupDetail({ route, navigation }) {
     } finally { setBusy(false); }
   }
 
+  // #9 from drop-off audit — change the drop-off fridge while
+  // enroute. Real-world: volunteer picked A, arrives to find A
+  // full/broken/closed, ends up at B. This mutates the pickup's
+  // fridge_* fields so the receipt reads the correct fridge.
+  async function handleChangeFridge(newFridgeId) {
+    if (!newFridgeId || newFridgeId === pickup.fridge_id) {
+      setShowFridgeChange(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      await updatePickupFridge(pickup.id, newFridgeId);
+      await refresh();
+      setShowFridgeChange(false);
+      notify('Fridge updated', 'The tax receipt will show the new drop-off location.');
+    } catch (e) {
+      notify('Could not update', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  // #11 from drop-off audit — optional "food is IN the fridge" proof
+  // photo. Attaches to the pickup as dropoff_photo_url; the tax
+  // receipt links it so partners can see their donation reached the
+  // fridge. Kept OPTIONAL because many fridges are inside buildings
+  // with poor signal — hard-requiring would strand volunteers.
+  async function handleAddDropoffPhoto() {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        notify('Camera access needed', 'Grant camera access to attach a drop-off proof photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.6, allowsEditing: true,
+      });
+      if (result.canceled) return;
+      const uri = result.assets?.[0]?.uri;
+      if (!uri) return;
+      setDropoffPhotoUri(uri);
+      // Upload straight away so completePickup only needs the URL.
+      setUploadingProof(true);
+      const url = await uploadPickupPhoto(`dropoff-${pickup.id}`, uri);
+      setUploadedDropoffUrl(url || null);
+    } catch (e) {
+      notify('Photo upload failed', e?.message || 'Try again — the tax receipt still ships without it.');
+    } finally { setUploadingProof(false); }
+  }
+
   async function handleDelivered() {
     // Client-side weight check — required now (service enforces too).
     const w = weight ? parseFloat(weight) : NaN;
@@ -209,7 +263,9 @@ export default function PickupDetail({ route, navigation }) {
     }
     setBusy(true);
     try {
-      await completePickup(pickup.id, w);
+      await completePickup(pickup.id, w, {
+        dropoffPhotoUrl: uploadedDropoffUrl || undefined,
+      });
       await refresh();
       // Pull the freshly bumped user doc so Profile / Impact /
       // Leaderboard show the updated lbs_rescued + hours the moment
@@ -389,6 +445,49 @@ export default function PickupDetail({ route, navigation }) {
           </View>
         ) : null}
 
+        {/* Change fridge — visible while enroute so a volunteer who
+            gets redirected (fridge full/closed) can update the drop-
+            off. The receipt reads from these fields, so this can't
+            wait until after completion. #9 from drop-off audit. */}
+        {!userIsRestaurant && pickup.status === 'enroute' ? (
+          <View style={styles.section}>
+            <View style={styles.rowBetween}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionLabel}>Drop-off fridge</Text>
+                <Text style={styles.sectionHelp}>
+                  {pickup.fridge_name || 'Not set'}
+                  {pickup.fridge_address ? ` · ${pickup.fridge_address}` : ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowFridgeChange((v) => !v)} style={styles.linkBtn}>
+                <Text style={styles.linkBtnText}>
+                  {showFridgeChange ? 'Cancel' : 'Change'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {showFridgeChange ? (
+              <View style={{ marginTop: 10 }}>
+                <FridgePicker
+                  value={chosenFridge || pickup.fridge_id}
+                  onChange={(id) => setChosenFridge(id)}
+                  chapterId={user?.chapter_id}
+                  origin={{ lat: pickup.restaurant_lat, lng: pickup.restaurant_lng }}
+                />
+                <TouchableOpacity
+                  style={styles.saveFridgeBtn}
+                  onPress={() => handleChangeFridge(chosenFridge)}
+                  disabled={!chosenFridge || busy}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.saveFridgeBtnText}>
+                    {busy ? 'Updating…' : 'Save new fridge'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* Weight input — available in claimed and enroute state so
             the volunteer can enter the real weight the moment they
             handle the food (a kitchen scale, whatever). The
@@ -405,6 +504,41 @@ export default function PickupDetail({ route, navigation }) {
               placeholder={`Estimate ${pickup.estimated_weight_lbs || 20} — override with the real number`}
               keyboardType="decimal-pad"
             />
+          </View>
+        ) : null}
+
+        {/* Drop-off proof photo — optional at completion time.
+            Blueprint values weighed-and-photo'd receipts. Uploaded
+            immediately on capture so the completion write only needs
+            the URL. #11 from drop-off audit. */}
+        {!userIsRestaurant && pickup.status === 'enroute' ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>
+              Drop-off proof <Text style={styles.optional}>· optional, shown on the receipt</Text>
+            </Text>
+            {dropoffPhotoUri ? (
+              <View style={styles.proofPhotoWrap}>
+                <Image source={{ uri: dropoffPhotoUri }} style={styles.proofPhoto} resizeMode="cover" />
+                {uploadingProof ? (
+                  <View style={styles.proofOverlay}>
+                    <ActivityIndicator color={Colors.white} />
+                    <Text style={styles.proofOverlayText}>Uploading…</Text>
+                  </View>
+                ) : uploadedDropoffUrl ? (
+                  <View style={styles.proofBadge}>
+                    <Text style={styles.proofBadgeText}>✓ Attached</Text>
+                  </View>
+                ) : null}
+                <TouchableOpacity onPress={handleAddDropoffPhoto} style={styles.proofRetake}>
+                  <Text style={styles.proofRetakeText}>Retake</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.proofBtn} onPress={handleAddDropoffPhoto} activeOpacity={0.85}>
+                <Icon name="camera" size={16} color={Colors.green} />
+                <Text style={styles.proofBtnText}>Snap the food in the fridge</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : null}
 
@@ -477,6 +611,43 @@ const styles = StyleSheet.create({
   section: { marginTop: 22 },
   sectionLabel: { fontSize: 14, fontWeight: '700', color: Colors.dark, marginBottom: 6 },
   sectionHelp: { ...Type.caption, marginBottom: 12 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  linkBtn: { paddingVertical: 4, paddingHorizontal: 8 },
+  linkBtnText: { color: Colors.green, fontSize: 13.5, fontWeight: '700' },
+  saveFridgeBtn: {
+    marginTop: 10, paddingVertical: 11, paddingHorizontal: 16,
+    backgroundColor: Colors.green, borderRadius: 12, alignItems: 'center',
+  },
+  saveFridgeBtnText: { color: Colors.cream, fontSize: 14, fontWeight: '700' },
+
+  // Drop-off proof photo
+  proofBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.green + '33', borderStyle: 'dashed',
+  },
+  proofBtnText: { color: Colors.green, fontSize: 14, fontWeight: '700' },
+  proofPhotoWrap: { position: 'relative', borderRadius: 12, overflow: 'hidden' },
+  proofPhoto: { width: '100%', height: 180 },
+  proofOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(26,31,46,0.55)',
+    alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  proofOverlayText: { color: Colors.white, fontSize: 12, fontWeight: '600' },
+  proofBadge: {
+    position: 'absolute', top: 10, left: 10,
+    backgroundColor: Colors.green,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+  },
+  proofBadgeText: { color: Colors.cream, fontSize: 11, fontWeight: '800' },
+  proofRetake: {
+    position: 'absolute', top: 10, right: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+  },
+  proofRetakeText: { color: Colors.white, fontSize: 12, fontWeight: '600' },
   optional: { fontWeight: '500', color: Colors.gray },
   doneCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
