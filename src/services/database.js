@@ -723,6 +723,27 @@ export async function claimPickup(pickupId, userId) {
     });
   } catch (e) { console.warn('claim notify', e); }
 
+  // #10 from drop-off audit — also push the restaurant so they know
+  // someone's coming from the moment of claim, not when the volunteer
+  // eventually taps "on my way". The gap between claim and enroute
+  // could be hours in real life; the restaurant deserves to know a
+  // volunteer accepted the job as soon as it happens.
+  try {
+    if (pk.restaurant_id) {
+      const { enqueueNotification } = await import('./notify');
+      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      const who = claimantName || 'A volunteer';
+      await enqueueNotification({
+        recipients: [linkedUid],
+        kind: 'pickup',
+        title: 'Your donation was claimed',
+        body: `${who} is on the way. You'll get another ping when they mark en route — tap Confirm the moment they arrive.`,
+        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
+        data: { type: 'pickup_claimed_restaurant', pickupId },
+      });
+    }
+  } catch (e) { console.warn('claim notify restaurant', e); }
+
   return pk;
 }
 
@@ -975,14 +996,24 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
           if (vSnap.exists()) volunteerName = vSnap.data().name || '';
         } catch {}
       }
-      const dropOff = pk.fridge_name ? ` and dropping at ${pk.fridge_name}` : '';
+      const dropOff = pk.fridge_name ? ` to ${pk.fridge_name}` : '';
       const { enqueueNotification } = await import('./notify');
       const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      // Copy fix (#4 from drop-off audit) — the previous text said
+      // "heading to your restaurant" but the pickup card / dashboards
+      // render enroute as "on the way to fridge". Neutral, honest
+      // copy: the volunteer is in motion; whether that's the pickup
+      // leg or the drop leg depends on whether the restaurant has
+      // already confirmed the handoff.
+      const wasHandedOff = !!pk.verified_by_restaurant_at;
+      const body = wasHandedOff
+        ? `${volunteerName || 'A volunteer'} just left with your donation${dropOff}.`
+        : `${volunteerName || 'A volunteer'} is on the way${dropOff ? '' : ' to pick up your donation'}. Tap Confirm when they arrive.`;
       await enqueueNotification({
         recipients: [linkedUid],
         kind: 'pickup',
-        title: 'Volunteer is on the way',
-        body: `${volunteerName || 'A volunteer'} is heading to your restaurant${dropOff}.`,
+        title: wasHandedOff ? 'Your donation is on the move' : 'Volunteer is on the way',
+        body,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
         data: { type: 'pickup_enroute', pickupId },
       });
@@ -1102,10 +1133,17 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
         }
       }
 
-      const claimedAtMs = data.claimed_at?.toDate
-        ? data.claimed_at.toDate().getTime()
-        : data.claimed_at ? new Date(data.claimed_at).getTime() : Date.now();
-      const elapsedH = (Date.now() - claimedAtMs) / 3600000;
+      // #12 from drop-off audit — anchor hours on enroute_at, not
+      // claimed_at. Claim-to-enroute can be the whole afternoon
+      // (volunteer accepts the run and doesn't leave the couch for
+      // hours); only counting from when they actually started driving
+      // is closer to reality. Falls back to claimed_at if enroute_at
+      // is missing (legacy pickups written before setPickupEnroute
+      // stamped the field).
+      const toMs = (v) => v?.toDate ? v.toDate().getTime()
+                       : v ? new Date(v).getTime() : null;
+      const anchorMs = toMs(data.enroute_at) || toMs(data.claimed_at) || Date.now();
+      const elapsedH = (Date.now() - anchorMs) / 3600000;
       hoursEarned = Math.max(0.25, Math.min(3, +elapsedH.toFixed(2)));
       weight = override
         ? (actualWeightLbs || data.estimated_weight_lbs || 0)
