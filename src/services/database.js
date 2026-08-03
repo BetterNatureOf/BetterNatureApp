@@ -1029,6 +1029,115 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
 // Pass { override: true } from admin/exec backfill paths (Phase 2
 // Approval Inbox → Force-complete). Do NOT expose override in the
 // volunteer UI.
+// #5 from drop-off audit — a volunteer's car breaks down mid-run.
+// Their pickup is currently 'enroute' with the food IN THEIR CAR,
+// so cancelClaim's usual refusal ("you can only release before you
+// hit the road") is the wrong answer — the food will spoil sitting
+// in their trunk. handOffPickup releases the run back to the board
+// as 'available' with a handoff_from_uid marker so the next claimant
+// knows to coordinate a physical hand-off with the original volunteer.
+// No leaderboard penalty — this isn't flaky behavior.
+export async function handOffPickup(pickupId, reason = '') {
+  if (useMock() || !isFirebaseConfigured) return;
+  if (!pickupId) return;
+  const ref = doc(db, 'pickups', pickupId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Pickup not found');
+    const data = snap.data();
+    if (data.status !== 'enroute' && data.status !== 'claimed') {
+      throw new Error('Only an in-progress pickup can be handed off.');
+    }
+    tx.update(ref, {
+      status: 'available',
+      handoff_from_uid: data.claimed_by || null,
+      handoff_from_name: data.claimant_name || null,
+      handoff_from_phone: data.claimant_phone || null,
+      handoff_reason: reason || null,
+      handoff_at: new Date().toISOString(),
+      claimed_by: null,
+      claimed_at: null,
+      claimant_name: null,
+      claimant_phone: null,
+      // Keep fridge choice + verified_by_restaurant_at so the next
+      // claimant inherits the state — the food's already been picked
+      // up from the restaurant, just needs to get to the fridge.
+    });
+    return data;
+  });
+  // Notify the restaurant so they know a different volunteer will
+  // arrive at the fridge (or need to be re-briefed if the first
+  // volunteer never even got there).
+  try {
+    const snap = await getDoc(ref);
+    const pk = snap.exists() ? snap.data() : null;
+    if (pk?.restaurant_id) {
+      const { enqueueNotification } = await import('./notify');
+      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      await enqueueNotification({
+        recipients: [linkedUid],
+        kind: 'pickup',
+        title: 'Volunteer handoff in progress',
+        body: `${pk.handoff_from_name || 'The volunteer'} needs to hand off your pickup. It's back on the board for another volunteer to claim.${reason ? ' Reason: ' + reason : ''}`,
+        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
+        data: { type: 'pickup_handoff', pickupId },
+      });
+    }
+  } catch (e) { console.warn('handoff notify', e?.message); }
+}
+
+// #6 from drop-off audit — food went bad in transit or the fridge
+// was full/broken. Marks the pickup as completed-but-spoiled so it
+// exits the active-runs list, but skips every stat bump and DOESN'T
+// mint a tax receipt (the IRS doesn't recognize spoiled donations,
+// and receipts for undelivered food would destroy partner trust).
+// spoiled === true is the flag downstream stat/receipt code reads.
+export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', note = '' } = {}) {
+  if (useMock() || !isFirebaseConfigured) return;
+  if (!pickupId) return;
+  const ref = doc(db, 'pickups', pickupId);
+  const now = new Date().toISOString();
+  let pk;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Pickup not found');
+    const data = snap.data();
+    if (data.status === 'completed' || data.status === 'cancelled') {
+      throw new Error('This pickup is already closed.');
+    }
+    if (data.status !== 'enroute' && data.status !== 'claimed') {
+      throw new Error('Only an in-progress pickup can be marked spoiled.');
+    }
+    tx.update(ref, {
+      status: 'completed',
+      spoiled: true,
+      spoiled_kind: kind,           // 'food_spoiled' | 'fridge_full' | 'fridge_broken'
+      spoiled_note: note || null,
+      completed_at: now,
+      actual_weight_lbs: 0,
+      hours_earned: 0,
+    });
+    pk = data;
+  });
+  // Restaurant gets a candid explainer — no receipt is coming.
+  try {
+    if (pk?.restaurant_id) {
+      const { enqueueNotification } = await import('./notify');
+      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      const explain = kind === 'fridge_full' ? 'the fridge was full and the volunteer couldn\'t find another in time'
+                    : kind === 'fridge_broken' ? 'the drop-off fridge was broken'
+                    : 'the food had spoiled in transit';
+      await enqueueNotification({
+        recipients: [linkedUid],
+        kind: 'general',
+        title: 'Pickup didn\'t make it',
+        body: `Your donation couldn't be delivered — ${explain}. No tax receipt will be issued for this run.${note ? ' Note from volunteer: ' + note : ''}`,
+        data: { type: 'pickup_spoiled', pickupId, kind },
+      });
+    }
+  } catch (e) { console.warn('spoiled notify', e?.message); }
+}
+
 // #9 from drop-off audit — allow the fridge choice to change between
 // enroute and completion. Real-world: volunteer picked fridge A when
 // setting enroute, arrives to find it full/broken/closed, ends up at

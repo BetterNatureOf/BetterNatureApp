@@ -24,7 +24,7 @@ import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge } from '../../services/database';
+import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge, handOffPickup, reportPickupSpoiled } from '../../services/database';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
 import * as ImagePicker from 'expo-image-picker';
 import { getProfile } from '../../services/auth';
@@ -238,6 +238,74 @@ export default function PickupDetail({ route, navigation }) {
     } catch (e) {
       notify('Photo upload failed', e?.message || 'Try again — the tax receipt still ships without it.');
     } finally { setUploadingProof(false); }
+  }
+
+  // #5 from drop-off audit — volunteer's car broke down, they got
+  // called into work, whatever. Food is in the trunk, no way to
+  // deliver. cancelClaim refuses if enroute; handOff releases the
+  // pickup with a "someone else needs to physically meet me" flag
+  // so the next claimant knows.
+  async function handleHandOff() {
+    const ok = await confirm(
+      'Hand off this pickup?',
+      "Only pick this if you physically can't finish the run. The pickup goes back on the board with your contact info so the next volunteer can meet you to grab the food. No leaderboard penalty."
+    );
+    if (!ok) return;
+    let reason = '';
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      reason = window.prompt('What happened? (one sentence — helps the next volunteer)', '') || '';
+    }
+    setBusy(true);
+    try {
+      await handOffPickup(pickup.id, reason.trim() || undefined);
+      notifyThen('Handed off', 'Someone else can claim it now. Coordinate with them via the app.', () => navigation.goBack());
+    } catch (e) {
+      notify('Could not hand off', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  // #6 from drop-off audit — three sub-cases:
+  //   fridge_full   → volunteer tried to change fridge, no others work
+  //   fridge_broken → destination fridge is offline / damaged
+  //   food_spoiled  → food went bad in transit
+  // All three mark the pickup 'completed' but with spoiled === true,
+  // which skips receipt minting + stat bumps. Restaurant gets a
+  // candid "no receipt is coming, here's why" notification.
+  async function handleReportSpoiled() {
+    // Simple picker via web prompt / native alert. Not the polished
+    // modal — that lands with the Approval Inbox in Phase 2 when
+    // execs also review these reports for chapter operations.
+    const kinds = [
+      { key: 'food_spoiled',  label: 'Food spoiled in transit' },
+      { key: 'fridge_full',   label: 'Fridge was full, no alternate' },
+      { key: 'fridge_broken', label: 'Fridge was broken / offline' },
+    ];
+    const picks = kinds.map((k, i) => `${i + 1}. ${k.label}`).join('\n');
+    let chosen = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const raw = window.prompt(`Report a problem — enter 1, 2, or 3:\n\n${picks}`, '1');
+      const idx = parseInt((raw || '').trim(), 10) - 1;
+      chosen = kinds[idx] || null;
+    } else {
+      // Native — default to food_spoiled with a single confirm.
+      const ok = await confirm(
+        'Report as spoiled?',
+        'Marks the pickup complete but skips the tax receipt. Restaurant gets notified. Use this only when the food genuinely didn\'t make it to a fridge.'
+      );
+      chosen = ok ? kinds[0] : null;
+    }
+    if (!chosen) return;
+    let note = '';
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      note = window.prompt('Add a note for the restaurant (optional):', '') || '';
+    }
+    setBusy(true);
+    try {
+      await reportPickupSpoiled(pickup.id, { kind: chosen.key, note: note.trim() || undefined });
+      notifyThen('Reported', 'The restaurant has been notified. No tax receipt was issued.', () => navigation.goBack());
+    } catch (e) {
+      notify('Could not report', e?.message || 'Try again.');
+    } finally { setBusy(false); }
   }
 
   async function handleDelivered() {
@@ -542,6 +610,32 @@ export default function PickupDetail({ route, navigation }) {
           </View>
         ) : null}
 
+        {/* Something-wrong escape hatches — visible while enroute so
+            a volunteer whose run went sideways doesn't have to fake
+            a completion. Hand off gets the food to another volunteer;
+            Report spoiled closes the pickup honestly (no receipt, no
+            hours). #5 + #6 from drop-off audit. */}
+        {!userIsRestaurant && pickup.status === 'enroute' ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>
+              Something not going right?
+            </Text>
+            <Text style={styles.sectionHelp}>
+              Use these only if you can't finish the run — the restaurant sees each one.
+            </Text>
+            <View style={styles.problemRow}>
+              <TouchableOpacity style={styles.problemBtn} onPress={handleHandOff} activeOpacity={0.85}>
+                <Text style={styles.problemBtnText}>Hand off to another volunteer</Text>
+                <Text style={styles.problemBtnHint}>No leaderboard penalty — food just goes back on the board.</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.problemBtn, styles.problemBtnDanger]} onPress={handleReportSpoiled} activeOpacity={0.85}>
+                <Text style={[styles.problemBtnText, styles.problemBtnTextDanger]}>Report spoiled / fridge problem</Text>
+                <Text style={[styles.problemBtnHint, styles.problemBtnHintDanger]}>No tax receipt issued. Restaurant is told what happened.</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
         {pickup.status === 'completed' ? (
           <View style={[styles.section, styles.doneCard]}>
             <Icon name="check-circle" size={28} color={Colors.green} />
@@ -648,6 +742,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
   },
   proofRetakeText: { color: Colors.white, fontSize: 12, fontWeight: '600' },
+
+  // Something-wrong escape hatches
+  problemRow: { gap: 8 },
+  problemBtn: {
+    paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.glassBorder,
+    backgroundColor: Colors.white,
+  },
+  problemBtnDanger: {
+    borderColor: '#F5B5B5',
+    backgroundColor: '#FCE3E3',
+  },
+  problemBtnText: { fontSize: 14, fontWeight: '700', color: Colors.dark },
+  problemBtnTextDanger: { color: '#8E1B1B' },
+  problemBtnHint: { fontSize: 12, color: Colors.gray, marginTop: 4, lineHeight: 17 },
+  problemBtnHintDanger: { color: '#8E1B1B' },
   optional: { fontWeight: '500', color: Colors.gray },
   doneCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
