@@ -1029,6 +1029,100 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
 // Pass { override: true } from admin/exec backfill paths (Phase 2
 // Approval Inbox → Force-complete). Do NOT expose override in the
 // volunteer UI.
+// #7 from drop-off audit — no-show detection.
+//
+// A pickup sitting in 'claimed' state for hours without the restaurant
+// confirming handoff means the volunteer ghosted. Without this the
+// pickup blocks the board forever, the restaurant thinks someone's
+// coming, and the org loses a whole run to abandoned-code.
+//
+// Two entry points:
+//   - releaseAbandonedPickup(pickupId, {reason}) — atomic release of
+//     one specific pickup. Requires exec-level auth OR the current
+//     claimant themselves (rules-enforced).
+//   - sweepAbandonedPickups(chapterId, {maxAgeHours = 4}) — find every
+//     stale claim in a chapter and release the batch. Meant to run on
+//     LiveOps mount + Cloudflare worker cron (worker path is a
+//     follow-up; the client-side sweep from an exec's session gives
+//     coverage in the meantime).
+//
+// "Stale" = status == 'claimed', claimed more than maxAgeHours ago,
+// AND restaurant never verified handoff. Once verified, we assume the
+// pickup is legitimately in progress (volunteer just hasn't tapped
+// enroute) — different problem, different fix.
+export async function releaseAbandonedPickup(pickupId, { reason = 'no_show_timeout' } = {}) {
+  if (useMock() || !isFirebaseConfigured) return;
+  if (!pickupId) return;
+  const ref = doc(db, 'pickups', pickupId);
+  let prevClaimant = null;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Pickup not found');
+    const data = snap.data();
+    if (data.status !== 'claimed') return; // idempotent no-op
+    if (data.verified_by_restaurant_at) {
+      throw new Error('Restaurant confirmed handoff — this isn\'t a no-show, needs a different resolution.');
+    }
+    prevClaimant = data.claimed_by || null;
+    tx.update(ref, {
+      status: 'available',
+      claimed_by: null,
+      claimed_at: null,
+      claimant_name: null,
+      claimant_phone: null,
+      abandoned_at: new Date().toISOString(),
+      abandoned_reason: reason,
+      abandoned_prior_claimant: prevClaimant,
+    });
+  });
+  // Notify the abandoned claimant — soft touch, no penalty (this
+  // could be a network dropout, phone dead, real emergency). The
+  // pickups_dropped counter isn't bumped here; that's for the
+  // explicit cancelClaim path where the volunteer chose to drop.
+  if (prevClaimant) {
+    try {
+      const { enqueueNotification } = await import('./notify');
+      await enqueueNotification({
+        recipients: [prevClaimant],
+        kind: 'pickup',
+        title: 'Your claim was auto-released',
+        body: "You'd claimed a pickup a while ago and hadn't marked en route — we put it back on the board so someone else could grab it. No penalty. Try again next time!",
+        data: { type: 'pickup_auto_released', pickupId },
+      });
+    } catch (e) { console.warn('release notify', e?.message); }
+  }
+}
+
+// Chapter-scoped sweep. Returns { released, checked } so callers can
+// surface "N pickups auto-released" on LiveOps. Idempotent — running
+// twice releases the same pickups zero times the second call.
+export async function sweepAbandonedPickups({ chapterId, maxAgeHours = 4 } = {}) {
+  if (useMock() || !isFirebaseConfigured) return { released: 0, checked: 0 };
+  const constraints = [where('status', '==', 'claimed')];
+  if (chapterId) constraints.push(where('chapter_id', '==', chapterId));
+  let snap;
+  try {
+    snap = await getDocs(query(collection(db, 'pickups'), ...constraints));
+  } catch (e) { console.warn('sweep query', e?.message); return { released: 0, checked: 0 }; }
+  const cutoff = Date.now() - maxAgeHours * 3600 * 1000;
+  let released = 0;
+  const stale = snap.docs.filter((d) => {
+    const data = d.data();
+    if (data.verified_by_restaurant_at) return false;
+    const claimedMs = data.claimed_at?.toDate
+      ? data.claimed_at.toDate().getTime()
+      : data.claimed_at ? new Date(data.claimed_at).getTime() : 0;
+    return claimedMs > 0 && claimedMs < cutoff;
+  });
+  for (const d of stale) {
+    try {
+      await releaseAbandonedPickup(d.id, { reason: 'no_show_timeout' });
+      released += 1;
+    } catch (e) { console.warn('sweep release', d.id, e?.message); }
+  }
+  return { released, checked: snap.docs.length };
+}
+
 // #5 from drop-off audit — a volunteer's car breaks down mid-run.
 // Their pickup is currently 'enroute' with the food IN THEIR CAR,
 // so cancelClaim's usual refusal ("you can only release before you

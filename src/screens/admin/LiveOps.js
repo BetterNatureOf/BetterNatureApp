@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
-import { fetchActivePickups, fetchAllMembers, fetchRestaurants, fetchRecentlyCompletedPickups } from '../../services/database';
+import { fetchActivePickups, fetchAllMembers, fetchRestaurants, fetchRecentlyCompletedPickups, sweepAbandonedPickups } from '../../services/database';
 
 // Start of the local day in ms. LiveOps resets at midnight — every
 // morning the leader sees a clean board, the prior day's runs move
@@ -57,6 +57,17 @@ export default function LiveOps({ chapterId = null, navigation }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // #7 from drop-off audit — every LiveOps load kicks off a
+      // no-show sweep for this chapter. Any pickup sitting in
+      // 'claimed' for more than 4h without restaurant verification
+      // gets auto-released back to the board, and the ghosted
+      // volunteer is pushed a soft "we let it go, no penalty"
+      // notification. Idempotent — running twice releases each
+      // pickup once. Best-effort; a failure never blocks the
+      // display of LiveOps itself.
+      try { await sweepAbandonedPickups({ chapterId, maxAgeHours: 4 }); }
+      catch (e) { console.warn('LiveOps no-show sweep', e?.message); }
+
       const today = startOfTodayMs();
       const [pk, done, mem, rest] = await Promise.all([
         fetchActivePickups({ chapterId }),
