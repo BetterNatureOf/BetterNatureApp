@@ -20,7 +20,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, RefreshControl, Platform, Linking } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import useBreakpoint from '../../hooks/useBreakpoint';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import useAuthStore from '../../store/authStore';
 import { signOut } from '../../services/auth';
 import DonationCTA from '../../components/donate/DonationCTA';
@@ -74,7 +74,7 @@ function prettyTime(p) {
 export default function RestDashboard({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.signOut);
-  const { isDesktop } = useBreakpoint();
+  const { contentStyle, toolTileMinWidth } = useResponsiveLayout();
   const [history, setHistory] = useState([]);
   const [pickups, setPickups] = useState([]);
   const [totalLbs, setTotalLbs] = useState(0);
@@ -159,7 +159,7 @@ export default function RestDashboard({ navigation }) {
     <RestaurantApprovalGate>
     <ContractGate kind="restaurant">
     <Screen
-      contentStyle={[styles.content, isDesktop && styles.contentDesktop]}
+      contentStyle={contentStyle}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.green} />}
     >
       <ResponsiveContainer maxWidth={720}>
@@ -210,7 +210,7 @@ export default function RestDashboard({ navigation }) {
 
         {totalLbs > 0 && <ImpactStrip lbs={totalLbs} />}
 
-        <ManageTools navigation={navigation} />
+        <ManageTools navigation={navigation} tileMinWidth={toolTileMinWidth} />
 
         <SponsorCard />
       </ResponsiveContainer>
@@ -439,7 +439,7 @@ function ImpactStrip({ lbs }) {
 }
 
 // ── Manage tools (quiet secondary access) ──────────────────────────
-function ManageTools({ navigation }) {
+function ManageTools({ navigation, tileMinWidth }) {
   const tools = [
     { key: 'profile',  icon: 'building', title: 'Business profile',    to: 'RestaurantOnboarding' },
     { key: 'history',  icon: 'clipboard', title: 'Donation history',    to: 'DonationHistory' },
@@ -453,7 +453,7 @@ function ManageTools({ navigation }) {
         {tools.map((t) => (
           <TouchableOpacity
             key={t.key}
-            style={styles.toolItem}
+            style={[styles.toolItem, tileMinWidth ? { minWidth: tileMinWidth } : null]}
             activeOpacity={0.85}
             onPress={() => navigation.navigate(t.to)}
           >
@@ -481,9 +481,6 @@ function SponsorCard() {
 
 // ── Styles (shares idiom with member DashboardScreen) ─────────────
 const styles = StyleSheet.create({
-  content: { padding: 20, paddingTop: 60, paddingBottom: 60, gap: 12 },
-  contentDesktop: { paddingHorizontal: 40, maxWidth: 720, alignSelf: 'center', width: '100%' },
-
   // Identity
   idStrip: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
   avatar: {

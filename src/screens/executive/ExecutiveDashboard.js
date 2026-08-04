@@ -18,7 +18,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import useBreakpoint from '../../hooks/useBreakpoint';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import useAuthStore from '../../store/authStore';
 import {
   fetchChapters, fetchAllMembers, fetchRestaurants, fetchAllDonations,
@@ -83,7 +83,7 @@ async function fetchPendingCounts() {
 export default function ExecutiveDashboard({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.signOut);
-  const { isDesktop } = useBreakpoint();
+  const { contentStyle, toolTileMinWidth } = useResponsiveLayout({ wide: true });
   const [counts, setCounts] = useState({ chapters: 0, members: 0, partners: 0 });
   const [raised, setRaised] = useState(0);
   const [totalLbs, setTotalLbs] = useState(0);
@@ -134,8 +134,8 @@ export default function ExecutiveDashboard({ navigation }) {
 
   return (
     <ContractGate kind="executive">
-    <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
-      <ResponsiveContainer maxWidth={780}>
+    <Screen contentStyle={contentStyle}>
+      <ResponsiveContainer maxWidth={1040}>
         <WorkspaceChip
           user={user}
           workspaceName="BetterNature National"
@@ -189,7 +189,7 @@ export default function ExecutiveDashboard({ navigation }) {
           </TouchableOpacity>
         )}
 
-        <ToolsGrid navigation={navigation} />
+        <ToolsGrid navigation={navigation} tileMinWidth={toolTileMinWidth} />
       </ResponsiveContainer>
     </Screen>
     </ContractGate>
@@ -325,7 +325,7 @@ function KpiTrio({ raised, totalLbs, members }) {
   );
 }
 
-function ToolsGrid({ navigation }) {
+function ToolsGrid({ navigation, tileMinWidth }) {
   return (
     <View style={styles.toolsCard}>
       <Text style={styles.cardEyebrow}>Executive tools</Text>
@@ -333,7 +333,7 @@ function ToolsGrid({ navigation }) {
         {TOOLS.map((t) => (
           <TouchableOpacity
             key={t.key}
-            style={styles.toolItem}
+            style={[styles.toolItem, tileMinWidth ? { minWidth: tileMinWidth } : null]}
             activeOpacity={0.85}
             onPress={() => navigation.navigate(t.to)}
           >
@@ -349,9 +349,6 @@ function ToolsGrid({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 20, paddingTop: 60, paddingBottom: 60, gap: 12 },
-  contentDesktop: { paddingHorizontal: 40, maxWidth: 780, alignSelf: 'center', width: '100%' },
-
   idStrip: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
   avatar: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.green,

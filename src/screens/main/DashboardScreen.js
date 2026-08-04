@@ -25,7 +25,7 @@ import UpcomingEvents from '../../components/sections/UpcomingEvents';
 import DonateCard from '../../components/sections/DonateCard';
 import Icon from '../../components/ui/Icon';
 import Screen from '../../components/ui/Screen';
-import useBreakpoint from '../../hooks/useBreakpoint';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import useEvents from '../../hooks/useEvents';
 import usePickups from '../../hooks/usePickups';
 import { confirm } from '../../services/ui';
@@ -103,7 +103,7 @@ export default function DashboardScreen({ navigation }) {
   const { events } = useEvents();
   const { pickups, claim } = usePickups();
   const chapterPulse = useChapterPulse(user?.chapter_id, focusTick);
-  const { isDesktop } = useBreakpoint();
+  const { contentStyle } = useResponsiveLayout();
 
   const active = useMemo(() => pickups.filter(
     (p) => p.claimed_by === user?.id && ['claimed', 'enroute'].includes(p.status)
@@ -134,7 +134,7 @@ export default function DashboardScreen({ navigation }) {
   const heroGreeting = state === 'active' ? 'Halfway there,' : timeOfDayGreeting();
 
   return (
-    <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+    <Screen contentStyle={contentStyle}>
       <WorkspaceChip user={user} scope="chapter" />
       <IdentityStrip
         greeting={heroGreeting}
@@ -528,19 +528,6 @@ function ChecklistItem({ n, title, body, done, onPress }) {
 
 // ── Styles ──────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  content: {
-    padding: 20,
-    paddingTop: 60,
-    paddingBottom: 60,
-    gap: 12,
-  },
-  contentDesktop: {
-    paddingHorizontal: 40,
-    maxWidth: 720,
-    alignSelf: 'center',
-    width: '100%',
-  },
-
   // Identity strip
   idStrip: {
     flexDirection: 'row',

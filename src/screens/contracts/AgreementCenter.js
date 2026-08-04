@@ -22,6 +22,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import Icon from '../../components/ui/Icon';
 import BrushText from '../../components/ui/BrushText';
 import useAuthStore from '../../store/authStore';
@@ -90,6 +91,7 @@ function classify(user, kind) {
 
 export default function AgreementCenter({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  const { contentStyle } = useResponsiveLayout();
 
   const rows = useMemo(() => {
     const required = requiredKindsFor(user);
@@ -110,8 +112,8 @@ export default function AgreementCenter({ navigation }) {
   const current = rows.filter((r) => r.state === 'signed_current');
 
   return (
-    <Screen contentStyle={styles.content}>
-      <ResponsiveContainer maxWidth={720}>
+    <Screen contentStyle={contentStyle}>
+      <ResponsiveContainer maxWidth={760}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back} activeOpacity={0.85}>
           <Icon name="back" size={16} color={Colors.green} />
           <Text style={styles.backText}>Back</Text>
@@ -304,8 +306,6 @@ function FutureRow({ icon, title, body }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 24, paddingTop: 60, paddingBottom: 60, gap: 10 },
-
   back: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, alignSelf: 'flex-start' },
   backText: { fontSize: 14, color: Colors.green, fontWeight: '600' },
 

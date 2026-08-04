@@ -14,7 +14,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import useBreakpoint from '../../hooks/useBreakpoint';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import useAuthStore from '../../store/authStore';
 import { fetchEvents, fetchPickups, fetchChapterById, fetchRecentlyCompletedPickups } from '../../services/database';
 import { signOut } from '../../services/auth';
@@ -54,7 +54,7 @@ function timeOfDayGreeting() {
 export default function PresidentDashboard({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.signOut);
-  const { isDesktop } = useBreakpoint();
+  const { contentStyle, toolTileMinWidth } = useResponsiveLayout();
   const [chapter, setChapter] = useState(null);
   const [events, setEvents] = useState([]);
   const [pickups, setPickups] = useState([]);
@@ -103,7 +103,7 @@ export default function PresidentDashboard({ navigation }) {
 
   return (
     <ContractGate kind="president">
-    <Screen contentStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+    <Screen contentStyle={contentStyle}>
       <ResponsiveContainer maxWidth={720}>
         <WorkspaceChip
           user={user}
@@ -134,7 +134,7 @@ export default function PresidentDashboard({ navigation }) {
 
         <LiveOps chapterId={user?.chapter_id} navigation={navigation} />
 
-        <ToolsRow navigation={navigation} />
+        <ToolsRow navigation={navigation} tileMinWidth={toolTileMinWidth} />
       </ResponsiveContainer>
     </Screen>
     </ContractGate>
@@ -250,7 +250,7 @@ function NeedsAttention({ unclaimedCount, upcomingEvents, onEventPress, onOpenPi
   );
 }
 
-function ToolsRow({ navigation }) {
+function ToolsRow({ navigation, tileMinWidth }) {
   return (
     <View style={styles.toolsCard}>
       <Text style={styles.cardEyebrow}>Manage chapter</Text>
@@ -258,7 +258,7 @@ function ToolsRow({ navigation }) {
         {TOOLS.map((t) => (
           <TouchableOpacity
             key={t.key}
-            style={styles.toolItem}
+            style={[styles.toolItem, tileMinWidth ? { minWidth: tileMinWidth } : null]}
             activeOpacity={0.85}
             onPress={() => navigation.navigate(t.to)}
           >
@@ -274,9 +274,6 @@ function ToolsRow({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 20, paddingTop: 60, paddingBottom: 60, gap: 12 },
-  contentDesktop: { paddingHorizontal: 40, maxWidth: 720, alignSelf: 'center', width: '100%' },
-
   idStrip: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
   avatar: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.green,

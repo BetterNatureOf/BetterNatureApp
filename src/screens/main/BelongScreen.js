@@ -16,6 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { getMembershipsForUser, MEMBERSHIP_STATUS } from '../../services/memberships';
@@ -72,6 +73,7 @@ async function enrichMemberships(rows) {
 
 export default function BelongScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  const { contentStyle } = useResponsiveLayout();
   const [memberships, setMemberships] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fallback, setFallback] = useState(null); // legacy user.chapter_id fallback card
@@ -107,8 +109,8 @@ export default function BelongScreen({ navigation }) {
   const rows = memberships.length > 0 ? memberships : (fallback ? [fallback] : []);
 
   return (
-    <Screen contentStyle={[styles.content]}>
-      <ResponsiveContainer maxWidth={720}>
+    <Screen contentStyle={contentStyle}>
+      <ResponsiveContainer maxWidth={760}>
         <Text style={styles.eyebrow}>Belong</Text>
         <Text style={styles.title}>Where you fit in the network.</Text>
         <Text style={styles.lead}>
@@ -250,8 +252,6 @@ function NavCard({ icon, title, body, onPress }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 20, paddingTop: 60, paddingBottom: 60, gap: 10 },
-
   eyebrow: {
     fontSize: 11, fontWeight: '800', letterSpacing: 1.6, textTransform: 'uppercase',
     color: Colors.green,
