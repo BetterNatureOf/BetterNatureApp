@@ -21,6 +21,7 @@ import { notify, confirm } from '../../services/ui';
 import { isFirebaseConfigured } from '../../config/firebase';
 import useAuthStore, { ROLES } from '../../store/authStore';
 import Screen from '../../components/ui/Screen';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -116,13 +117,14 @@ export default function LoginScreen({ navigation }) {
   // Popup auth only works on web. Native needs expo-auth-session
   // (a separate, larger setup) — surface the buttons only where they work.
   const showOAuth = Platform.OS === 'web' && isFirebaseConfigured;
+  const { contentStyle } = useResponsiveLayout();
 
   return (
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={contentStyle} keyboardShouldPersistTaps="handled">
         <ResponsiveContainer maxWidth={460}>
           <BrushText variant="screenTitle" style={styles.title}>
             Welcome Back
@@ -209,7 +211,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cream,
     ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
-  content: { padding: 24, paddingTop: 80, paddingBottom: 60 },
+  // padding provided by useResponsiveLayout
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 32 },
   btn: { marginTop: 8 },

@@ -6,9 +6,11 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import { fetchChapters } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 
 export default function SignupStep2({ navigation, route }) {
   const userData = route.params;
+  const { contentStyle } = useResponsiveLayout();
   const [chapters, setChapters] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,7 +46,7 @@ export default function SignupStep2({ navigation, route }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={contentStyle}>
      <ResponsiveContainer maxWidth={560}>
       <BrushText variant="screenTitle" style={styles.title}>
         Choose Your Chapter
@@ -115,7 +117,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cream,
     ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  // padding provided by useResponsiveLayout
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
   loader: { marginTop: 40 },

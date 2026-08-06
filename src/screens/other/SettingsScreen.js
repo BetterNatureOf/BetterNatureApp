@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import Toggle from '../../components/ui/Toggle';
 import BrushDivider from '../../components/ui/BrushDivider';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import useAuthStore from '../../store/authStore';
 import { updateProfile, deleteAccount, getProfile } from '../../services/auth';
 import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
@@ -13,6 +14,7 @@ import { confirmWithPassword } from '../../services/passwordConfirm';
 import Screen from '../../components/ui/Screen';
 
 export default function SettingsScreen({ navigation }) {
+  const { contentStyle } = useResponsiveLayout();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const prefs = user?.notification_prefs || {};
@@ -111,7 +113,7 @@ export default function SettingsScreen({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={contentStyle}>
      <ResponsiveContainer maxWidth={720}>
       <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
 
@@ -232,7 +234,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cream,
     ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  // padding provided by useResponsiveLayout
   back: { fontSize: 16, color: Colors.green, marginBottom: 8 },
   title: { color: Colors.green, marginBottom: 20 },
   sectionTitle: { color: Colors.green, marginBottom: 12 },

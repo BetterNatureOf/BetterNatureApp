@@ -14,9 +14,11 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signUp, uploadIdDocument } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
 import Screen from '../../components/ui/Screen';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 
 export default function SignupStep3({ route }) {
   const userData = route.params;
+  const { contentStyle } = useResponsiveLayout();
   const [frontUri, setFrontUri] = useState(null);
   const [backUri, setBackUri]   = useState(null);
   const [loading, setLoading] = useState(false);
@@ -125,7 +127,7 @@ export default function SignupStep3({ route }) {
   const hasBothSides = !!(frontUri && backUri);
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={contentStyle}>
      <ResponsiveContainer maxWidth={620}>
       <BrushText variant="screenTitle" style={styles.title}>
         Verify Your Identity
@@ -162,7 +164,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cream,
     ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  // padding provided by useResponsiveLayout
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 18 },
   sideBlock: { marginBottom: 14 },

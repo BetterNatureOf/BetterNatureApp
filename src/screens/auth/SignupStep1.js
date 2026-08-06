@@ -17,11 +17,13 @@ import { emailAlreadyRegistered } from '../../services/auth';
 import { phoneAlreadyRegistered } from '../../services/duplicates';
 import { notify } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import CityStateAutocomplete from '../../components/ui/CityStateAutocomplete';
 import DatePicker from '../../components/ui/DatePicker';
 import { validateDob, dobToIso, ageBandFor, guardianRequired } from '../../services/ageBands';
 
 export default function SignupStep1({ navigation }) {
+  const { contentStyle } = useResponsiveLayout();
   const [checking, setChecking] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -128,7 +130,7 @@ export default function SignupStep1({ navigation }) {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={contentStyle} keyboardShouldPersistTaps="handled">
        <ResponsiveContainer maxWidth={520}>
         <BrushText variant="screenTitle" style={styles.title}>
           Join BetterNature
@@ -293,7 +295,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cream,
     ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
-  content: { padding: 24, paddingTop: 60 },
+  // padding provided by useResponsiveLayout
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
   row: { flexDirection: 'row', gap: 12 },

@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from '
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
-import useBreakpoint from '../../hooks/useBreakpoint';
+import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import { getOrgStats } from '../../services/orgStats';
 import ProjectLogo from '../../components/ui/ProjectLogo';
 import Screen from '../../components/ui/Screen';
@@ -52,7 +52,7 @@ export default function ProjectsScreen({ navigation }) {
   const [stats, setStats] = useState({ meals: 0, water: 0 });
   useEffect(() => { getOrgStats().then(setStats).catch(() => {}); }, []);
   const PROJECTS = buildProjects(stats);
-  const { isDesktop, isTablet } = useBreakpoint();
+  const { isDesktop, isTablet, contentStyle } = useResponsiveLayout();
 
   // Desktop: 3-up grid. Tablet: 2-up. Phone: stack.
   const cardStyle = [
@@ -62,7 +62,7 @@ export default function ProjectsScreen({ navigation }) {
   ];
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={contentStyle}>
       <ResponsiveContainer maxWidth={1200}>
         <BrushText variant="screenTitle" style={styles.title}>
           Our Projects
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cream,
     ...(Platform.OS === 'web' ? { height: '100vh' } : null),
   },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  // padding provided by useResponsiveLayout
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
   grid: { flexDirection: 'column', gap: 16 },
