@@ -18,10 +18,15 @@ import useBreakpoint from './useBreakpoint';
 // the mobile column stays ~740px max even on wide desktop, so the
 // hero card still reads at a normal 65-character line length instead
 // of stretching to 1200px of text.
+//
+// maxWidth INCLUDES horizontal padding (box-sizing:border-box on web),
+// so the padH values are kept small on tablet+ — the actual content
+// column is `maxWidth - padH*2`. Phone stays roomy because edges
+// matter more when there's no browser chrome around the column.
 const CAPS = {
   phone:   { maxWidth: null, padH: 20, padT: 60 },
-  tablet:  { maxWidth: 720,  padH: 40, padT: 60 },
-  desktop: { maxWidth: 760,  padH: 56, padT: 64 },
+  tablet:  { maxWidth: 780,  padH: 30, padT: 60 },
+  desktop: { maxWidth: 820,  padH: 30, padT: 64 },
 };
 
 // A wider cap for surfaces that legitimately benefit from more
@@ -30,8 +35,8 @@ const CAPS = {
 // useResponsiveLayout({ wide: true }).
 const WIDE_CAPS = {
   phone:   { maxWidth: null, padH: 20, padT: 60 },
-  tablet:  { maxWidth: 820,  padH: 40, padT: 60 },
-  desktop: { maxWidth: 1040, padH: 64, padT: 64 },
+  tablet:  { maxWidth: 900,  padH: 30, padT: 60 },
+  desktop: { maxWidth: 1120, padH: 40, padT: 64 },
 };
 
 /**
@@ -56,6 +61,16 @@ export default function useResponsiveLayout({ wide = false, bottom = 60, gap = 1
     if (dims.maxWidth) {
       style.maxWidth = dims.maxWidth;
       style.width = '100%';
+      // Centering with marginHorizontal:'auto' works on both platforms.
+      // alignSelf:'center' — what we had before — silently no-op'd on
+      // web because Screen's outer <div> isn't a flex container, so the
+      // whole content column hugged the LEFT edge of the browser
+      // instead of centering. Auto margins fix it for both React Native
+      // Web's flexbox AND the plain div wrapper.
+      style.marginLeft = 'auto';
+      style.marginRight = 'auto';
+      // Keep alignSelf too — it's the native-side centering when this
+      // style lands inside a flex ScrollView.
       style.alignSelf = 'center';
     }
     return style;
