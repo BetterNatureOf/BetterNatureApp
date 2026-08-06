@@ -1560,6 +1560,17 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
         pickedUpAt: now,
         volunteerName,
         chapterName: pk.chapter_name || '',
+        // Drop-off audit follow-up — carry the proof photo + final
+        // fridge choice into the receipt doc so receipt.html can
+        // render them. pk is the pre-write snapshot; the URL and
+        // fridge override came in via the completePickup args, and
+        // the fridge fallback reads the pickup's own record.
+        dropoffPhotoUrl: dropoffPhotoUrl
+          || (fridgeOverride ? null : pk.dropoff_photo_url) || null,
+        fridgeName: (fridgeOverride && fridgeOverride.fridge_name)
+          || pk.fridge_name || null,
+        fridgeAddress: (fridgeOverride && fridgeOverride.fridge_address)
+          || pk.fridge_address || null,
       });
 
       // Stamp the receipt id back onto the pickup doc so the

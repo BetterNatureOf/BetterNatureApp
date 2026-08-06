@@ -83,6 +83,29 @@
     font-size: 11px; color: var(--ink-60); font-style: italic;
     margin: 6px 0 0;
   }
+  .dropoff {
+    margin: 20px 0 8px;
+  }
+  .dropoff-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-60);
+    margin: 0 0 10px;
+  }
+  .dropoff-frame {
+    border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--cream);
+  }
+  .dropoff-frame img {
+    display: block;
+    width: 100%; height: auto; max-height: 320px; object-fit: cover;
+  }
+  .dropoff-caption {
+    padding: 10px 14px;
+    font-size: 12.5px; color: var(--ink-60);
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  .dropoff-caption b { color: var(--ink); font-weight: 600; }
   @media (max-width: 520px) {
     .impact-grid { grid-template-columns: repeat(2, 1fr); }
   }
@@ -131,6 +154,16 @@ const fmtDate = (iso) => iso
   ? new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   : '';
 const fmtN = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
+// Minimal HTML escaper — receipt data comes from Firestore fields
+// filled in by volunteers + restaurants, so we can't trust any of
+// it to be safe raw. Only the drop-off caption interpolates
+// user-supplied text right now, but keep the helper here so any
+// future dynamic field is a one-line escapeHtml(...) call.
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 // Multipliers match src/services/orgStats.js — the canonical numbers
 // used everywhere else in the app. Family-days is a display-only
@@ -194,6 +227,33 @@ function render(r) {
         <p class="impact-note">
           Estimates use Feeding America / EPA WARM / Water Footprint Network baselines. Family-day = 3 meals (three-person household).
         </p>
+      `;
+    })()}
+
+    ${(() => {
+      // Optional drop-off proof + destination fridge. Both fields are
+      // populated by completePickup for pickups that flowed through
+      // the new drop-off UI (proof photo + fridge fields on the tax
+      // receipt doc). Older receipts don't carry these — render nothing.
+      const rawPhoto = r.dropoff_photo_url || null;
+      // URL allowlist — only https and Firebase Storage's gs:// scheme.
+      // Prevents a javascript: or data: URL from a compromised doc
+      // running in the receipt page context.
+      const photo = (rawPhoto && /^(https:|gs:)\/\//i.test(rawPhoto)) ? rawPhoto : null;
+      const fridge = r.fridge_name || null;
+      const fridgeAddr = r.fridge_address || null;
+      if (!photo && !fridge) return '';
+      const captionBits = [];
+      if (fridge) captionBits.push(`Delivered to <b>${escapeHtml(fridge)}</b>`);
+      if (fridgeAddr) captionBits.push(escapeHtml(fridgeAddr));
+      return `
+        <div class="dropoff">
+          <p class="dropoff-title">Drop-off record</p>
+          <div class="dropoff-frame">
+            ${photo ? `<img src="${escapeHtml(photo)}" alt="Food delivered to the community fridge" onerror="this.style.display='none'" />` : ''}
+            ${captionBits.length ? `<div class="dropoff-caption">${captionBits.join('<span aria-hidden="true">·</span>')}</div>` : ''}
+          </div>
+        </div>
       `;
     })()}
 

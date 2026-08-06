@@ -39,6 +39,11 @@ function fmtDate(iso) {
 export async function issueReceiptForPickup({
   pickupId, restaurantId, restaurantName, restaurantEmail,
   weightLbs, mealsEquivalent, pickedUpAt, volunteerName, chapterName,
+  // Optional — carried from the pickup at completion time so the
+  // receipt page can render "delivered to X fridge" + a proof photo
+  // when present. Both are best-effort; the receipt still ships if
+  // either is missing.
+  dropoffPhotoUrl = null, fridgeName = null, fridgeAddress = null,
 }) {
   if (!isFirebaseConfigured) return null;
 
@@ -71,6 +76,11 @@ export async function issueReceiptForPickup({
     org: ORG_INFO,
     // Goods/services flag — IRS-required language for in-kind acks.
     no_goods_or_services: true,
+    // Optional drop-off proof + destination fridge — receipt.html
+    // renders these when present, hides gracefully when null.
+    dropoff_photo_url: dropoffPhotoUrl || null,
+    fridge_name: fridgeName || null,
+    fridge_address: fridgeAddress || null,
   };
 
   const ref = await addDoc(collection(db, 'tax_receipts'), data);
