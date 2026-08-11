@@ -151,6 +151,13 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 32px;
   padding: 16px 32px;
+  /* Safe-area padding for iPhone notch / Dynamic Island / iOS nav
+     insets — falls back to the existing 16px on browsers/devices
+     that don't set env(safe-area-inset-*). Same trick on left/right
+     so a landscape phone's notch doesn't clip the brand. */
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-left: max(32px, env(safe-area-inset-left));
+  padding-right: max(32px, env(safe-area-inset-right));
   background: rgba(253, 251, 248, 0.85);
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
@@ -230,26 +237,63 @@ a { color: inherit; text-decoration: none; }
     grid-template-columns: auto auto;
     justify-content: space-between;
   }
+  /* Anchor scroll offset so a #section jump doesn't hide the section
+     title behind the fixed nav bar. */
+  html { scroll-padding-top: 88px; }
+
+  /* When the burger opens, the nav becomes a wrapping flex column.
+     Row 1 is brand + burger (unchanged); row 2 is nav__links
+     (basis 100% so it wraps below); row 3 is nav__ctas (also full-
+     width). No absolute positioning + no hardcoded pixel offsets —
+     the layout self-adjusts to any number of links (the CMS turns
+     sections on/off, which used to shift the CTAs into the wrong
+     spot under the old rule). Whole open sheet caps at 90vh with an
+     internal scroll so SE-class phones can still reach the CTAs. */
+  .nav.is-open {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 0;
+    max-height: 90vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: var(--parchment);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav.is-open .nav__brand { order: 1; }
+  .nav.is-open .nav__burger { order: 2; }
   .nav.is-open .nav__links {
+    order: 3;
     display: flex;
     flex-direction: column;
-    position: absolute;
-    top: 100%; left: 0; right: 0;
-    background: var(--parchment);
-    padding: 24px 32px;
-    gap: 18px;
-    border-bottom: 1px solid var(--line);
-    align-items: flex-start;
+    align-items: stretch;
+    flex-basis: 100%;
+    padding: 16px 4px 8px;
+    gap: 4px;
+    border-top: 1px solid var(--line);
+    margin-top: 12px;
+  }
+  .nav.is-open .nav__links a {
+    font-size: 15px;
+    padding: 12px 0;
+    min-height: 44px; /* thumb target */
+    display: flex;
+    align-items: center;
   }
   .nav.is-open .nav__ctas {
+    order: 4;
     display: flex;
-    position: absolute;
-    top: calc(100% + 230px);
-    left: 0; right: 0;
-    padding: 0 32px 24px;
-    gap: 12px;
+    flex-basis: 100%;
+    padding: 8px 0 20px;
+    gap: 10px;
   }
-  .nav.is-open .nav__ctas .btn { flex: 1; }
+  .nav.is-open .nav__ctas .btn {
+    flex: 1;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 /* ═══════════ HERO ═══════════ */
