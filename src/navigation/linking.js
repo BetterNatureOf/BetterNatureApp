@@ -18,12 +18,12 @@ const screens = {
   MainTabs: {
     path: '',
     screens: {
-      Dashboard: 'home',
-      Projects: 'projects',
-      Impact: 'impact',
-      Donate: 'donate',
-      Manage: 'manage',
-      Profile: 'profile',
+      Dashboard: 'home',   // "Home" tab label; renders role-appropriate dashboard
+      Projects:  'do',     // "Do" tab label
+      Belong:    'belong', // "Belong" tab (Phase 1 slice 3)
+      Donate:    'donate',
+      Manage:    'manage', // exec/pres/founder only — surfaces via ManageTab dispatcher
+      Profile:   'you',    // "You" tab label
     },
   },
   Leaderboard: 'leaderboard',

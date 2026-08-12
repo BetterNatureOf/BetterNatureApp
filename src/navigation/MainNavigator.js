@@ -151,15 +151,41 @@ function TabIcon({ label, focused }) {
 // support a user can be exec AND chapter pres — exec wins for the
 // default landing (org-wide), and PresidentDashboard shows up as a
 // shortcut card on the Executive dashboard for the chapter view.
+// Complements HomeTab — only shown when an exec is ALSO a chapter
+// president, so Home renders the exec view and Manage gives them
+// one tap to their chapter view. For any user configuration where
+// Home already covers everything they'd manage, MainTabs hides this
+// tab so we don't waste a slot on a duplicate.
 function ManageTab(props) {
   const user = useAuthStore((s) => s.user);
+  if (isPresRole(user)) return <PresidentDashboard {...props} />;
+  // Defensive fallback — showManage in MainTabs shouldn't route
+  // here without a president role, but if it does, land somewhere
+  // useful instead of blanking.
+  if (isExecRole(user) || isFounderEmail(user?.email)) return <ExecutiveDashboard {...props} />;
+  return <DashboardScreen {...props} />;
+}
+
+// HomeTab dispatcher — renders the highest-authority dashboard the
+// user actually holds, matching blueprint §16.1: Home should reflect
+// the current context, not a fixed "member" template. Precedence:
+//   Founder / Exec / Admin  → ExecutiveDashboard (org-wide)
+//   Chapter President       → PresidentDashboard (chapter-scoped)
+//   Restaurant / Partner    → RestDashboard (rare via MainNavigator —
+//                             partner-primary users route through
+//                             RestaurantNavigator; this handles
+//                             members with supplemental partner role)
+//   Everyone else           → DashboardScreen (member home)
+// Fixes the screenshot bug where an exec landed on Home and saw the
+// member dashboard with a green chip saying "as Executive" — the
+// chip was honest, the dashboard was wrong.
+function HomeTab(props) {
+  const user = useAuthStore((s) => s.user);
+  if (isFounderEmail(user?.email)) return <ExecutiveDashboard {...props} />;
   if (isExecRole(user)) return <ExecutiveDashboard {...props} />;
   if (isPresRole(user)) return <PresidentDashboard {...props} />;
-  // Founder safety net — if a founder accidentally switched their
-  // role to member, they'd lose the Org tab entirely and have no
-  // way to flip back without dev-tools. Render the exec dashboard
-  // for founder emails regardless of role.
-  if (isFounderEmail(user?.email)) return <ExecutiveDashboard {...props} />;
+  const isPartnerPrimary = user?.role === 'restaurant';
+  if (isPartnerPrimary) return <RestDashboard {...props} />;
   return <DashboardScreen {...props} />;
 }
 
@@ -168,8 +194,14 @@ function MainTabs() {
   const isFounder = isFounderEmail(user?.email);
   const isExec = isExecRole(user);
   const isPres = isPresRole(user);
-  const showManage = isFounder || isExec || isPres;
-  const manageLabel = (isExec || isFounder) ? 'Org' : 'Chapter';
+  // Manage tab is now the COMPLEMENT of Home — Home already routes
+  // to the highest-authority dashboard the user holds, so Manage
+  // only appears when there's a different (lower-authority) scope
+  // worth surfacing. Exec + president → Home=Exec, Manage=President.
+  // Pure exec (no chapter role) → Home=Exec, no Manage. Pure
+  // president → Home=President, no Manage.
+  const showManage = (isFounder || isExec) && isPres;
+  const manageLabel = 'Chapter';
 
   return (
     <Tab.Navigator
@@ -181,7 +213,7 @@ function MainTabs() {
     >
       <Tab.Screen
         name="Dashboard"
-        component={DashboardScreen}
+        component={HomeTab}
         options={{
           tabBarIcon: ({ focused }) => <TabIcon label="Home" focused={focused} />,
         }}
