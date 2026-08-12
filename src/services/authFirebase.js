@@ -119,7 +119,7 @@ export async function emailAlreadyRegistered(email) {
   }
 }
 
-export async function signUp({ email, password, name, phone, city, state, country, zip, role, referralCode, dob, age_band, guardian_required }) {
+export async function signUp({ email, password, name, phone, city, state, country, zip, role, referralCode, dob, age_band, guardian_required, chapter_id, chapter_name }) {
   if (!isFirebaseConfigured) {
     const user = makeMockUser({ email, name, phone, city, zip, role });
     return { user, session: { user } };
@@ -144,7 +144,13 @@ export async function signUp({ email, password, name, phone, city, state, countr
     country: (country || 'USA').toUpperCase(),
     zip: zip || '',
     role: role || 'member',
-    chapter_id: null,
+    // chapter_id picked in SignupStep2 → forwarded through
+    // SignupStep3 → into signUp here. Old code hardcoded null and
+    // silently dropped the chapter choice, so every new volunteer
+    // signed up chapterless: no chapter feed of pickups, no
+    // Membership row, workspace chip said "No chapter yet."
+    chapter_id: chapter_id || null,
+    chapter_name: chapter_name || '',
     events_attended: 0,
     hours_logged: 0,
     meals_rescued: 0,
@@ -181,6 +187,23 @@ export async function signUp({ email, password, name, phone, city, state, countr
   // check (services/duplicates.js → phoneAlreadyRegistered) can match
   // future signups against this row regardless of formatting.
   await setDoc(doc(db, 'users', cred.user.uid), withNormalizedPhone(userDoc));
+
+  // Dual-write the Membership row so the new IA v2 tables have the
+  // volunteer's initial chapter link from day one. Without this a
+  // new signup shows up on the Belong tab with no memberships (they
+  // fell through to the legacy user.chapter_id fallback card).
+  // Best-effort — if the write fails the legacy chapter_id above is
+  // still authoritative for readers through slice 3.
+  if (chapter_id) {
+    try {
+      const { upsertMembership } = await import('./memberships');
+      await upsertMembership({
+        user_id: cred.user.uid,
+        org_unit_id: chapter_id,
+        chapter_name: chapter_name || '',
+      });
+    } catch (e) { console.warn('signup membership shadow-write', e?.message); }
+  }
 
   // Bump the org-wide volunteer counter so the homepage ticker reflects
   // the new signup. We only count actual member volunteers — partner /

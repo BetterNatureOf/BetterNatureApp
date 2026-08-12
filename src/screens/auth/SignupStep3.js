@@ -69,6 +69,13 @@ export default function SignupStep3({ route }) {
         dob: userData.dob,
         age_band: userData.age_band,
         guardian_required: userData.guardian_required,
+        // Chapter chosen in SignupStep2 — this used to be dropped on
+        // the floor here (userData.chapter_id was in scope but never
+        // forwarded to signUp), so every new signup wrote user.chapter_id
+        // as null and the whole downstream chapter feed / membership /
+        // workspace context broke silently.
+        chapter_id: userData.chapter_id,
+        chapter_name: userData.chapter_name,
       });
 
       // Upload is best-effort — never block account creation. If

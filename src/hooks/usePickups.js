@@ -13,8 +13,16 @@ export default function usePickups() {
       // Union the chapter feed (available pickups everyone can claim)
       // with the volunteer's OWN claimed/enroute pickups so MyPickups
       // doesn't go silent the moment they tap Claim.
+      //
+      // Skip the chapter feed if the user has no chapter — the
+      // service function would otherwise return every available
+      // pickup across every chapter (nulls to the chapter_id filter
+      // fall through to unfiltered), which meant a chapterless user
+      // saw pickups from cities they've never heard of. Volunteer's
+      // own active pickups still load so a mid-flight claim doesn't
+      // disappear if they somehow ended up chapterless.
       const [feed, mine] = await Promise.all([
-        fetchPickups(user?.chapter_id),
+        user?.chapter_id ? fetchPickups(user.chapter_id) : Promise.resolve([]),
         user?.id ? fetchMyActivePickups(user.id) : Promise.resolve([]),
       ]);
       // De-dupe by id (a claimed pickup shouldn't appear in the feed

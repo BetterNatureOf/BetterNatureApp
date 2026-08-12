@@ -39,9 +39,14 @@ export default function SignupStep2({ navigation, route }) {
   }
 
   function handleNext() {
+    // Also pass chapter_name so signUp can stamp it on the user doc
+    // + on the Membership row — otherwise the WorkspaceChip has to
+    // fetch the chapter separately just to render a label.
+    const chosen = chapters.find((c) => c.id === selected);
     navigation.navigate('SignupStep3', {
       ...userData,
       chapter_id: selected,
+      chapter_name: chosen?.name || '',
     });
   }
 

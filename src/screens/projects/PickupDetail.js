@@ -350,10 +350,40 @@ export default function PickupDetail({ route, navigation }) {
       // unmapped falls through to the raw error string.
       const code = e?.code || '';
       if (code === 'handoff_not_confirmed') {
-        notify(
-          'Restaurant needs to confirm first',
-          "You can only mark delivered after the restaurant confirms you picked up the food. Ask them to open their app and tap 'Confirm pickup happened.'"
-        );
+        // Attest-and-continue escape hatch — real-world restaurants
+        // sometimes miss the confirm push (busy service, phone away).
+        // Volunteer types a one-liner note; completion proceeds with
+        // handoff_unverified flag on the pickup + receipt so the
+        // partner + exec can see it happened. Not a rug-pull — the
+        // audit trail is the trust mechanism.
+        let note = '';
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          note = window.prompt(
+            "The restaurant hasn't confirmed handoff yet.\n\n" +
+            "If they truly gave you the food but haven't tapped Confirm, " +
+            "type a one-line note (staff busy, phone dead, etc.) and we'll " +
+            "complete the run with an audit note on the receipt. Otherwise cancel and wait.",
+            ''
+          ) || '';
+        } else {
+          const ok = await confirm(
+            "Restaurant hasn't confirmed handoff",
+            "If they truly gave you the food but haven't tapped Confirm, tap OK to complete with an audit note. Otherwise wait for them."
+          );
+          note = ok ? 'volunteer attest (native — no note UI yet)' : '';
+        }
+        if (!note.trim()) return;
+        setBusy(true);
+        try {
+          await completePickup(pickup.id, w, {
+            dropoffPhotoUrl: uploadedDropoffUrl || undefined,
+            unverifiedNote: note.trim(),
+          });
+          await refresh();
+          notify('Delivered', 'Marked delivered with an audit note — the restaurant sees the flag on the receipt.');
+        } catch (e2) {
+          notify('Could not complete', e2?.message || 'Try again.');
+        } finally { setBusy(false); }
       } else if (code === 'not_enroute') {
         notify(
           'Tap "I\'m on my way" first',

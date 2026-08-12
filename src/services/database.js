@@ -1268,7 +1268,16 @@ export async function updatePickupFridge(pickupId, fridgeId) {
 // volunteer can attach a "the food is IN the fridge" proof photo (#11
 // from drop-off audit) and change the destination fridge in the same
 // action (#9 fallback path — updatePickupFridge is the standalone).
-export async function completePickup(pickupId, actualWeightLbs, { override = false, dropoffPhotoUrl = null, fridgeId = null } = {}) {
+//
+// unverifiedNote: real-world escape hatch. The verified_by_restaurant_at
+// gate (#1 from the drop-off audit) is the right default for partner
+// trust, but strict enforcement stranded volunteers when a restaurant
+// wasn't watching their phone during handoff. If the caller passes an
+// unverifiedNote, we ALLOW completion without verified_by_restaurant_at
+// but stamp handoff_unverified: true + handoff_unverified_note on the
+// pickup so the receipt page + exec review can see it happened. Trust
+// preserved via audit trail, not blocking.
+export async function completePickup(pickupId, actualWeightLbs, { override = false, dropoffPhotoUrl = null, fridgeId = null, unverifiedNote = null } = {}) {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     if (pk) {
@@ -1358,11 +1367,12 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
       }
 
       // Gate #1 — restaurant must have physically confirmed the
-      // handoff via verifyPickupByRestaurant. Without this a
-      // volunteer could mint hours + a tax receipt for a pickup
-      // that never actually happened. Real fraud vector, not
-      // theoretical.
-      if (!override && !data.verified_by_restaurant_at) {
+      // handoff via verifyPickupByRestaurant, UNLESS the volunteer
+      // attests via unverifiedNote. Strict blocking stranded
+      // volunteers when a restaurant wasn't watching their phone
+      // during handoff — the trust-preserving escape is an audit
+      // flag (handoff_unverified + note), not a hard refusal.
+      if (!override && !data.verified_by_restaurant_at && !unverifiedNote) {
         const err = new Error('HANDOFF_NOT_CONFIRMED');
         err.code = 'handoff_not_confirmed';
         throw err;
@@ -1420,6 +1430,15 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
       // outside the tx so the receipt reads correctly.
       if (fridgeOverride && fridgeOverride.fridge_id !== data.fridge_id) {
         Object.assign(updates, fridgeOverride, { fridge_changed_at: now });
+      }
+      // Attest-and-continue path when the restaurant never confirmed —
+      // stamp the audit flag so the receipt page + exec review can
+      // surface it. Partner trust preserved via visibility, not by
+      // blocking the volunteer's legitimate completion.
+      if (!data.verified_by_restaurant_at && unverifiedNote) {
+        updates.handoff_unverified = true;
+        updates.handoff_unverified_note = unverifiedNote;
+        updates.handoff_unverified_at = now;
       }
       tx.update(pkRef, updates);
       return data;
