@@ -77,9 +77,16 @@ export default function RestaurantSignup({ navigation }) {
         password: form.password,
         name: form.name,
         phone: form.phone,
-        city: '',
-        zip: '',
+        city: form.city || '',
+        zip: form.zip || '',
         role: ROLES.RESTAURANT,
+        // Pass chapter_id + chapter_name so signUp's dual-write to
+        // Memberships fires for partners too — otherwise partner
+        // signups land with no Membership row and the Belong tab's
+        // "Your memberships" section stays empty even though the
+        // partner is functionally tied to a chapter.
+        chapter_id: form.chapter_id,
+        chapter_name: chosen?.name || '',
       });
       const uid = authData?.user?.id;
       // Flag the user doc as restaurant_status:'incomplete' BEFORE

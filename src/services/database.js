@@ -1859,6 +1859,23 @@ export async function updateRestaurant(id, updates) {
     ...updates,
     updated_at: serverTimestamp(),
   });
+  // If this update flipped the restaurant's approval status, mirror
+  // the new status onto the linked user doc so queries that filter
+  // users by restaurant_status stay consistent with the /restaurants
+  // source of truth. Previously the RestaurantApprovalGate self-
+  // healed this in the client store on next poll, but Firestore
+  // itself would keep the stale 'pending' forever on the user doc.
+  if (updates.status) {
+    try {
+      const rSnap = await getDoc(doc(db, 'restaurants', id));
+      const linkedUid = rSnap.exists() ? rSnap.data().user_id : null;
+      if (linkedUid) {
+        await updateDoc(doc(db, 'users', linkedUid), {
+          restaurant_status: updates.status,
+        });
+      }
+    } catch (e) { console.warn('mirror restaurant_status → user doc', e?.message); }
+  }
   return { id, ...updates };
 }
 

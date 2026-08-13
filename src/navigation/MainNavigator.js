@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Colors } from '../config/theme';
 import { hp } from '../config/scale';
 import useAuthStore, { ROLES } from '../store/authStore';
+import { getProfile } from '../services/auth';
 
 import DashboardScreen from '../screens/main/DashboardScreen';
 import ProjectsScreen from '../screens/main/ProjectsScreen';
@@ -181,6 +183,24 @@ function ManageTab(props) {
 // chip was honest, the dashboard was wrong.
 function HomeTab(props) {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  // Refresh the user profile on every tab focus so a role change
+  // made elsewhere (exec promoted them to president via ManageMembers,
+  // founder self-promote in Settings, etc.) propagates without
+  // requiring the user to sign out and back in. The refresh flows
+  // into the store which re-renders this dispatcher — if the new
+  // role qualifies for a different dashboard, the switch is one
+  // tab-focus away.
+  useFocusEffect(useCallback(() => {
+    if (!user?.id) return;
+    let alive = true;
+    getProfile(user.id).then((fresh) => {
+      if (alive && fresh && setUser) setUser({ ...user, ...fresh });
+    }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]));
+
   if (isFounderEmail(user?.email)) return <ExecutiveDashboard {...props} />;
   if (isExecRole(user)) return <ExecutiveDashboard {...props} />;
   if (isPresRole(user)) return <PresidentDashboard {...props} />;
