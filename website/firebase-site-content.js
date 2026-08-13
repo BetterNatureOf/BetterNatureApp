@@ -69,9 +69,43 @@ export async function loadSiteContent() {
   }
 }
 
+// Fields the CMS is NOT allowed to override — live-stats.js owns
+// these numbers end-to-end (baseline in content.js + Firestore
+// org_stats update via live-stats.js repaint). If we let the CMS
+// touch them, an accidentally-saved zero string wipes the ticker
+// on first paint and users report "stats show 0 when I open the
+// site." live-stats.js already handles dynamic updates; the CMS
+// has no business writing to these keys.
+const LIVE_ONLY_PATHS = new Set([
+  'hero.tickerStats',
+  'impact.stats',
+]);
+
+function stripLiveOnlyPaths(live) {
+  if (!live || typeof live !== 'object') return live;
+  const cleaned = { ...live };
+  for (const path of LIVE_ONLY_PATHS) {
+    const parts = path.split('.');
+    let cursor = cleaned;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const key = parts[i];
+      if (!cursor[key] || typeof cursor[key] !== 'object') { cursor = null; break; }
+      // Copy-on-write so we don't mutate whatever the caller passed in.
+      cursor[key] = Array.isArray(cursor[key]) ? [...cursor[key]] : { ...cursor[key] };
+      cursor = cursor[key];
+    }
+    if (cursor) delete cursor[parts[parts.length - 1]];
+  }
+  return cleaned;
+}
+
 export async function applyLiveContent() {
   const live = await loadSiteContent();
   if (!live) return;
   if (typeof window === 'undefined') return;
-  window.CONTENT = deepMerge(window.CONTENT || {}, live);
+  // Strip live-only fields (see above) before merging so a bad CMS
+  // save can't zero out the ticker on first paint. content.js's
+  // baseline stays authoritative for the ticker + impact grid until
+  // live-stats.js repaints with real Firestore numbers.
+  window.CONTENT = deepMerge(window.CONTENT || {}, stripLiveOnlyPaths(live));
 }
