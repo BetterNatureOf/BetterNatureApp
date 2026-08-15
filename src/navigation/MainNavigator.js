@@ -43,6 +43,7 @@ import DonationHistory from '../screens/restaurant/DonationHistory';
 
 import AdminPanel from '../screens/admin/AdminPanel';
 import ManageChapters from '../screens/admin/ManageChapters';
+import ApprovalInbox from '../screens/admin/ApprovalInbox';
 import ManageMembers from '../screens/admin/ManageMembers';
 import ManageRestaurants from '../screens/admin/ManageRestaurants';
 import ManageFridges from '../screens/admin/ManageFridges';
@@ -332,6 +333,7 @@ export default function MainNavigator() {
           reachable from the Manage tab when the role allows it. */}
       <Stack.Screen name="AdminPanel" component={AdminPanel} />
       <Stack.Screen name="ManageChapters" component={ManageChapters} />
+      <Stack.Screen name="ApprovalInbox" component={ApprovalInbox} />
       <Stack.Screen name="ManageMembers" component={ManageMembers} />
       <Stack.Screen name="ManageRestaurants" component={ManageRestaurants} />
       <Stack.Screen name="ManageFridges" component={ManageFridges} />

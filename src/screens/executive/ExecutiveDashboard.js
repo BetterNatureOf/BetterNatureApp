@@ -159,8 +159,13 @@ export default function ExecutiveDashboard({ navigation }) {
         {totalPending > 0 && (
           <PendingApprovalsCard
             pending={pending}
-            onOpenChapters={() => navigation.navigate('ManageChapters')}
-            onOpenPartners={() => navigation.navigate('ManageRestaurants')}
+            // Route to the unified Approval Inbox (Phase 2 slice 1)
+            // instead of the per-collection admin screens. The inbox
+            // links back to each screen for the actual approve/deny
+            // action, but the exec starts from one queue instead of
+            // three separate scrolls.
+            onOpenChapters={() => navigation.navigate('ApprovalInbox')}
+            onOpenPartners={() => navigation.navigate('ApprovalInbox')}
           />
         )}
 

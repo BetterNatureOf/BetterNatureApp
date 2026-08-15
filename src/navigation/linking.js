@@ -54,6 +54,7 @@ const screens = {
   TaxReceipts: 'restaurant/receipts',
 
   AdminPanel: 'admin',
+  ApprovalInbox: 'admin/inbox',
   ManageChapters: 'admin/chapters',
   ManageMembers: 'admin/members',
   ManageRestaurants: 'admin/restaurants',
