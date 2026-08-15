@@ -78,16 +78,35 @@ export async function emailAlreadyRegistered(email) {
   } catch { return false; }
 }
 
+// Non-privileged roles a client-side signUp is allowed to request.
+// Elevated roles (admin, super_admin, executive, chapter_president, …)
+// can ONLY be assigned via consumeInviteCode above OR through exec-
+// initiated ManageMembers / inviteAdmin flows on a server-trusted
+// path. Any signUp caller passing 'admin' or similar gets silently
+// downgraded to 'volunteer'.
+//
+// Security fix: signUp is exposed as window.BN_SIGNUP in index.html
+// so the marketing signup form can create real accounts. Without
+// this allowlist, any visitor could open DevTools and call
+// window.BN_SIGNUP({..., role: 'admin'}) to self-promote. The
+// ensureUserDoc write would honor the role verbatim and the admin
+// panel would let them in.
+const CLIENT_ALLOWED_ROLES = new Set(['volunteer', 'member', 'partner']);
+function sanitizeClientRole(role) {
+  return CLIENT_ALLOWED_ROLES.has(role) ? role : 'volunteer';
+}
+
 export async function signUp({ email, password, name, role = 'volunteer', phone = '', city = '', zip = '', adminCode = '', referralCode = '' }) {
-  let cred;
-  try {
-    cred = await createUserWithEmailAndPassword(auth, email, password);
-  } catch (e) {
-    throw friendlyAuthError(e);
-  }
-  if (name) await updateProfile(cred.user, { displayName: name });
-  // If an admin code was provided, validate it. Valid code → role becomes 'admin'.
-  let finalRole = role;
+  // Validate the admin code BEFORE creating the Firebase Auth user.
+  // The previous ordering — create user first, then check code —
+  // meant a bad code stranded an orphan auth account: the invitee
+  // saw "That admin code is incorrect," typed the right code on
+  // retry, and hit 'auth/email-already-in-use' with no way to
+  // recover without a super-admin manually deleting the auth account.
+  // The check here is read-only (consumeInviteCode never actually
+  // consumes — see the separate finding about that) so running it
+  // twice (once here, once after account creation) is safe.
+  let finalRole = sanitizeClientRole(role);
   if (adminCode) {
     const r = await consumeInviteCode(email, adminCode);
     if (r.ok) finalRole = 'admin';
@@ -97,6 +116,14 @@ export async function signUp({ email, password, name, role = 'volunteer', phone 
       : 'That admin code is incorrect.'
     );
   }
+
+  let cred;
+  try {
+    cred = await createUserWithEmailAndPassword(auth, email, password);
+  } catch (e) {
+    throw friendlyAuthError(e);
+  }
+  if (name) await updateProfile(cred.user, { displayName: name });
   await ensureUserDoc(cred.user, { name, role: finalRole, phone, city, zip });
   // Attribute the inviter if a referral code came along.
   const code = (referralCode || '').trim().toUpperCase();
@@ -150,16 +177,32 @@ export function onUser(callback) {
 }
 
 // ── Profile / role bootstrap ─────────────────────────────────────────────
+// Roles a caller of ensureUserDoc is allowed to request. The signUp()
+// path above already sanitizes client input but ensureUserDoc is also
+// callable directly (signIn() calls it with no extra to backfill
+// pre-existing accounts, future features might pass a role) — keeping
+// the allowlist here means no code path can accidentally elevate.
+// Admin / super_admin bypasses live only in the two hardcoded routes:
+// SUPER_ADMIN_EMAIL for the founder, and 'admin' via consumeInviteCode
+// after a super-admin explicitly issued the invite.
+const ENSURE_USER_ALLOWED_ROLES = new Set(['volunteer', 'member', 'partner', 'admin']);
+
 export async function ensureUserDoc(user, extra = {}) {
   const ref = doc(db, 'users', user.uid);
   const snap = await getDoc(ref);
   if (snap.exists()) return snap.data();
 
   const isSuper = (user.email || '').toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+  // Sanitize the requested role against the allowlist. signUp already
+  // ran its own sanitize; this is defense-in-depth so a hostile call
+  // to ensureUserDoc directly (e.g. via a future exported wrapper)
+  // can't sneak an elevated role through.
+  const requestedRole = extra.role || 'member';
+  const safeRole = ENSURE_USER_ALLOWED_ROLES.has(requestedRole) ? requestedRole : 'member';
   const data = {
     email: user.email,
     name: extra.name || user.displayName || '',
-    role: isSuper ? 'super_admin' : (extra.role || 'member'),
+    role: isSuper ? 'super_admin' : safeRole,
     phone: extra.phone || '',
     city: extra.city || '',
     zip: extra.zip || '',

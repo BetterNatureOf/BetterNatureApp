@@ -595,13 +595,24 @@
         const referralCode = (() => {
           try { return localStorage.getItem('bn_ref') || ''; } catch { return ''; }
         })();
+        // ── Security fix: never send password (or any credential-shaped
+        //    field) to FormSubmit. Old code did `...data` which spread
+        //    the raw password into the JSON payload that was then
+        //    emailed to info@betternatureofficial.org via FormSubmit.
+        //    That put every website signup's plaintext password in the
+        //    org's inbox, in FormSubmit's logs, and in mailbox backups.
+        //    Strip password + password confirm before spreading. Also
+        //    turned _captcha back ON — 'false' let the endpoint be
+        //    used as a spam / phishing relay for anyone who could
+        //    craft the JSON.
+        const { password: _pw, confirmPassword: _cpw, password_confirm: _pwc, ...safeData } = data;
         const payload = {
           _subject: subject,
           _template: 'table',
-          _captcha: 'false',
+          _captcha: 'true',
           track,
           referral_code: referralCode,
-          ...data,
+          ...safeData,
         };
         btn.disabled = true;
         const originalLabel = btn.textContent;
