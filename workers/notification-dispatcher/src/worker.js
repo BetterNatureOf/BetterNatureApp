@@ -21,9 +21,16 @@
 //
 // Required env (set in `wrangler secret put`):
 //   FIRESTORE_PROJECT_ID      e.g. "better-nature-app"
-//   GOOGLE_SERVICE_ACCOUNT    JSON blob of a service account with
-//                             roles/datastore.user (used to mint
-//                             access tokens for Firestore REST)
+//   GOOGLE_SERVICE_ACCOUNT    JSON blob of a service account with:
+//                               roles/datastore.user           (Firestore REST)
+//                               roles/firebaseauth.viewer      (projects.accounts.lookup
+//                                                               — required by G3 to
+//                                                               confirm emailVerified
+//                                                               before delivering email)
+//                             The identitytoolkit.users.get permission is covered by
+//                             roles/firebaseauth.viewer. See docs:
+//                               https://cloud.google.com/identity-platform/docs/reference/rest/v1/projects.accounts/lookup
+//                               https://cloud.google.com/firebase/docs/projects/iam/roles-predefined-product
 //   ONESIGNAL_APP_ID
 //   ONESIGNAL_REST_API_KEY
 //   RESEND_API_KEY            (or BREVO_API_KEY — see below)
@@ -42,10 +49,17 @@ async function getAccessToken(env) {
   const header = { alg: 'RS256', typ: 'JWT' };
   const claim = {
     iss: sa.client_email,
-    // F8 — adds `firebase` scope so the Identity Toolkit
-    // accounts:lookup call (used to confirm emailVerified) can
-    // authenticate alongside Firestore writes.
-    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase',
+    // F8 + G3 — scopes:
+    //   datastore          Firestore REST
+    //   identitytoolkit    projects.accounts:lookup (the documented
+    //                      scope for the Identity Toolkit endpoint
+    //                      we call to confirm emailVerified)
+    // The service account also needs IAM: roles/datastore.user AND
+    // roles/firebaseauth.viewer (or equivalent). An earlier version
+    // tried `auth/firebase` — not the documented scope for
+    // identitytoolkit — which this review flagged as the deployed-
+    // IAM gap.
+    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/identitytoolkit',
     aud: 'https://oauth2.googleapis.com/token',
     iat: now, exp: now + 3600,
   };

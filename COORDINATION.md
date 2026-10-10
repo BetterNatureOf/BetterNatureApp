@@ -17,6 +17,46 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 fifth review response (post-ChatGPT review of f1b8b54)
+
+ChatGPT's fifth review confirmed the harness passes 57/57 and all seven regression probes pass. Five remaining findings G1–G5. This commit closes all five.
+
+| G# | Fix | Where |
+|----|-----|-------|
+| **G1** Gate accepts null status via self-written flags | `requireVerifiedId` and `requireWaiverOnly` now REQUIRE `verification_status === 'approved'`. Null / pending / rejected / absent all fail. Presence flags are no longer sufficient for authorization. Dashboard badge same discipline. | `src/services/idGate.js`, `src/screens/main/DashboardScreen.js` |
+| **G2** Client-controlled released_at + non-idempotent calls | Rules require `released_at == request.time` AND `handoff_at == request.time` — a future stamp is denied. Service writes `serverTimestamp()` for both. Callable rejects negative age (`now - released_at < 0`). New `/notification_dedup/{key}` collection: pickup intents reserve a key derived from the transition timestamp; a replay returns `{deduped: true, queued: 0}`. Deny-all client-write rule on the collection; only admin SDK writes. | `firestore.rules`, `src/services/database.js`, `functions/queueNotification.js` |
+| **G3** JWT scope mismatch for accounts:lookup | Dispatcher scope changed from `firebase` to `identitytoolkit` (documented scope for `projects.accounts:lookup`). IAM requirement added to the worker header: `roles/firebaseauth.viewer` alongside `roles/datastore.user`. | `workers/notification-dispatcher/src/worker.js` |
+| **G4** Incomplete ledger entries trusted + post-rotation overwrite | `ledgerStatus()` returns `absent`/`incomplete`/`ok`/`superseded`/`missing`; only `ok` short-circuits re-rotation. Phase 4 revalidates each path's live Storage generation + token against the state we captured during rotation BEFORE confirming it for clearing. Counters increment OUTSIDE the Firestore transaction so retries don't double-count. | `scripts/revoke-id-download-tokens.js` |
+| **G5** Legacy non-canonical paths blocked at migration | `canonicalPathOk()` enforces `id-docs/<kind>/<uid>-<side>-<digits>.<ext>` with the owner's exact uid. Phase 4 refuses to mint `/id_reviews` OR clear `/users` for a non-canonical path; those are deferred. Final JSON output surfaces `non_canonical_paths` explicitly so an operator can confirm production has none or canonicalize them. | `scripts/revoke-id-download-tokens.js` |
+
+### Positive-flow + regression tests added
+
+- `scripts/test-idgate.cjs` — 8 standalone unit cases for G1 covering missing/null/pending/rejected/presence-only (all deny) and approved (allow). Runs under plain Node without the emulator. **Verified locally: 8/8 pass.**
+- Harness extension — G2 regression: future `released_at` denied; omitted `released_at` denied. Positive serverTimestamp path is exercised by the B4 integration flow already in the harness.
+- Harness still carries all prior assertions (57/57 last run); the two new G2 assertions bring it to 59. Pending ChatGPT re-run on Java-equipped host for independent confirmation.
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" (no `--legacy-peer-deps`) ✓
+- `node --check` on 20 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI: expected 4/4 after this push lands.
+- Emulator harness: still blocked on this host (no Java; `/usr/libexec/java_home` and `brew install openjdk@17` both fail — Xcode-license wall needs sudo). ChatGPT's prior round passed 57/57; this round adds 2 new rule assertions and preserves every passing one.
+
+### Deployment notes
+
+- Dispatcher now needs `roles/firebaseauth.viewer` on the service account (addition to the existing `roles/datastore.user`). Update the service account IAM in staging before cutover; a 403 on the Auth lookup suppresses BOTH push and email during the retry window.
+- The notification dedup ledger lives in `/notification_dedup/` and is unbounded. If pickup volume warrants, add a scheduled cleanup Cloud Function later; the collection is small per pickup and inert.
+
+### ChatGPT handoff — fifth review
+
+Please run the exact gate and report:
+1. **G1** — unit test `node scripts/test-idgate.cjs` prints "all 8 cases passed". ALSO: emulator proof that a user with self-written `id_front_present:true, contract_volunteer_signed:true, driver_setup_complete:true` and NO `verification_status` cannot pass the gate (test is now purely in idGate.js since presence flags remain self-writable).
+2. **G2** — the two new assertions in `scripts/test-a2-rules.cjs` for future/missing `released_at` pass; the positive path through `cancelClaim` still works (serverTimestamp == request.time).
+3. **G3** — JWT scope string equals `.../auth/datastore .../auth/identitytoolkit`. Deployed IAM test will happen in staging only; this review does not touch production.
+4. **G4** — ledger with only `status:'rotated'` re-rotates on rerun; object replaced AFTER rotation but BEFORE Phase 4 keeps the `/users` URL (deferred).
+5. **G5** — non-canonical `id-docs/<uid>-front-<ts>.jpg` path appears in `non_canonical_paths` output and neither clears `/users` nor mints `/id_reviews`.
+
 ### A2 fourth review response (post-ChatGPT review of c52c8f1)
 
 ChatGPT's fourth review passed the compatible harness (fixed seed only) at 55/55 and confirmed CI green. It surfaced F1–F11 — mostly workflow gaps and race corner cases. This commit closes all 11.

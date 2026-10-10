@@ -396,6 +396,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── notification_dedup (G2) ──
+    // Idempotency ledger written by the queueBusinessNotification
+    // Cloud Function. Only the admin SDK writes; clients cannot
+    // forge or clear a receipt. Open read for exec diagnostics.
+    match /notification_dedup/{key} {
+      allow read: if isExec();
+      allow write: if false;
+    }
+
     // ── public_profiles (audit A2) ──
     // Minted exclusively by the syncPublicProfileOnWrite Cloud
     // Function from an allowlist of fields on /users. Clients cannot
@@ -529,11 +538,17 @@ service cloud.firestore {
     // callable can authorize the former claimant without needing
     // claimed_by to still be set.
     function isSelfReleaseClaim() {
+      // G2 — released_at MUST equal request.time (server-stamped
+      // via serverTimestamp()) so a client cannot submit a future
+      // timestamp that extends the former-claimant notification
+      // window. The callable then checks `now - released_at > 0`
+      // AND `<= 30min` to time-box authority.
       return isClaimant()
         && oldStatus() == 'claimed'
         && newStatus() == 'available'
         && request.resource.data.get('claimed_by', null) == null
         && request.resource.data.get('released_by', null) == request.auth.uid
+        && request.resource.data.get('released_at', null) == request.time
         && pChanged().hasOnly([
              'status','claimed_by','claimed_at',
              'cancel_reason','cancelled_at','released_by','released_at'
@@ -582,11 +597,14 @@ service cloud.firestore {
     // called out the earlier rule's enroute-only restriction as a
     // mismatch. Both transitions are now covered by one function.
     function isSelfHandoff() {
+      // G2 — handoff_at MUST equal request.time; same reason as
+      // released_at above.
       return isClaimant()
         && oldStatus() in ['claimed','enroute']
         && newStatus() == 'available'
         && request.resource.data.get('claimed_by', null) == null
         && request.resource.data.get('handoff_from_uid', null) == request.auth.uid
+        && request.resource.data.get('handoff_at', null) == request.time
         && pChanged().hasOnly([
              'status','claimed_by','claimed_at','claimant_name','claimant_phone',
              'handoff_from_uid','handoff_from_name','handoff_from_phone',

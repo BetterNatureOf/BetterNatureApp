@@ -767,12 +767,13 @@ export async function cancelClaim(pickupId, reason = '') {
       claimed_at: null,
       cancel_reason: reason || null,
       cancelled_at: new Date().toISOString(),
-      // B4 + F9 — authorized breadcrumb that is TIME-BOXED. The
-      // callable only honours it while released_at is recent; this
-      // closes the "former claimant retains indefinite messaging
-      // authority" window.
+      // B4 + F9 + G2 — authorized breadcrumb that is TIME-BOXED,
+      // with the stamp coming from the server (request.time ==
+      // serverTimestamp). The rule rejects any other value so a
+      // client cannot submit a future timestamp to extend
+      // former-claimant authority.
       released_by: data.claimed_by || null,
-      released_at: new Date().toISOString(),
+      released_at: serverTimestamp(),
     });
     return { releasedBy: data.claimed_by || null, pk: data };
   });
@@ -1146,7 +1147,10 @@ export async function handOffPickup(pickupId, reason = '') {
       handoff_from_name: data.claimant_name || null,
       handoff_from_phone: data.claimant_phone || null,
       handoff_reason: reason || null,
-      handoff_at: new Date().toISOString(),
+      // G2 — server-stamped so the time-boxed ex-claimant authority
+      // in queueBusinessNotification cannot be extended by a future
+      // client-supplied value.
+      handoff_at: serverTimestamp(),
       claimed_by: null,
       claimed_at: null,
       claimant_name: null,

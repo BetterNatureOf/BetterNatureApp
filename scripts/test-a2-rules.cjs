@@ -291,6 +291,33 @@ async function main() {
     status: 'available', claimed_by: null, released_by: BOB,
   }));
 
+  // ── G2 — released_at MUST equal request.time ───────────────────
+  // A client-supplied future released_at is rejected. Positive
+  // case (serverTimestamp sentinel == request.time) is exercised by
+  // the production `cancelClaim` → integration flow we tested
+  // under B4 above.
+  await seedBlock(env, async (db) => {
+    await db.doc(`pickups/rp3`).set({
+      restaurant_id: REST_ID, chapter_id: 'ch-memphis',
+      status: 'claimed', claimed_by: ALICE,
+    });
+  });
+  await assertFails(fs_(alice).doc(`pickups/rp3`).update({
+    status: 'available', claimed_by: null, claimed_at: null,
+    released_by: ALICE,
+    released_at: '2099-01-01T00:00:00Z',
+  }));
+  // A missing released_at is also denied.
+  await assertFails(fs_(alice).doc(`pickups/rp3`).update({
+    status: 'available', claimed_by: null, released_by: ALICE,
+    // released_at omitted
+  }));
+
+  // ── G1 — Verification badge requires explicit 'approved' ───────
+  // Covered by scripts/test-idgate.cjs (plain Node). The 8 cases
+  // there assert that null/pending/rejected/presence-only all fail
+  // the gate; only 'approved' passes.
+
   // ── Storage ID files ───────────────────────────────────────────
   await assertSucceeds(st_(alice).ref(`id-docs/personal/${ALICE}-front-123.jpg`).put(new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' }));
   await assertSucceeds(st_(alice).ref(`id-docs/personal/${ALICE}-front-123.jpg`).getDownloadURL());

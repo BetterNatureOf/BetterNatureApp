@@ -142,16 +142,16 @@ async function resolvePickupScope(db, caller, callerUser, data) {
   const callerIsClaimant     = pk.claimed_by === caller;
 
   // Ex-claimant authority: valid only when the matching transition
-  // timestamp (released_at / handoff_at) is within the time window.
+  // timestamp (released_at / handoff_at) is within the time window
+  // AND is not in the future (G2 — rules now stamp these with
+  // serverTimestamp, but belt-and-suspenders here protects any
+  // legacy rows that already had client-controlled values).
   const now = Date.now();
   const releasedAtMs = toMillisTx(pk.released_at);
   const handoffAtMs  = toMillisTx(pk.handoff_at);
-  const callerIsExClaimant =
-    pk.released_by === caller &&
-    (releasedAtMs !== 0 && now - releasedAtMs <= EX_PARTICIPANT_WINDOW_MS);
-  const callerIsHandoffFrom =
-    pk.handoff_from_uid === caller &&
-    (handoffAtMs !== 0 && now - handoffAtMs <= EX_PARTICIPANT_WINDOW_MS);
+  const inWindow = (ms) => ms !== 0 && (now - ms) >= 0 && (now - ms) <= EX_PARTICIPANT_WINDOW_MS;
+  const callerIsExClaimant  = pk.released_by === caller      && inWindow(releasedAtMs);
+  const callerIsHandoffFrom = pk.handoff_from_uid === caller && inWindow(handoffAtMs);
   const callerIsPickupParty  = callerIsRest || callerIsClaimant || callerIsExClaimant || callerIsHandoffFrom;
 
   if (!isExec && !callerIsPickupParty) {
@@ -245,6 +245,43 @@ async function resolveBroadcastScope(db, caller, callerUser, data) {
   return q.docs.map((d) => d.id);
 }
 
+// G2 — idempotency key for pickup/event notifications. Keyed by the
+// natural transition timestamp (releasedAt / handoffAt / claim_at /
+// completed_at depending on intent). Keeps the pickup-tied flows
+// one-shot: a retried call lands on the same ledger doc, finds a
+// completed receipt, and returns the earlier result without
+// re-queuing. A new transition on the same pickup produces a
+// different key.
+function idempotencyKeyForPickup(pk, intent) {
+  const parts = [pk.id || '', intent || ''];
+  if (intent === 'to_partner') {
+    const stamp = pk.released_at || pk.handoff_at || pk.completed_at || pk.enroute_at || pk.claimed_at;
+    parts.push(String(stamp && stamp.toMillis ? stamp.toMillis() : stamp || ''));
+  } else if (intent === 'to_claimant') {
+    const stamp = pk.verified_by_restaurant_at || pk.cancelled_at;
+    parts.push(String(stamp && stamp.toMillis ? stamp.toMillis() : stamp || ''));
+  } else if (intent === 'new_pickup_broadcast') {
+    parts.push(String(pk.created_at && pk.created_at.toMillis ? pk.created_at.toMillis() : pk.created_at || 'init'));
+  }
+  return parts.join(':') || null;
+}
+
+// Reserve-or-return the dedup receipt. Transactionally writes the
+// receipt doc; if it already exists we treat it as a replay.
+async function reserveDedup(db, key) {
+  if (!key) return { fresh: true, previous: null };
+  const ref = db.collection('notification_dedup').doc(key.replace(/\//g, '_'));
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists) return { fresh: false, previous: snap.data() };
+    tx.set(ref, {
+      key,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return { fresh: true, previous: null, ref };
+  });
+}
+
 exports.queueBusinessNotification = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const caller = context.auth.uid;
@@ -260,13 +297,36 @@ exports.queueBusinessNotification = functions.https.onCall(async (data, context)
   if (!title || !body) throw new functions.https.HttpsError('invalid-argument', 'title + body required');
 
   const db = admin.firestore();
-  let recipients;
-  if (scope === 'pickup')          recipients = await resolvePickupScope(db, caller, callerUser, data);
-  else if (scope === 'event')      recipients = await resolveEventScope(db, caller, callerUser, data);
-  else if (scope === 'broadcast')  recipients = await resolveBroadcastScope(db, caller, callerUser, data);
-  else throw new functions.https.HttpsError('invalid-argument', 'Unknown scope.');
+  let recipients, dedupKey = null, pkForDedup = null;
+  if (scope === 'pickup') {
+    // Fetch the pickup once more (resolvePickupScope also reads it;
+    // acceptable given infrequent calls per pickup) so the dedup
+    // key uses the authoritative timestamps.
+    const pSnap = await db.doc(`pickups/${String(data?.pickup_id || '')}`).get();
+    pkForDedup = pSnap.exists ? { id: pSnap.id, ...pSnap.data() } : null;
+    recipients = await resolvePickupScope(db, caller, callerUser, data);
+    dedupKey = pkForDedup ? idempotencyKeyForPickup(pkForDedup, String(data?.intent || '')) : null;
+  } else if (scope === 'event') {
+    recipients = await resolveEventScope(db, caller, callerUser, data);
+    dedupKey = `event:${String(data?.event_id || '')}:${kind}`;
+  } else if (scope === 'broadcast') {
+    recipients = await resolveBroadcastScope(db, caller, callerUser, data);
+    // Broadcasts intentionally not deduped — pres/exec may legitimately
+    // re-broadcast the same chapter with new content.
+  } else {
+    throw new functions.https.HttpsError('invalid-argument', 'Unknown scope.');
+  }
+
+  // G2 — reserve the idempotency key before fanning out. Replay
+  // returns the previous receipt without re-queueing.
+  if (dedupKey) {
+    const res = await reserveDedup(db, dedupKey);
+    if (!res.fresh) {
+      return { ok: true, scope, queued: 0, inapp: 0, deduped: true };
+    }
+  }
 
   const rows = recipients.map((uid) => ({ user_id: uid, kind, title, body, url, data: extra }));
   const out = await fanOut(db, rows, kind, title, body, url);
-  return { ok: true, scope, ...out };
+  return { ok: true, scope, dedup_key: dedupKey, ...out };
 });

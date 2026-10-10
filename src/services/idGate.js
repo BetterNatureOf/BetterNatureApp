@@ -28,42 +28,34 @@ export function requireVerifiedId(user, navigation) {
        user.roles.includes('partner') || user.roles.includes('restaurant')
      )) return true;
 
-  // F1 — ID presence is now mirrored from /id_reviews via the new
-  // evidence pipeline. Legacy user.id_document_url is a bridge for
-  // rows that haven't been migrated yet; migration also stamps
-  // id_front_present:true on the user doc via the revocation
-  // script's Phase 4. verification_status alone is also sufficient
-  // — if an exec approved the review the user is cleared regardless
-  // of which schema their evidence is in.
-  const hasEvidence =
-    user?.id_front_present === true ||
-    user?.id_document_url ||  // legacy bridge
-    user?.verification_status === 'approved';
-  if (!hasEvidence) {
+  // G1 — the ONLY sufficient condition is
+  // `verification_status === 'approved'`. The dashboard badge, the
+  // backend eligibility work (tracked separately), and this gate
+  // all share one authoritative status. Presence flags on /users
+  // are not authorization; a prior iteration let a self-written
+  // id_front_present combined with contract/driver flags pass the
+  // gate without any review. Status is server-mirrored from
+  // /id_reviews via the syncIdReviewStatus Cloud Function, so the
+  // owner cannot self-approve.
+  if (user?.verification_status !== 'approved') {
     (async () => {
-      const ok = await confirm(
-        'Verify your ID first',
-        'For everyone’s safety, upload a photo of a government-issued ID before claiming food pickups.',
-      );
-      if (ok) navigation?.navigate?.('VerifyId');
-    })();
-    return false;
-  }
-
-  // Uploaded but not yet admin-approved.
-  if (user.verification_status && user.verification_status !== 'approved') {
-    (async () => {
-      if (user.verification_status === 'rejected') {
+      if (user?.verification_status === 'rejected') {
         const ok = await confirm(
           'ID was rejected',
           'An admin couldn’t verify your last ID. Upload a clearer photo to try again.',
         );
         if (ok) navigation?.navigate?.('VerifyId');
-      } else {
+      } else if (user?.verification_status === 'pending') {
         await confirm(
           'Pending review',
           'An admin is reviewing your ID. You’ll be able to claim pickups as soon as it’s approved (usually within 24 hours).',
         );
+      } else {
+        const ok = await confirm(
+          'Verify your ID first',
+          'For everyone’s safety, upload a photo of a government-issued ID before claiming food pickups.',
+        );
+        if (ok) navigation?.navigate?.('VerifyId');
       }
     })();
     return false;
@@ -113,12 +105,9 @@ export function requireWaiverOnly(user, navigation) {
   if (Array.isArray(user?.roles) && (
        user.roles.includes('partner') || user.roles.includes('restaurant')
      )) return true;
-  const hasEvidence =
-    user?.id_front_present === true ||
-    user?.id_document_url ||
-    user?.verification_status === 'approved';
-  if (!hasEvidence) return requireVerifiedId(user, navigation);
-  if (user.verification_status && user.verification_status !== 'approved') return requireVerifiedId(user, navigation);
+  // G1 — same discipline as requireVerifiedId: approval is required
+  // explicitly, no fallthrough on null/absent.
+  if (user?.verification_status !== 'approved') return requireVerifiedId(user, navigation);
   if (!user?.waiver_signed) return requireVerifiedId(user, navigation);
   return true;
 }

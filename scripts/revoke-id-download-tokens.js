@@ -81,6 +81,24 @@ function inferKindAndSide(path) {
   const side = /-back-/.test(name) ? 'back' : /-front-/.test(name) ? 'front' : null;
   return { kind, side };
 }
+// G5 — the protected signer only accepts paths that match
+//   id-docs/<kind>/<uid>-<side>-<digits>.<ext>
+// where <kind> ∈ {personal, driver}, <side> ∈ {front, back},
+// <ext> ∈ {jpg, jpeg, png}, and <uid> is EXACTLY the owner's uid.
+// Very old uploads were saved as `id-docs/<uid>-<side>-<ts>.jpg`
+// (no kind segment); the signer rejects those. If we clear the
+// legacy /users URL for such a path, the evidence becomes
+// unreachable. The revocation script therefore refuses to clear
+// a legacy reference whose current path is non-canonical AND
+// leaves an explicit entry in the ledger so operators can decide
+// how to canonicalize it later.
+function canonicalPathOk(path, uid, kind, side) {
+  if (!path || !uid || !kind || !side) return false;
+  const escUid = String(uid).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('^id-docs/' + kind + '/' + escUid + '-' + side + '-[0-9]+\\.(jpe?g|png)$');
+  return re.test(path);
+}
+
 function fieldForReview(kind, side) {
   if (kind === 'driver')  return side === 'back' ? 'driver_license_back_path' : 'driver_license_front_path';
   return side === 'back' ? 'id_back_path' : 'id_front_path';
@@ -136,23 +154,29 @@ async function rotateOne(bucket, path, ledgerRef) {
   return { status: 'rotated', generation, token: newTok };
 }
 
-// F5 — verify a prior ledger entry still describes the live object.
-// Returns true when the generation + stored token match what we
-// wrote; false means the object was replaced (new upload) or the
-// token metadata was overwritten and we must rotate again.
-async function ledgerEntryIsStillValid(bucket, path, ledgerData) {
-  if (!ledgerData || ledgerData.status !== 'rotated') return false;
+// F5 + G4 — verify a prior ledger entry still describes the live
+// object. Returns a structured outcome: `ok` only when BOTH the
+// recorded generation AND the recorded token are present AND match
+// current live Storage metadata. An incomplete legacy ledger entry
+// (no generation / no token) is `incomplete`; a mismatched entry is
+// `superseded`. Phase 3 re-rotates both; Phase 4 refuses to clear
+// a reference whose live state is `superseded`.
+async function ledgerStatus(bucket, path, ledgerData) {
+  if (!ledgerData || ledgerData.status !== 'rotated') return { kind: 'absent' };
+  if (!ledgerData.generation || !ledgerData.rotated_token) {
+    return { kind: 'incomplete' };
+  }
   try {
     const file = bucket.file(path);
     const [exists] = await file.exists();
-    if (!exists) return false;
+    if (!exists) return { kind: 'missing' };
     const [meta] = await file.getMetadata();
     const liveGen = meta.generation || null;
     const liveTok = (meta.metadata || {})[TOKEN_META_KEY] || null;
-    if (ledgerData.generation && String(ledgerData.generation) !== String(liveGen)) return false;
-    if (ledgerData.rotated_token && liveTok !== ledgerData.rotated_token) return false;
-    return true;
-  } catch { return false; }
+    if (String(ledgerData.generation) !== String(liveGen)) return { kind: 'superseded', liveGen, liveTok };
+    if (liveTok !== ledgerData.rotated_token) return { kind: 'superseded', liveGen, liveTok };
+    return { kind: 'ok', liveGen, liveTok };
+  } catch (e) { return { kind: 'error', message: e?.message }; }
 }
 
 async function main() {
@@ -187,22 +211,33 @@ async function main() {
   const perObject = { rotated: 0, missing: 0, would_rotate: 0, errors: 0 };
   const rotatedPaths = new Set();  // only paths our rotation confirmed
   const allPaths = new Set([...referencedPaths, ...orphans]);
+  // rotationState: path -> { generation, token } observed when we
+  // confirmed rotation. Phase 4 cross-checks live Storage against
+  // this before clearing /users references (G4 — guards against
+  // an object replacement that happens between rotation and clear).
+  const rotationState = new Map();
   for (const p of allPaths) {
     const ledgerRef = db.collection(LEDGER_COLLECTION).doc(pathHash(p));
     try {
       const prior = await ledgerRef.get();
-      // F5 — a 'rotated' ledger entry is only trusted when live
-      // Storage metadata still matches the recorded generation and
-      // token. An overwrite (new upload) advances the generation
-      // and gets rotated again this run.
-      if (prior.exists && !DRY_RUN
-          && await ledgerEntryIsStillValid(bucket, p, prior.data())) {
+      // F5 + G4 — only trust a ledger entry whose stored generation
+      // AND stored token match live Storage. Incomplete legacy
+      // entries (no generation / no token) always re-rotate.
+      const status = prior.exists && !DRY_RUN
+        ? await ledgerStatus(bucket, p, prior.data())
+        : { kind: 'absent' };
+      if (status.kind === 'ok') {
         rotatedPaths.add(p);
+        rotationState.set(p, { generation: status.liveGen, token: status.liveTok });
         perObject.rotated += 1;
         continue;
       }
       const r = await rotateOne(bucket, p, ledgerRef);
-      if (r.status === 'rotated') { rotatedPaths.add(p); perObject.rotated += 1; }
+      if (r.status === 'rotated') {
+        rotatedPaths.add(p);
+        rotationState.set(p, { generation: r.generation, token: r.token });
+        perObject.rotated += 1;
+      }
       else if (r.status === 'missing') perObject.missing += 1;
       else perObject.would_rotate += 1;
     } catch (e) {
@@ -231,43 +266,76 @@ async function main() {
     for (const [uid, _origRefs] of perUserRefs) {
       userUpdates.attempted += 1;
       try {
-        // F4 — read user AND id_review atomically inside a
-        // transaction, then write both from the live state. A
-        // new /users upload or a reviewer decision landing between
-        // the Phase-3 rotation and this write is preserved.
+        // G4 — before committing, re-verify each path's live
+        // Storage state matches the rotation state we recorded. If
+        // the object was replaced AFTER rotation (new generation
+        // or new token), its CURRENT bearer URL is unrevoked and
+        // we must defer clearing. Done OUTSIDE the Firestore
+        // transaction because Storage reads can't live inside a
+        // Firestore tx, and committed counters must not be
+        // double-counted on tx retry.
         const userRef   = db.doc(`users/${uid}`);
         const reviewRef = db.doc(`id_reviews/${uid}`);
+        const freshSnap = await userRef.get();
+        if (!freshSnap.exists) continue;
+        const u = freshSnap.data();
+        const currentRefs = collectReferencedPaths(u);
+        // Confirm each currently-referenced path is still in the
+        // rotation state we captured + live Storage still agrees.
+        const confirmedPaths = new Set();
+        for (const [, path] of Object.entries(currentRefs)) {
+          if (!rotatedPaths.has(path)) continue;
+          const rec = rotationState.get(path);
+          if (!rec) continue;
+          try {
+            const [exists] = await bucket.file(path).exists();
+            if (!exists) continue;
+            const [meta] = await bucket.file(path).getMetadata();
+            const liveGen = meta.generation || null;
+            const liveTok = (meta.metadata || {})[TOKEN_META_KEY] || null;
+            if (String(rec.generation) !== String(liveGen)) continue;
+            if (rec.token !== liveTok) continue;
+            confirmedPaths.add(path);
+          } catch { /* defer */ }
+        }
+
+        let mintedThisUser = 0, clearedThisUser = 0, deferredThisUser = 0;
         await db.runTransaction(async (tx) => {
           const [uSnap, rSnap] = await Promise.all([tx.get(userRef), tx.get(reviewRef)]);
           if (!uSnap.exists) return;
-          const u = uSnap.data();
+          const live = uSnap.data();
           const existingReview = rSnap.exists ? (rSnap.data() || {}) : null;
-          const now = collectReferencedPaths(u);
+          const txRefs = collectReferencedPaths(live);
           const reviewUpdate = {};
           const userClear = {};
+          mintedThisUser = 0; clearedThisUser = 0; deferredThisUser = 0;
 
-          for (const [label, currentPath] of Object.entries(now)) {
-            if (!rotatedPaths.has(currentPath)) {
-              userUpdates.deferred_fields += 1;
+          for (const [label, currentPath] of Object.entries(txRefs)) {
+            if (!confirmedPaths.has(currentPath)) {
+              deferredThisUser += 1;
               continue;
             }
             const { kind, side } = inferKindAndSide(currentPath);
-            if (!side) { userUpdates.deferred_fields += 1; continue; }
+            if (!side) { deferredThisUser += 1; continue; }
+            // G5 — the signer only accepts canonical paths. If this
+            // reference doesn't match the canonical shape for its
+            // uid + kind + side, do NOT clear it and do NOT mint
+            // the mapping (it would be unreachable through
+            // getIdViewUrl). Deferred; a separate pass will decide
+            // whether to canonicalize those objects.
+            if (!canonicalPathOk(currentPath, uid, kind, side)) {
+              deferredThisUser += 1;
+              continue;
+            }
             const pathField    = fieldForReview(kind, side);
             const presentField = presentFieldForReview(kind, side);
-            // F4 — only mint the mapping when the review slot is
-            // EMPTY. If a newer /id_reviews path already exists for
-            // this kind/side, the owner (or a reviewer) wrote it
-            // after our Phase-1 scan; we must not overwrite it with
-            // legacy evidence.
             const reviewAlreadyHasPath = existingReview && existingReview[pathField];
             if (reviewAlreadyHasPath) {
-              userUpdates.deferred_fields += 1;
+              deferredThisUser += 1;
             } else {
               reviewUpdate[pathField] = currentPath;
               reviewUpdate[presentField] = true;
             }
-            // Clear the specific legacy field whose path we rotated.
             if (label.startsWith('driver.')) {
               userClear[`driver.${label.slice('driver.'.length)}`] = null;
             } else {
@@ -277,35 +345,52 @@ async function main() {
 
           const mintedAny = Object.keys(reviewUpdate).length > 0;
           if (mintedAny) {
-            // F4 — only INITIALIZE verification_status when the
-            // review row has none. We do NOT overwrite an existing
-            // reviewer decision with the legacy /users status.
             const payload = {
               ...reviewUpdate,
               id_tokens_migrated_at: admin.firestore.FieldValue.serverTimestamp(),
             };
             if (!existingReview || !existingReview.status) {
-              payload.status = u.verification_status || 'pending';
-              payload.uploaded_at = u.verification_submitted_at
-                ? u.verification_submitted_at
+              payload.status = live.verification_status || 'pending';
+              payload.uploaded_at = live.verification_submitted_at
+                ? live.verification_submitted_at
                 : admin.firestore.FieldValue.serverTimestamp();
             }
             tx.set(reviewRef, payload, { merge: true });
-            userUpdates.reviews_minted += 1;
+            mintedThisUser += 1;
           }
 
           const clearedKeys = Object.keys(userClear);
           if (clearedKeys.length) {
             userClear.id_tokens_rotated_at = admin.firestore.FieldValue.serverTimestamp();
             tx.update(userRef, userClear);
-            userUpdates.cleared_fields += clearedKeys.length;
+            clearedThisUser += clearedKeys.length;
           }
         });
+        // G4 — count OUTSIDE the transaction callback. On a retry
+        // the callback runs again; incrementing inside would double-
+        // count. We only tally once the commit returned.
+        userUpdates.reviews_minted   += mintedThisUser;
+        userUpdates.cleared_fields   += clearedThisUser;
+        userUpdates.deferred_fields  += deferredThisUser;
       } catch (e) {
         userUpdates.errors += 1;
         console.warn('user migrate failed', uid, e?.message);
       }
     }
+  }
+
+  // G5 — surface the non-canonical paths explicitly so an operator
+  // can decide whether to canonicalize them (copy to a new path
+  // that the signer accepts, then re-rotate) or confirm the
+  // production bucket contains none. The script is deliberately
+  // conservative: it rotated them but did NOT clear the /users
+  // reference, so legacy evidence stays visible under the old URL
+  // the live Phase-4 confirm would also refuse.
+  const nonCanonical = [];
+  for (const p of allPaths) {
+    // "Canonical for its owner" — if the path doesn't carry a
+    // kind segment of personal|driver, treat as non-canonical.
+    if (!/^id-docs\/(personal|driver)\//.test(p)) nonCanonical.push(p);
   }
 
   console.log(JSON.stringify({
@@ -314,6 +399,7 @@ async function main() {
     per_object: perObject,
     users: userUpdates,
     orphans_rotated: orphans.length,
+    non_canonical_paths: nonCanonical,
   }, null, 2));
   if (perObject.errors > 0 || userUpdates.errors > 0) process.exit(2);
 }
