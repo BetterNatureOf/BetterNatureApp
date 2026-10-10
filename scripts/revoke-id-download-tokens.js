@@ -1,25 +1,23 @@
 #!/usr/bin/env node
 /**
- * A2 — revoke Firebase Storage download tokens on existing ID files.
+ * A2 — revoke Firebase Storage download tokens on existing ID files
+ * AND migrate the surviving references into /id_reviews/{uid} so the
+ * protected `getIdViewUrl` callable can serve them going forward.
  *
- * ChatGPT R2+R3 rewrite:
- *   • Scans the ACTUAL legacy fields written across the codebase:
- *       top-level  id_document_url, id_document_front_url, id_document_back_url
- *       top-level  driver_license_url, driver_license_front_url, driver_license_back_url
- *       top-level  id_front_url, id_back_url (older naming)
- *       nested     driver.license_url, driver.license_front_url, driver.license_back_url
- *   • Also inventories the id-docs/* Storage prefix directly, so
- *     orphan files that no /users doc references still get their
- *     tokens rotated. Preserves every file.
- *   • Per-object outcome ledger — nothing on /users is cleared
- *     unless the matching rotation succeeded.
- *   • Requires explicit --project and --bucket to prevent
- *     accidentally pointing at the wrong environment.
+ * Preserves every file. Rotates `firebaseStorageDownloadTokens`
+ * metadata to a fresh UUID so every URL carrying the old token
+ * stops working server-side.
  *
- * The script preserves evidence (never deletes files). Rotating
- * the metadata token key `firebaseStorageDownloadTokens` to a fresh
- * UUID invalidates every URL that carried the old token server-side.
- * Reviewers get fresh URLs via the getIdViewUrl callable.
+ * B9 — the final /users clear now only nulls fields whose CURRENTLY
+ * STORED URL still resolves to a path we rotated. A concurrent new
+ * upload during the rotation phase leaves a URL pointing to an
+ * un-rotated path; that URL is left alone and the migration log
+ * flags the user for a retry pass.
+ *
+ * B10 — for each legacy user with ID evidence, this script writes
+ * /id_reviews/{uid} with the resolved personal/driver + front/back
+ * paths. getIdViewUrl requires those mappings; without this step
+ * reviewers lose access to legacy IDs even after rules deploy.
  *
  * USAGE
  *   node scripts/revoke-id-download-tokens.js --dry-run \
@@ -29,13 +27,11 @@
  *     node scripts/revoke-id-download-tokens.js \
  *     --project=better-nature-app --bucket=better-nature-app.appspot.com
  *
- * Service account needs roles/datastore.user AND
- * roles/storage.objectAdmin on the target project.
- *
- * Idempotent and restartable: every write records a resumable
- * entry on /id_token_revocation_ledger/{objectPathHash}. A second
- * run skips entries already marked 'rotated'. Failed rotations stay
- * 'pending' and get retried.
+ * Idempotent + restartable: ledger entries at
+ *   /id_token_revocation_ledger/{sha256(path)}
+ * record `status: rotated | missing | error` plus Storage object
+ * generation. A re-run skips entries already in `rotated` only if
+ * the Storage generation hasn't advanced (new upload).
  */
 
 const admin = require('firebase-admin');
@@ -43,9 +39,7 @@ const crypto = require('crypto');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const argMap = Object.fromEntries(
-  process.argv
-    .filter((a) => a.startsWith('--'))
-    .map((a) => a.replace(/^--/, '').split('='))
+  process.argv.filter((a) => a.startsWith('--')).map((a) => a.replace(/^--/, '').split('='))
 );
 const PROJECT = argMap.project || '';
 const BUCKET = argMap.bucket || '';
@@ -53,20 +47,17 @@ const BUCKET = argMap.bucket || '';
 const TOKEN_META_KEY = 'firebaseStorageDownloadTokens';
 const LEDGER_COLLECTION = 'id_token_revocation_ledger';
 
-function newToken() { return crypto.randomUUID(); }
-function pathHash(p) {
-  return crypto.createHash('sha256').update(p).digest('hex').slice(0, 32);
-}
-
-// Legacy references on /users: both top-level and nested. The list
-// is intentionally over-inclusive so one scan covers every historical
-// field a prior deploy may have written.
 const TOP_LEVEL_URL_FIELDS = [
   'id_document_url', 'id_document_front_url', 'id_document_back_url',
   'driver_license_url', 'driver_license_front_url', 'driver_license_back_url',
   'id_front_url', 'id_back_url',
 ];
 const NESTED_DRIVER_FIELDS = ['license_url', 'license_front_url', 'license_back_url'];
+
+function newToken() { return crypto.randomUUID(); }
+function pathHash(p) {
+  return crypto.createHash('sha256').update(p).digest('hex').slice(0, 32);
+}
 
 function parseStoragePath(url) {
   if (!url || typeof url !== 'string') return null;
@@ -75,88 +66,116 @@ function parseStoragePath(url) {
   try { return decodeURIComponent(m[1]); } catch { return null; }
 }
 
+// Infer kind/side from a legacy path. Example paths:
+//   id-docs/personal/<uid>-front-<ts>.jpg
+//   id-docs/driver/<uid>-back-<ts>.jpg
+//   id-docs/<uid>-front-<ts>.jpg          (very old)
+function inferKindAndSide(path) {
+  const parts = path.split('/');
+  let kind = 'personal';
+  if (parts.length >= 3) {
+    const k = parts[1];
+    if (k === 'driver' || k === 'personal') kind = k;
+  }
+  const name = parts[parts.length - 1] || '';
+  const side = /-back-/.test(name) ? 'back' : /-front-/.test(name) ? 'front' : null;
+  return { kind, side };
+}
+function fieldForReview(kind, side) {
+  if (kind === 'driver')  return side === 'back' ? 'driver_license_back_path' : 'driver_license_front_path';
+  return side === 'back' ? 'id_back_path' : 'id_front_path';
+}
+function presentFieldForReview(kind, side) {
+  if (kind === 'driver')  return side === 'back' ? 'driver_license_back_present' : 'driver_license_front_present';
+  return side === 'back' ? 'id_back_present' : 'id_front_present';
+}
+
 function collectReferencedPaths(u) {
-  const paths = new Set();
+  // Return a map { fieldLabel -> path } so the final clear step can
+  // decide per-field whether to null it based on which path(s) got
+  // rotated. Nested driver fields are tagged `driver.<name>`.
+  const refs = {};
   for (const k of TOP_LEVEL_URL_FIELDS) {
     const p = parseStoragePath(u?.[k]);
-    if (p && p.startsWith('id-docs/')) paths.add(p);
+    if (p && p.startsWith('id-docs/')) refs[k] = p;
   }
   const drv = u?.driver || {};
   for (const k of NESTED_DRIVER_FIELDS) {
     const p = parseStoragePath(drv[k]);
-    if (p && p.startsWith('id-docs/')) paths.add(p);
+    if (p && p.startsWith('id-docs/')) refs[`driver.${k}`] = p;
   }
-  return paths;
+  return refs;
 }
 
 async function rotateOne(bucket, path, ledgerRef) {
   const file = bucket.file(path);
   const [exists] = await file.exists();
   if (!exists) {
-    if (!DRY_RUN) await ledgerRef.set({ path, status: 'missing', ts: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-    return 'missing';
+    if (!DRY_RUN) await ledgerRef.set({
+      path, status: 'missing',
+      ts: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { status: 'missing' };
   }
-  if (DRY_RUN) return 'would_rotate';
+  if (DRY_RUN) return { status: 'would_rotate' };
   const [meta] = await file.getMetadata();
   await file.setMetadata({
     metadata: { ...(meta.metadata || {}), [TOKEN_META_KEY]: newToken() },
   });
+  const generation = meta.generation || null;
   await ledgerRef.set({
-    path,
-    status: 'rotated',
+    path, status: 'rotated',
+    generation,
     rotated_at: admin.firestore.FieldValue.serverTimestamp(),
     had_prior_token: !!(meta.metadata && meta.metadata[TOKEN_META_KEY]),
   }, { merge: true });
-  return 'rotated';
+  return { status: 'rotated', generation };
 }
 
 async function main() {
   if (!PROJECT) { console.error('Missing --project=<firebase-project-id>'); process.exit(2); }
   if (!BUCKET)  { console.error('Missing --bucket=<storage-bucket>'); process.exit(2); }
-  if (!admin.apps.length) {
-    admin.initializeApp({ projectId: PROJECT, storageBucket: BUCKET });
-  }
+  if (!admin.apps.length) admin.initializeApp({ projectId: PROJECT, storageBucket: BUCKET });
   const db = admin.firestore();
   const bucket = admin.storage().bucket(BUCKET);
 
   console.log(`[A2 revoke] mode=${DRY_RUN ? 'DRY-RUN' : 'WRITE'} project=${PROJECT} bucket=${BUCKET}`);
 
-  // 1) Collect all referenced paths from /users (both schemas).
-  const referenced = new Map(); // path -> owning uid (if known)
-  const userRefs = new Map();   // uid -> Set<path>
+  // Phase 1 — scan /users, collect per-user references.
+  const perUserRefs = new Map();  // uid -> {fieldLabel -> path}
+  const referencedPaths = new Set();
   const usersSnap = await db.collection('users').get();
   for (const d of usersSnap.docs) {
-    const paths = collectReferencedPaths(d.data());
-    if (paths.size) {
-      userRefs.set(d.id, paths);
-      for (const p of paths) referenced.set(p, d.id);
+    const refs = collectReferencedPaths(d.data());
+    if (Object.keys(refs).length) {
+      perUserRefs.set(d.id, refs);
+      for (const p of Object.values(refs)) referencedPaths.add(p);
     }
   }
 
-  // 2) Inventory the id-docs/ Storage prefix for orphan files
-  //    (uploads that no /users row currently references — including
-  //    historical uploads and files from deleted users).
+  // Phase 2 — Storage prefix inventory for orphans.
   const [storageFiles] = await bucket.getFiles({ prefix: 'id-docs/' });
   const storagePaths = new Set(storageFiles.map((f) => f.name));
-  const orphans = [...storagePaths].filter((p) => !referenced.has(p));
+  const orphans = [...storagePaths].filter((p) => !referencedPaths.has(p));
 
-  console.log(`[inventory] users_with_refs=${userRefs.size} unique_referenced_paths=${referenced.size} storage_files=${storagePaths.size} orphans=${orphans.length}`);
+  console.log(`[inventory] users_with_refs=${perUserRefs.size} referenced=${referencedPaths.size} storage=${storagePaths.size} orphans=${orphans.length}`);
 
-  // 3) Rotate every path (referenced + orphans). Record each in the
-  //    ledger; retry-safe because the ledger key is the path hash.
+  // Phase 3 — rotate every path we discovered. Record ledger.
   const perObject = { rotated: 0, missing: 0, would_rotate: 0, errors: 0 };
-  const allPaths = new Set([...referenced.keys(), ...orphans]);
+  const rotatedPaths = new Set();  // only paths our rotation confirmed
+  const allPaths = new Set([...referencedPaths, ...orphans]);
   for (const p of allPaths) {
     const ledgerRef = db.collection(LEDGER_COLLECTION).doc(pathHash(p));
     try {
-      const existing = await ledgerRef.get();
-      if (existing.exists && existing.data()?.status === 'rotated' && !DRY_RUN) {
+      const prior = await ledgerRef.get();
+      if (prior.exists && prior.data()?.status === 'rotated' && !DRY_RUN) {
+        rotatedPaths.add(p);
         perObject.rotated += 1;
         continue;
       }
       const r = await rotateOne(bucket, p, ledgerRef);
-      if (r === 'rotated') perObject.rotated += 1;
-      else if (r === 'missing') perObject.missing += 1;
+      if (r.status === 'rotated') { rotatedPaths.add(p); perObject.rotated += 1; }
+      else if (r.status === 'missing') perObject.missing += 1;
       else perObject.would_rotate += 1;
     } catch (e) {
       perObject.errors += 1;
@@ -167,58 +186,85 @@ async function main() {
     }
   }
 
-  // 4) Clear /users references ONLY when every path on that user
-  //    rotated successfully. Preserves evidence pointers for retry
-  //    when a rotation failed.
-  const userUpdates = { attempted: 0, cleared: 0, deferred: 0, errors: 0 };
-  if (!DRY_RUN) {
-    for (const [uid, paths] of userRefs) {
-      userUpdates.attempted += 1;
-      let allOk = true;
-      for (const p of paths) {
-        const ledgerDoc = await db.collection(LEDGER_COLLECTION).doc(pathHash(p)).get();
-        const s = ledgerDoc.exists ? ledgerDoc.data()?.status : null;
-        if (s !== 'rotated' && s !== 'missing') { allOk = false; break; }
-      }
-      if (!allOk) { userUpdates.deferred += 1; continue; }
+  // Phase 4 — mint /id_reviews/{uid} for legacy users (B10) AND
+  // conditionally clear /users bearer-URL fields (B9).
+  //
+  // B9 — before clearing a field, re-read the user and compare the
+  // CURRENTLY stored URL's path against our confirmed rotatedPaths.
+  // Only null the field when the current path matches. A newer
+  // upload done concurrently with Phase 3 leaves a different path;
+  // we leave that field alone and the ledger flags it for retry.
+  const userUpdates = {
+    attempted: 0, cleared_fields: 0, deferred_fields: 0,
+    reviews_minted: 0, errors: 0,
+  };
 
-      // Build the update — null bearer URLs, set presence booleans,
-      // stamp when the rotation completed. Nested driver block is
-      // partially updated via field paths to avoid clobbering non-ID
-      // sub-fields.
+  if (!DRY_RUN) {
+    for (const [uid, _origRefs] of perUserRefs) {
+      userUpdates.attempted += 1;
       try {
-        const u = (await db.doc(`users/${uid}`).get()).data() || {};
-        const upd = { id_tokens_rotated_at: admin.firestore.FieldValue.serverTimestamp() };
-        for (const k of TOP_LEVEL_URL_FIELDS) {
-          if (u[k]) {
-            upd[k] = null;
-            if (k.includes('front')) upd.id_front_present = true;
-            if (k.includes('back'))  upd.id_back_present  = true;
-            if (k === 'id_document_url') upd.id_front_present = true;
+        // Re-read the user — their state may have changed since the
+        // Phase-1 scan (new upload, exec correction, etc.).
+        const freshSnap = await db.doc(`users/${uid}`).get();
+        const u = freshSnap.exists ? freshSnap.data() : null;
+        if (!u) continue;
+        const now = collectReferencedPaths(u);
+
+        // Build the review-doc path map AND the user-doc clear map
+        // in one pass. Prefer the current path, not the original.
+        const reviewUpdate = {
+          status: u.verification_status || 'pending',
+          uploaded_at: u.verification_submitted_at || admin.firestore.FieldValue.serverTimestamp(),
+          id_tokens_migrated_at: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        const userClear = {};
+        let anyReviewFieldSet = false;
+
+        for (const [label, currentPath] of Object.entries(now)) {
+          // Only act when the CURRENT stored path is in rotatedPaths.
+          if (!rotatedPaths.has(currentPath)) {
+            userUpdates.deferred_fields += 1;
+            continue;
+          }
+          const { kind, side } = inferKindAndSide(currentPath);
+          if (!side) {
+            userUpdates.deferred_fields += 1;
+            continue;
+          }
+          // Mint review mapping (B10).
+          reviewUpdate[fieldForReview(kind, side)] = currentPath;
+          reviewUpdate[presentFieldForReview(kind, side)] = true;
+          anyReviewFieldSet = true;
+          // Clear the legacy field (B9: only this specific field).
+          if (label.startsWith('driver.')) {
+            userClear[`driver.${label.slice('driver.'.length)}`] = null;
+          } else {
+            userClear[label] = null;
           }
         }
-        const drv = u.driver || {};
-        for (const k of NESTED_DRIVER_FIELDS) {
-          if (drv[k]) upd[`driver.${k}`] = null;
+
+        if (anyReviewFieldSet) {
+          await db.doc(`id_reviews/${uid}`).set(reviewUpdate, { merge: true });
+          userUpdates.reviews_minted += 1;
         }
-        await db.doc(`users/${uid}`).update(upd);
-        userUpdates.cleared += 1;
+        const clearedKeys = Object.keys(userClear);
+        if (clearedKeys.length) {
+          userClear.id_tokens_rotated_at = admin.firestore.FieldValue.serverTimestamp();
+          await db.doc(`users/${uid}`).update(userClear);
+          userUpdates.cleared_fields += clearedKeys.length;
+        }
       } catch (e) {
         userUpdates.errors += 1;
-        console.warn('user clear failed', uid, e?.message);
+        console.warn('user migrate failed', uid, e?.message);
       }
     }
   }
 
   console.log(JSON.stringify({
-    project: PROJECT,
-    bucket: BUCKET,
+    project: PROJECT, bucket: BUCKET,
     mode: DRY_RUN ? 'DRY-RUN' : 'WRITE',
     per_object: perObject,
-    users: {
-      ...userUpdates,
-      with_refs: userRefs.size,
-    },
+    users: userUpdates,
     orphans_rotated: orphans.length,
   }, null, 2));
   if (perObject.errors > 0 || userUpdates.errors > 0) process.exit(2);

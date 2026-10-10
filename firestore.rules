@@ -132,8 +132,17 @@ service cloud.firestore {
       // restaurant and forges handoff verification" attack. Legacy ID
       // bearer-URL fields are also blocked at create for the same R8
       // reason they are blocked at update.
+      //
+      // B2 — the stored `email` on create MUST equal the auth token's
+      // email. Previously a newly-signed-up account could seed any
+      // delivery address at create time, which the dispatcher later
+      // trusted. The rule compares case-insensitively (Firebase
+      // Auth preserves case; our codebase sometimes lowercases).
       let roleAtCreate = d.get('role', 'member');
+      let tokenEmail = request.auth.token.email;
       return isSelfAssignableRole(roleAtCreate)
+          && (!('email' in d)
+              || (tokenEmail != null && d.email.lower() == tokenEmail.lower()))
           && (!('roles' in d) || d.roles.hasOnly(['member', 'restaurant', 'partner']))
           && (!('member_status' in d)
               || (roleAtCreate == 'member' && d.member_status == 'pending')
@@ -200,15 +209,27 @@ service cloud.firestore {
     // Exec approval in Manage Restaurants is still required before
     // the partner is active, so this self-write doesn't elevate any
     // real power — it just gets them into the approval queue.
+    //
+    // B1 — tightened from a denylist to an EXPLICIT allowlist of
+    // changed keys. The prior rule let an approved member in a
+    // single update seed restaurant_status:pending AND rewrite
+    // `email` AND stuff an id_document_front_url, reopening the
+    // email-redirect and legacy-ID-URL vectors we closed elsewhere.
+    // Now only these keys may change under this exception.
     function isSelfRestaurantSignup() {
       let d = request.resource.data;
       let o = resource.data;
+      let changed = d.diff(o).affectedKeys();
       return o.get('restaurant_status', null) in [null, 'incomplete']
           && d.get('restaurant_status', null) in ['pending', 'incomplete']
           && d.get('role', o.get('role', 'member')) in ['member', 'restaurant']
           && (!('roles' in d) || d.roles.hasOnly(['member', 'restaurant', 'partner']))
-          && !d.diff(o).affectedKeys()
-             .hasAny(['member_status','verification_status','disabled','disabled_at']);
+          && changed.hasOnly([
+               'restaurant_id','restaurant_status',
+               'chapter_id','chapter_name',
+               'partner_type','business_name',
+               'role','roles','updated_at'
+             ]);
     }
     // A2 — president same-chapter read. A chapter president needs to
     // read the private profile of their own chapter's members for
@@ -473,13 +494,19 @@ service cloud.firestore {
     // Current claimant releases their own claim before enroute. Clears
     // ownership + stamps cancel audit fields. Cannot be used after
     // enroute (handoff/abandonment is the right path there).
+    //
+    // B4 — writes `released_by` so the post-release notification
+    // callable can authorize the former claimant without needing
+    // claimed_by to still be set.
     function isSelfReleaseClaim() {
       return isClaimant()
         && oldStatus() == 'claimed'
         && newStatus() == 'available'
         && request.resource.data.get('claimed_by', null) == null
+        && request.resource.data.get('released_by', null) == request.auth.uid
         && pChanged().hasOnly([
-             'status','claimed_by','claimed_at','cancel_reason','cancelled_at'
+             'status','claimed_by','claimed_at',
+             'cancel_reason','cancelled_at','released_by'
            ]);
     }
 

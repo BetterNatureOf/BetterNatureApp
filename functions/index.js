@@ -27,6 +27,9 @@ exports.getIdViewUrl = require('./idViewer').getIdViewUrl;
 // A2 R-followup #3 — authorized cross-user notification queue.
 exports.queueBusinessNotification = require('./queueNotification').queueBusinessNotification;
 
+// A2 ID workflow — mirror id_reviews.status → users.verification_status.
+exports.syncIdReviewStatus = require('./syncIdReviewStatus').syncIdReviewStatus;
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 exports.sendPushOnNotification = functions.firestore

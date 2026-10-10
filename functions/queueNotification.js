@@ -1,23 +1,31 @@
 // A2 R-followup #3 — authorized cross-user notification queue.
 //
-// Firestore rules now limit direct /notifications_outbox client
-// writes to self-recipient only. Every cross-user notification goes
-// through this callable, which validates the business operation,
-// resolves eligible recipients, and writes outbox rows with the
-// admin SDK (which bypasses rules).
+// Firestore rules limit direct /notifications_outbox client writes
+// to self-recipient only (ordinary) + exec (admin tooling). Every
+// cross-user notification goes through this callable, which
+// validates the business operation, resolves eligible recipients,
+// and writes both the in-app bell row (/notifications) and the
+// delivery job (/notifications_outbox) with the admin SDK.
 //
 // Supported scopes:
-//   scope: 'pickup'    — writer is pickup's restaurant OR claimant.
-//                        Recipients are limited to the OTHER party +
-//                        chapter members (for new-pickup broadcasts).
+//   scope: 'pickup'    + intent: 'new_pickup_broadcast' | 'to_partner' | 'to_claimant'
+//                        — writer is pickup's restaurant OR current/former claimant OR exec.
 //   scope: 'event'     — writer is pres of event's chapter OR exec.
-//                        Recipients must be in the event's chapter.
-//   scope: 'broadcast' — writer is pres; recipients must share the
-//                        writer's chapter. Exec may broadcast to any
-//                        chapter they name.
+//   scope: 'broadcast' + chapter_id   — writer is that chapter's pres OR exec.
+//   scope: 'broadcast' + audience_scope: 'global_bn'|'global_restaurants'|'global_all'
+//                                      — exec only.
 //
-// Returns { queued: N } on success. Thrown errors become client-
-// visible friendly messages via functions.https.HttpsError.
+// Returns { queued: N, inapp: N } on success.
+//
+// B3 — resolves partner UID from /restaurants/<rid>.user_id, not
+// from pk.restaurant_id (which is a document id in production).
+// B4 — accepts caller == pk.released_by OR pk.handoff_from_uid as
+// the pickup's "former claimant" authority for post-release and
+// post-handoff notifications.
+// B5 — implements global audience scopes explicitly instead of
+// routing them to a wildcard chapter query.
+// B6 — writes the in-app bell alongside the outbox job per
+// recipient so no migrated path silently loses the bell.
 
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
@@ -28,6 +36,11 @@ const PRES_ROLES = new Set(['chapter_president', 'chapter_pres']);
 async function loadUser(uid) {
   if (!uid) return null;
   const s = await admin.firestore().doc(`users/${uid}`).get();
+  return s.exists ? { id: s.id, ...s.data() } : null;
+}
+async function loadRestaurant(rid) {
+  if (!rid) return null;
+  const s = await admin.firestore().doc(`restaurants/${rid}`).get();
   return s.exists ? { id: s.id, ...s.data() } : null;
 }
 
@@ -42,20 +55,58 @@ function userIsPres(u) {
   return PRES_ROLES.has(r) || rs.some((x) => PRES_ROLES.has(x));
 }
 
-async function enqueueMany(db, rows) {
-  if (!rows.length) return 0;
-  const batch = db.batch();
-  for (const row of rows) {
-    const ref = db.collection('notifications_outbox').doc();
-    batch.set(ref, {
-      ...row,
-      status: 'queued',
-      attempts: 0,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
+async function fanOut(db, rows, inAppKind, title, body, url) {
+  if (!rows.length) return { queued: 0, inapp: 0 };
+  // Batched writes: one /notifications doc per recipient (in-app
+  // bell, B6) and one /notifications_outbox doc per recipient
+  // (dispatcher delivery). Each pair goes in its own batch commit
+  // to stay under Firestore's 500-op batch limit for broadcasts.
+  const BATCH = 200;
+  let queued = 0, inapp = 0;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const slice = rows.slice(i, i + BATCH);
+    const batch = db.batch();
+    for (const row of slice) {
+      const inboxRef = db.collection('notifications').doc();
+      batch.set(inboxRef, {
+        user_id: row.user_id,
+        kind: inAppKind,
+        title,
+        body,
+        url: url || null,
+        read: false,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      const outRef = db.collection('notifications_outbox').doc();
+      batch.set(outRef, {
+        ...row,
+        status: 'queued',
+        attempts: 0,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+    queued += slice.length;
+    inapp  += slice.length;
   }
-  await batch.commit();
-  return rows.length;
+  return { queued, inapp };
+}
+
+async function resolvePartnerUidFromPickup(db, pk) {
+  // B3 — pickup.restaurant_id is a /restaurants doc id in production,
+  // not a user uid. Resolve the owning user via /restaurants/<rid>.
+  // Fall back to a denormalised pk.restaurant_user_id when present,
+  // but verify it against the authoritative /restaurants doc to catch
+  // stale denormalisation.
+  if (!pk || !pk.restaurant_id) return null;
+  const rest = await loadRestaurant(pk.restaurant_id);
+  const owner = rest?.user_id || null;
+  if (owner) return owner;
+  // Last-ditch — some early-schema pickups stored restaurant_id ==
+  // owner uid directly. If a user doc exists under that id, that's
+  // the owner.
+  const maybeUser = await loadUser(pk.restaurant_id);
+  return maybeUser ? maybeUser.id : null;
 }
 
 async function resolvePickupScope(db, caller, callerUser, data) {
@@ -65,27 +116,28 @@ async function resolvePickupScope(db, caller, callerUser, data) {
   if (!p.exists) throw new functions.https.HttpsError('not-found', 'pickup not found');
   const pk = p.data();
 
+  const partnerUid = await resolvePartnerUidFromPickup(db, pk);
+
   const isExec = userIsExec(callerUser);
-  const callerIsRest = isExec
-    || pk.restaurant_id === caller
+  const callerIsRest =
+       isExec
+    || partnerUid === caller
     || pk.restaurant_user_id === caller
     || (callerUser && callerUser.restaurant_id && pk.restaurant_id === callerUser.restaurant_id);
-  const callerIsClaimant = pk.claimed_by === caller;
+  const callerIsClaimant     = pk.claimed_by          === caller;
+  const callerIsExClaimant   = pk.released_by         === caller;
+  const callerIsHandoffFrom  = pk.handoff_from_uid    === caller;
+  const callerIsPickupParty  = callerIsRest || callerIsClaimant || callerIsExClaimant || callerIsHandoffFrom;
 
-  if (!isExec && !callerIsRest && !callerIsClaimant) {
+  if (!isExec && !callerIsPickupParty) {
     throw new functions.https.HttpsError('permission-denied',
-      'Only this pickup\'s partner or claimant may queue notifications for it.');
+      'Only this pickup\'s partner, current claimant, or former claimant may queue notifications for it.');
   }
 
-  // Resolve allowed recipients. The caller doesn't choose freely —
-  // this callable derives recipients from the pickup state and the
-  // intent (title/body/kind) the caller provides.
-  const intent = String(data?.intent || 'status');
+  const intent = String(data?.intent || 'to_partner');
   const recipients = new Set();
 
   if (intent === 'new_pickup_broadcast') {
-    // Partner just posted. Fan out to chapter members (minus the
-    // partner themselves). Use /public_profiles for chapter lookup.
     if (!(callerIsRest || isExec)) {
       throw new functions.https.HttpsError('permission-denied', 'Not pickup owner.');
     }
@@ -97,19 +149,19 @@ async function resolvePickupScope(db, caller, callerUser, data) {
       recipients.add(d.id);
     }
   } else if (intent === 'to_partner') {
-    // Claimant → partner. Dispatcher resolves address from the
-    // partner's /users doc server-side.
-    if (!callerIsClaimant && !isExec) {
-      throw new functions.https.HttpsError('permission-denied', 'Only the claimant may notify the partner.');
+    // B4 — ex-claimants (release, handoff) may notify the partner.
+    if (!callerIsClaimant && !callerIsExClaimant && !callerIsHandoffFrom && !isExec) {
+      throw new functions.https.HttpsError('permission-denied', 'Only the claimant / ex-claimant may notify the partner.');
     }
-    const partnerUid = pk.restaurant_user_id || pk.restaurant_id;
     if (partnerUid) recipients.add(partnerUid);
   } else if (intent === 'to_claimant') {
-    // Partner → claimant.
     if (!callerIsRest && !isExec) {
       throw new functions.https.HttpsError('permission-denied', 'Only the partner may notify the claimant.');
     }
-    if (pk.claimed_by) recipients.add(pk.claimed_by);
+    // Current claimant on an active run, or ex-claimant for a late
+    // partner-initiated apology after release.
+    const target = pk.claimed_by || pk.released_by || pk.handoff_from_uid;
+    if (target) recipients.add(target);
   } else {
     throw new functions.https.HttpsError('invalid-argument', 'Unknown pickup notification intent.');
   }
@@ -130,10 +182,9 @@ async function resolveEventScope(db, caller, callerUser, data) {
     throw new functions.https.HttpsError('permission-denied', 'Event is in another chapter.');
   }
   const q = await db.collection('public_profiles').where('chapter_id', '==', chapterId).get();
-  const recipients = q.docs
+  return q.docs
     .filter((d) => (d.data().role_label || 'member') !== 'partner')
     .map((d) => d.id);
-  return recipients;
 }
 
 async function resolveBroadcastScope(db, caller, callerUser, data) {
@@ -142,8 +193,26 @@ async function resolveBroadcastScope(db, caller, callerUser, data) {
   if (!isExec && !isPres) {
     throw new functions.https.HttpsError('permission-denied', 'Broadcasts restricted to president or exec.');
   }
+  // B5 — explicit global audience scopes. Exec-only.
+  const audienceScope = String(data?.audience_scope || '').trim();
+  if (audienceScope) {
+    if (!isExec) {
+      throw new functions.https.HttpsError('permission-denied', 'Global broadcasts restricted to exec.');
+    }
+    const q = await db.collection('public_profiles').get();
+    const rows = q.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const filtered = rows.filter((r) => {
+      const label = r.role_label || 'member';
+      if (audienceScope === 'global_bn')          return label !== 'partner';
+      if (audienceScope === 'global_restaurants') return label === 'partner';
+      if (audienceScope === 'global_all')         return true;
+      return false;
+    });
+    return filtered.map((r) => r.uid || r.id);
+  }
+  // Chapter-scoped broadcast.
   const chapterId = String(data?.chapter_id || '').trim();
-  if (!chapterId) throw new functions.https.HttpsError('invalid-argument', 'chapter_id required');
+  if (!chapterId) throw new functions.https.HttpsError('invalid-argument', 'chapter_id or audience_scope required');
   if (isPres && !isExec && callerUser.chapter_id !== chapterId) {
     throw new functions.https.HttpsError('permission-denied', 'President may only broadcast to own chapter.');
   }
@@ -167,12 +236,12 @@ exports.queueBusinessNotification = functions.https.onCall(async (data, context)
 
   const db = admin.firestore();
   let recipients;
-  if (scope === 'pickup')     recipients = await resolvePickupScope(db, caller, callerUser, data);
-  else if (scope === 'event') recipients = await resolveEventScope(db, caller, callerUser, data);
-  else if (scope === 'broadcast') recipients = await resolveBroadcastScope(db, caller, callerUser, data);
+  if (scope === 'pickup')          recipients = await resolvePickupScope(db, caller, callerUser, data);
+  else if (scope === 'event')      recipients = await resolveEventScope(db, caller, callerUser, data);
+  else if (scope === 'broadcast')  recipients = await resolveBroadcastScope(db, caller, callerUser, data);
   else throw new functions.https.HttpsError('invalid-argument', 'Unknown scope.');
 
   const rows = recipients.map((uid) => ({ user_id: uid, kind, title, body, url, data: extra }));
-  const queued = await enqueueMany(db, rows);
-  return { queued, scope };
+  const out = await fanOut(db, rows, kind, title, body, url);
+  return { ok: true, scope, ...out };
 });

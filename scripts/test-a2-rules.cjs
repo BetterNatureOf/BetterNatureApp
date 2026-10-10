@@ -71,8 +71,15 @@ async function main() {
   const outPres = verified(env, OUT_PRES, 'oscar@x');
   const exec  = verified(env, EXEC,  'eve@x');
   const restOwner = verified(env, REST_OWNER, 'rose@x');
-  const fs_ = (ctx) => ctx.firestore();
-  const st_ = (ctx) => ctx.storage();
+  // B11 — rules-unit-testing 3.0.4 (the repository's declared
+  // version) reapplies emulator settings on every ctx.firestore()
+  // call, which fails after the first write. Cache the handle per
+  // context so each assertion reuses the same Firestore/Storage
+  // instance.
+  const fsCache = new WeakMap();
+  const stCache = new WeakMap();
+  const fs_ = (ctx) => { if (!fsCache.has(ctx)) fsCache.set(ctx, ctx.firestore()); return fsCache.get(ctx); };
+  const st_ = (ctx) => { if (!stCache.has(ctx)) stCache.set(ctx, ctx.storage());   return stCache.get(ctx); };
 
   // ── Base access model ──────────────────────────────────────────
   await assertFails   (fs_(anon).doc(`users/${ALICE}`).get());
@@ -193,6 +200,61 @@ async function main() {
   });
   await assertSucceeds(fs_(anon).doc('tax_receipts/r1').get());
   await assertFails   (fs_(anon).collection('tax_receipts').get());
+
+  // ── B1 — signup finalization allowlist ─────────────────────────
+  // Legitimate finalization (restaurant signup) must still succeed.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc(`restaurants/mine`).set({ user_id: 'carl', status: 'pending' });
+    await ctx.firestore().doc(`users/carl`).set({ id: 'carl', name: 'Carl', email: 'carl@x', role: 'member', member_status: 'pending' });
+  });
+  const carl = verified(env, 'carl', 'carl@x');
+  await assertSucceeds(fs_(carl).doc(`users/carl`).update({
+    restaurant_id: 'mine', restaurant_status: 'pending', chapter_id: 'ch-memphis',
+    chapter_name: 'Memphis', partner_type: 'restaurant', role: 'restaurant',
+  }));
+  // Attack — signup finalization + email change in one update → DENIED.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc(`restaurants/mine2`).set({ user_id: 'dana', status: 'pending' });
+    await ctx.firestore().doc(`users/dana`).set({ id: 'dana', name: 'Dana', email: 'dana@x', role: 'member', member_status: 'approved' });
+  });
+  const dana = verified(env, 'dana', 'dana@x');
+  await assertFails(fs_(dana).doc(`users/dana`).update({
+    restaurant_id: 'mine2', restaurant_status: 'pending', email: 'phish@example.invalid',
+  }));
+  // Attack — signup finalization + legacy ID field in one update → DENIED.
+  await assertFails(fs_(dana).doc(`users/dana`).update({
+    restaurant_id: 'mine2', restaurant_status: 'pending',
+    id_document_front_url: 'https://example.invalid/leak',
+  }));
+
+  // ── B2 — create-time email must match the auth token ──────────
+  const ed = verified(env, 'ed', 'ed@x');
+  await assertFails(fs_(ed).doc('users/ed').set({ id: 'ed', name: 'E', email: 'phish@x', role: 'member', member_status: 'pending' }));
+  await assertSucceeds(fs_(ed).doc('users/ed').set({ id: 'ed', name: 'E', email: 'ed@x', role: 'member', member_status: 'pending' }));
+
+  // ── B4 — isSelfReleaseClaim requires released_by == auth.uid ──
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc(`pickups/rp1`).set({
+      restaurant_id: REST_ID, chapter_id: 'ch-memphis',
+      status: 'claimed', claimed_by: ALICE,
+    });
+  });
+  // Alice releases her own claim — must stamp released_by: herself.
+  await assertSucceeds(fs_(alice).doc(`pickups/rp1`).update({
+    status: 'available', claimed_by: null, claimed_at: null,
+    released_by: ALICE, cancel_reason: 'change_of_plans',
+    cancelled_at: new Date().toISOString(),
+  }));
+  // Attack — Bob tries to release Alice's pickup → DENIED.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc(`pickups/rp2`).set({
+      restaurant_id: REST_ID, chapter_id: 'ch-memphis',
+      status: 'claimed', claimed_by: ALICE,
+    });
+  });
+  await assertFails(fs_(bob).doc(`pickups/rp2`).update({
+    status: 'available', claimed_by: null, released_by: BOB,
+  }));
 
   // ── Storage ID files ───────────────────────────────────────────
   await assertSucceeds(st_(alice).ref(`id-docs/personal/${ALICE}-front-123.jpg`).put(new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' }));

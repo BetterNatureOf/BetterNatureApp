@@ -17,6 +17,57 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 third review response (post-ChatGPT review of e78faee)
+
+ChatGPT's third review verified R1 harness + builds green, then surfaced B1–B11 plus the unfinished ID workflow. This commit closes all twelve.
+
+| B# | Fix | Where |
+|----|-----|-------|
+| **B1** Signup finalization bypass | `isSelfRestaurantSignup` tightened to `hasOnly` allowlist of changed fields. Smuggled email / id_document_front_url writes alongside restaurant_status now denied. | `firestore.rules` |
+| **B2** CREATE arbitrary delivery email | `cleanCreateFields` requires `d.email.lower() == request.auth.token.email.lower()` at create. | `firestore.rules` |
+| **B3** Partner UID resolution | `queueNotification.resolvePartnerUidFromPickup` reads `/restaurants/<rid>.user_id`; `pk.restaurant_user_id` only trusted when it matches. | `functions/queueNotification.js` |
+| **B4** Release/handoff notification auth | Pickup rule `isSelfReleaseClaim` requires `released_by == auth.uid` and adds that field to the allowed-change list. `cancelClaim` stamps it. Callable accepts `caller == pk.released_by` / `pk.handoff_from_uid` for `to_partner` intent. | `firestore.rules`, `src/services/database.js`, `functions/queueNotification.js` |
+| **B5** Global audience scopes | Callable accepts `audience_scope: 'global_bn' / 'global_restaurants' / 'global_all'` — exec-only. Client `enqueueAudienceNotification` maps `'bn' / 'restaurants' / 'all'` to those scopes. No more `chapter_id: '*'` dead query. | `functions/queueNotification.js`, `src/services/notify.js` |
+| **B6** In-app bell lost in callable | `queueBusinessNotification.fanOut` batches BOTH a `/notifications` row and a `/notifications_outbox` row per recipient. | `functions/queueNotification.js` |
+| **B7** Mirror race | `reconcile()` runs in `db.runTransaction()`; writes stamp a `source_rev` from `/users.updated_at`; a stale invocation whose source_rev < existing is `skipped_stale`. | `functions/lib/publicProfileProjection.js` |
+| **B8** No retries on trigger | `syncPublicProfileOnWrite` declared with `.runWith({ failurePolicy: true })`. Paired with the transaction-safe reconciler. | `functions/syncPublicProfile.js` |
+| **B9** Revocation clobbers newer unrotated refs | Phase 4 re-reads each user, parses the CURRENTLY stored URL, nulls only the fields whose path matches a confirmed-rotated entry. Any newer upload stays untouched; the ledger flags it as `deferred_fields`. | `scripts/revoke-id-download-tokens.js` |
+| **B10** No `/id_reviews` from legacy evidence | Phase 4 constructs `/id_reviews/{uid}` with `id_front_path` / `id_back_path` / `driver_license_front_path` / `_back_path` + presence booleans + status, so `getIdViewUrl` can serve legacy users immediately. | `scripts/revoke-id-download-tokens.js` |
+| **B11** Harness fails on repo-declared tooling | `fsCache` / `stCache` WeakMaps per context so repeated `ctx.firestore()` doesn't reinitialise Firestore settings on rules-unit-testing 3.0.4. | `scripts/test-a2-rules.cjs` |
+
+### ID workflow completion
+
+| Area | Status | Where |
+|------|--------|-------|
+| `id_reviews.status` → `/users.verification_status` sync | New trigger with `failurePolicy: true` + inner transaction | `functions/syncIdReviewStatus.js` + exported from `functions/index.js` |
+| Legacy `authFirebase.uploadIdDocument` | Delegates to `idReview.submitIdReview`. Never writes to `/users` ID fields again. | `src/services/authFirebase.js` |
+| `ManageVerifications` | Joins `/id_reviews` with `/users`. Each thumbnail resolves through `getIdViewUrl` (short-lived signed URL). Keeps a legacy-fallback renderer for the pre-migration bridge. Approve/Reject calls `setIdReviewStatus` for migrated rows, `setVerificationStatus` for legacy rows. | `src/screens/admin/ManageVerifications.js`, `src/services/idReview.js` |
+
+### Positive-flow + regression coverage added to harness
+
+- Positive — legitimate restaurant signup finalization succeeds (`carl` → `mine`).
+- B1 regression — same finalization + email change in one update → denied.
+- B1 regression — finalization + legacy ID URL in one update → denied.
+- B2 regression — create with `email != token.email` → denied; matching → succeeds.
+- B4 regression — self-release of own pickup with `released_by: self` succeeds; another user attempting the release → denied.
+- Prior round regressions retained (R5 unverified-email deny, foreign ID path deny, nested driver, email self-redirect, outbox lockdown variants, pres cross-chapter denial, tax_receipt list, Storage ID access).
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" (no `--legacy-peer-deps`) ✓
+- `node --check` on 20 touched JS files ✓ — all parse cleanly.
+- Emulator harness: still blocked on this host (no Java runtime; `brew install openjdk@17` blocked by Xcode-license wall needing sudo). Harness is syntax-clean, uses the handle-caching pattern from the review, and should pass under firebase 10.14.1 / rules-unit-testing 3.0.4. Awaiting ChatGPT's green run to independently confirm.
+
+### Still-tracked follow-ups beyond A2
+
+| Item | Why outside A2 |
+|------|----------------|
+| C1 server-side idempotent completion | Original audit flagged it; needs its own PR. |
+| 25-defect items 2–8, 17–23, 25 | Reporting, receipts, event flows, HTML escaping — separate work streams. |
+| Dispatcher per-row lease / full PATCH response audit | B7 retry logic landed; stricter concurrency semantics for the dispatcher itself tracked for a follow-up. |
+| President-scoped donations endpoint | Current PresFinance gracefully degrades; dedicated endpoint tracked. |
+| Legacy-outbox drain is deploy step 2.5 | Not a code change — operational step in `scripts/drain-legacy-outbox.js`. |
+
 ### A2 second review response (post-ChatGPT review of a219914)
 
 ChatGPT's second review verified R1/R5/R6/R7/R10/R11 + foreign-restaurant UPDATE path AS FIXED on `a219914`, confirmed clean dependency resolution and all three deployment checks green, then surfaced seven new blockers. This section is the response to those blockers.

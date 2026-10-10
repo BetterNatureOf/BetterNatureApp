@@ -127,8 +127,16 @@ export function queueEventBroadcast(eventId, { kind = 'volunteer', title, body, 
 }
 
 /**
- * Audience helper — convenience wrapper over queueChapterBroadcast.
- * Pre-A2 callers passed 'chapter:<id>'; we parse that form through.
+ * Audience helper — maps legacy `audience` strings to the callable's
+ * explicit scopes.
+ *   'chapter:<id>' → scoped chapter broadcast (pres or exec)
+ *   'bn'           → global_bn   (all non-partner profiles, exec only)
+ *   'restaurants'  → global_restaurants (partner profiles, exec only)
+ *   'all'          → global_all  (everyone, exec only)
+ *
+ * B5 — the previous implementation routed non-chapter audiences to
+ * `chapter_id: '*'` which the callable then queried literally and
+ * matched zero recipients. Explicit audience_scope resolves this.
  */
 export async function enqueueAudienceNotification(opts) {
   const { audience, kind = 'broadcast', title, body, url, data } = opts;
@@ -136,6 +144,10 @@ export async function enqueueAudienceNotification(opts) {
   if (typeof audience === 'string' && audience.startsWith('chapter:')) {
     return queueChapterBroadcast(audience.slice('chapter:'.length), { kind, title, body, url, data });
   }
-  // 'bn' / 'all' / 'restaurants' are legacy global audiences — exec only.
-  return callQueue({ scope: 'broadcast', chapter_id: '*', kind, title, body, url, data });
+  const audience_scope =
+    audience === 'bn'          ? 'global_bn' :
+    audience === 'restaurants' ? 'global_restaurants' :
+    audience === 'all'         ? 'global_all' : null;
+  if (!audience_scope) return { ok: false, reason: 'unknown_audience' };
+  return callQueue({ scope: 'broadcast', audience_scope, kind, title, body, url, data });
 }

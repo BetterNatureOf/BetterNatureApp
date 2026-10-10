@@ -73,40 +73,71 @@ function projectionsEqual(a, b) {
 
 /**
  * Reconcile a single uid: writes/deletes/repairs the mirror based
- * on the current /users state. Idempotent. Used by both the trigger
- * (after resolving the current /users snapshot inside the trigger)
- * and the backfill. Returns one of 'wrote' | 'unchanged' | 'deleted'
- * | 'missing_source'.
+ * on the current /users state. Idempotent.
  *
- * Takes an admin firestore handle so the caller controls batching.
+ * B7 — runs inside a Firestore transaction so a stale invocation
+ * cannot overwrite a newer one. The transaction reads /users and
+ * /public_profiles together, then writes the destination with the
+ * source's observed revision marker (source_rev). On commit retry
+ * the transaction re-reads live state, so a late event never
+ * resurrects a deleted mirror and an older /users snapshot cannot
+ * stomp a newer one.
+ *
+ * `source_rev` is pulled from the /users row's `updated_at`
+ * timestamp when present. If the source has no `updated_at` we
+ * fall back to writing without preconditions (first write of a
+ * long-lived legacy row); subsequent writes get the precondition
+ * once the row has been touched.
  */
 async function reconcile(db, uid) {
-  const srcSnap = await db.doc(`users/${uid}`).get();
+  const srcRef = db.doc(`users/${uid}`);
   const pubRef = db.doc(`public_profiles/${uid}`);
-  const pubSnap = await pubRef.get();
-  if (!srcSnap.exists) {
-    if (pubSnap.exists) {
-      await pubRef.delete(); // propagate — see note in trigger wrapper
-      return 'deleted';
+  return db.runTransaction(async (tx) => {
+    const [srcSnap, pubSnap] = await Promise.all([tx.get(srcRef), tx.get(pubRef)]);
+    if (!srcSnap.exists) {
+      if (pubSnap.exists) {
+        tx.delete(pubRef);
+        return 'deleted';
+      }
+      return 'missing_source';
     }
-    return 'missing_source';
-  }
-  const next = project(uid, srcSnap.data());
-  if (!next) {
-    if (pubSnap.exists) {
-      await pubRef.delete();
-      return 'deleted';
+    const srcData = srcSnap.data();
+    const next = project(uid, srcData);
+    if (!next) {
+      if (pubSnap.exists) {
+        tx.delete(pubRef);
+        return 'deleted';
+      }
+      return 'missing_source';
     }
-    return 'missing_source';
-  }
-  // R9 — if the destination is missing but should exist, write it
-  // even when the "before"/"after" projections of this one event
-  // match. This repairs a mirror that an earlier failed trigger
-  // (or a backfill-skipped tombstone) left behind.
-  const existing = pubSnap.exists ? pubSnap.data() : null;
-  if (existing && projectionsEqual(existing, next)) return 'unchanged';
-  await pubRef.set(next, { merge: false });
-  return 'wrote';
+    const existing = pubSnap.exists ? pubSnap.data() : null;
+    // Stale-event guard — if the mirror already carries a
+    // source_rev newer than this event's /users snapshot, skip.
+    // Compares the stored ms-epoch; falls through when either side
+    // lacks a timestamp (legacy rows), relying on the transaction
+    // itself to serialise.
+    const incomingRev = toMillis(srcData.updated_at);
+    const existingRev = existing ? toMillis(existing.source_rev) : 0;
+    if (incomingRev && existingRev && existingRev >= incomingRev) {
+      return 'skipped_stale';
+    }
+    // Short-circuit no-op writes — a private-field edit shouldn't
+    // bump the mirror's updated_at. But still write if the mirror
+    // is missing (destination repair).
+    if (existing && projectionsEqual(existing, next)) {
+      return 'unchanged';
+    }
+    tx.set(pubRef, { ...next, source_rev: incomingRev || null }, { merge: false });
+    return 'wrote';
+  });
+}
+
+function toMillis(v) {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v.toMillis === 'function') { try { return v.toMillis(); } catch { return 0; } }
+  if (v.seconds != null && v.nanoseconds != null) return v.seconds * 1000 + Math.floor(v.nanoseconds / 1e6);
+  const d = new Date(v); return Number.isFinite(d.getTime()) ? d.getTime() : 0;
 }
 
 module.exports = { project, projectionsEqual, reconcile, ALLOWLIST, roleLabel };

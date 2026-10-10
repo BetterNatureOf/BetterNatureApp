@@ -20,8 +20,9 @@
 // Only exec may transition status to approved/rejected (enforced by
 // a Cloud Function or an exec write; client self-writes stay pending).
 
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, storage, isFirebaseConfigured } from '../config/firebase';
 
 const KIND_PATHS = {
@@ -82,4 +83,47 @@ export async function fetchMyIdReview(userId) {
   if (!isFirebaseConfigured || !userId) return null;
   const snap = await getDoc(doc(db, 'id_reviews', userId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+/**
+ * Exec-only: list id_reviews, optionally filtered by status. Called
+ * by ManageVerifications. Firestore rules allow full read for exec.
+ */
+export async function listIdReviews({ status = null } = {}) {
+  if (!isFirebaseConfigured) return [];
+  const parts = [collection(db, 'id_reviews')];
+  if (status) parts.push(where('status', '==', status));
+  const snap = await getDocs(parts.length === 1 ? parts[0] : query(parts[0], ...parts.slice(1)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Mint a short-lived signed URL for an ID file via the Cloud
+ * Function callable. 5-minute expiry; owner or exec may call.
+ */
+export async function getIdViewUrl({ uid, kind = 'personal', side = 'front' }) {
+  if (!isFirebaseConfigured) return null;
+  try {
+    const fn = httpsCallable(getFunctions(), 'getIdViewUrl');
+    const res = await fn({ uid, kind, side });
+    return res?.data?.url || null;
+  } catch (e) {
+    console.warn('getIdViewUrl failed', uid, kind, side, e?.message);
+    return null;
+  }
+}
+
+/**
+ * Exec-only transition. Rules permit exec to set status to
+ * approved/rejected; the sync trigger mirrors it to
+ * /users.verification_status.
+ */
+export async function setIdReviewStatus(uid, status, reviewerUid) {
+  if (!isFirebaseConfigured || !uid) return;
+  if (!['approved', 'rejected', 'pending'].includes(status)) throw new Error('Invalid status');
+  await setDoc(doc(db, 'id_reviews', uid), {
+    status,
+    reviewed_at: serverTimestamp(),
+    reviewed_by: reviewerUid || null,
+  }, { merge: true });
 }

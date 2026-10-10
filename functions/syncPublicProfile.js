@@ -25,7 +25,16 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const { reconcile } = require('./lib/publicProfileProjection');
 
-exports.syncPublicProfileOnWrite = functions.firestore
+// B8 — background Cloud Functions do NOT retry by default. Without
+// `failurePolicy: true` the trigger's rethrow just logs an error
+// and the mirror diverges silently. Opting in to retries pairs with
+// the idempotent, transaction-safe `reconcile()` below. Firebase
+// bounds retries to roughly 7 days; projection work must be purely
+// a function of /users state so repeated retries never over-count.
+// Reference: https://firebase.google.com/docs/functions/retries
+exports.syncPublicProfileOnWrite = functions
+  .runWith({ failurePolicy: true })
+  .firestore
   .document('users/{uid}')
   .onWrite(async (change, context) => {
     const uid = context.params.uid;
