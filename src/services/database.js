@@ -260,16 +260,17 @@ export async function fetchEventSignups(eventId) {
     query(collection(db, 'event_signups'), where('event_id', '==', eventId))
   );
   const rows = snapToList(snap).filter((s) => s.status !== 'cancelled');
-  // Hydrate user names
-  const out = [];
-  for (const r of rows) {
-    let user_name = 'Volunteer';
-    try {
-      const u = await getDoc(doc(db, 'users', r.user_id));
-      if (u.exists()) user_name = u.data().name || 'Volunteer';
-    } catch {}
-    out.push({ ...r, user_name });
-  }
+  // A2 — hydrate names from /public_profiles. Attendee lists are
+  // read by presidents/execs (for check-in) and sometimes by other
+  // signed-up volunteers (to see who else is coming). Both legit
+  // paths work against the public mirror; neither needs email/phone
+  // from the private /users doc.
+  const { fetchPublicProfiles } = await import('./publicProfiles');
+  const profMap = await fetchPublicProfiles(rows.map((r) => r.user_id));
+  const out = rows.map((r) => ({
+    ...r,
+    user_name: profMap.get(r.user_id)?.display_name || 'Volunteer',
+  }));
   return out;
 }
 
@@ -989,11 +990,16 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
   try {
     const pk = fresh || {};
     if (pk.restaurant_id) {
+      // A2 — read volunteer display name from /public_profiles. The
+      // writer here is the volunteer themselves (self-read of
+      // /users would work), but the restaurant may also trigger this
+      // path on confirm, and public_profiles works for both.
       let volunteerName = '';
       if (pk.claimed_by) {
         try {
-          const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
-          if (vSnap.exists()) volunteerName = vSnap.data().name || '';
+          const { fetchPublicProfile } = await import('./publicProfiles');
+          const vp = await fetchPublicProfile(pk.claimed_by);
+          volunteerName = vp?.display_name || '';
         } catch {}
       }
       const dropOff = pk.fridge_name ? ` to ${pk.fridge_name}` : '';
@@ -1541,15 +1547,23 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     // completion if any one channel fails.
     try {
       const { issueReceiptForPickup, receiptUrl } = await import('./taxReceipts');
-      // Pull volunteer name for the receipt body.
+      // A2 — volunteer name comes from /public_profiles (we're the
+      // claimant so a self-read on /users would also work, but the
+      // public mirror is cheaper and keeps the pattern uniform).
       let volunteerName = '';
       try {
-        const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
-        if (vSnap.exists()) volunteerName = vSnap.data().name || '';
+        const { fetchPublicProfile } = await import('./publicProfiles');
+        const vp = await fetchPublicProfile(pk.claimed_by);
+        volunteerName = vp?.display_name || '';
       } catch {}
-      // Resolve the restaurant email + linked user uid. Try the
-      // restaurants doc first; fall back to the linked user's email
-      // if the restaurants doc has no email field.
+      // Resolve the restaurant email from the public /restaurants doc.
+      // A2 note: the fallback that previously read /users/<owner> for
+      // email is removed — a volunteer completing a run cannot read
+      // the partner's private profile under the new rules. If the
+      // /restaurants doc has no email, the receipt still issues but
+      // the email channel on dispatch quietly no-ops; the exec can
+      // backfill the restaurant's contact email through Manage
+      // Restaurants and re-send.
       let restaurantEmail = '';
       let restaurantUserUid = pk.restaurant_user_id || null;
       if (pk.restaurant_id) {
@@ -1560,12 +1574,6 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
             restaurantEmail = r.email || r.contact_email || '';
             restaurantUserUid = restaurantUserUid || r.user_id || null;
           }
-        } catch {}
-      }
-      if (!restaurantEmail && restaurantUserUid) {
-        try {
-          const uSnap = await getDoc(doc(db, 'users', restaurantUserUid));
-          if (uSnap.exists()) restaurantEmail = uSnap.data().email || '';
         } catch {}
       }
 
@@ -1961,11 +1969,10 @@ export async function fetchMemberOfMonth(chapterId) {
     if (!list.length) return null;
     const row = list[0];
     if (row.user_id) {
-      const u = await getDoc(doc(db, 'users', row.user_id));
-      if (u.exists()) {
-        const ud = u.data();
-        row.users = { name: ud.name, avatar_url: ud.avatar_url };
-      }
+      // A2 — public roster surface; read the mirror, not /users.
+      const { fetchPublicProfile } = await import('./publicProfiles');
+      const p = await fetchPublicProfile(row.user_id);
+      if (p) row.users = { name: p.display_name, avatar_url: p.avatar_url || null };
     }
     return row;
   } catch {
@@ -2244,8 +2251,24 @@ export async function fetchLeaderboard({
     byUser.set(a.user_id, cur);
   }
 
-  const members = await fetchAllMembers();
-  const memberMap = new Map(members.map((m) => [m.id, m]));
+  // A2 — read the public mirror, not /users. Leaderboards never
+  // need the private profile (email, phone, consent, verification);
+  // public_profiles has the display name, avatar, chapter_id and
+  // the totals we rank on, nothing more.
+  const { fetchAllPublicProfiles } = await import('./publicProfiles');
+  const members = await fetchAllPublicProfiles({ chapterId });
+
+  // Hydrate chapter name once; the public mirror only carries chapter_id.
+  const chapIds = [...new Set(members.map((m) => m.chapter_id).filter(Boolean))];
+  const chapMap = new Map();
+  await Promise.all(chapIds.map(async (cid) => {
+    try {
+      const c = await getDoc(doc(db, 'chapters', cid));
+      if (c.exists()) chapMap.set(cid, c.data().name || '');
+    } catch {}
+  }));
+
+  const memberMap = new Map(members.map((m) => [m.uid || m.id, m]));
 
   const rows = [];
   for (const stats of byUser.values()) {
@@ -2259,10 +2282,10 @@ export async function fetchLeaderboard({
       stats.raised * SCORE_WEIGHTS.raised;
     rows.push({
       ...stats,
-      name: member.name,
+      name: member.display_name || '—',
       avatar_url: member.avatar_url || null,
-      chapter: member.chapters?.name || '—',
-      role: member.role,
+      chapter: chapMap.get(member.chapter_id) || '—',
+      role: member.role_label || 'member',
       score,
     });
   }

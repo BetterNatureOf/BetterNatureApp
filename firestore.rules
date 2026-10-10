@@ -56,8 +56,12 @@ service cloud.firestore {
     }
 
     // ── users ──
-    // Reads: any signed-in user. (Audit A2 — split to public_profiles
-    // deferred to a follow-up PR; too many call sites to break at once.)
+    // Reads (audit A2): locked to the owner, execs, and the chapter
+    // president whose chapter_id matches this user's chapter_id (for
+    // their chapter roster + check-in flow). Everything else now
+    // reads /public_profiles, which carries only an allowlisted
+    // subset — no email, phone, DOB, address, ID urls, consent,
+    // tokens or verification state.
     //
     // Writes: owner can touch non-privileged fields; privileged ones
     // require an exec OR the founder editing their own doc. On CREATE,
@@ -138,14 +142,60 @@ service cloud.firestore {
           && !d.diff(o).affectedKeys()
              .hasAny(['member_status','verification_status','disabled','disabled_at']);
     }
+    // A2 — president same-chapter read. A chapter president needs to
+    // read the private profile of their own chapter's members for
+    // check-in, approval review, and roster operations; they must
+    // NOT see any other chapter's private data. Execs bypass via the
+    // outer isExec() clause. ID documents are still gated separately
+    // in Storage — this only unlocks the Firestore profile.
+    function isPresReadOfOwnChapter(uid) {
+      return isSignedIn()
+        && hasAnyRole(['chapter_president','chapter_pres'])
+        && get(/databases/$(database)/documents/users/$(uid)).data.get('chapter_id', null) == myChapterId()
+        && myChapterId() != null;
+    }
+    // A2 — "finding my own historical account" carve-out. During a
+    // Google-link / cross-provider merge flow, the signed-in user
+    // needs to discover another /users row that carries THEIR OWN
+    // verified email. Allowed only when the queried doc's email (or
+    // any linked_google_emails entry) literally equals the auth
+    // token's email — a signed-in user can only ever surface rows
+    // tied to their own verified identity. Cannot be abused to
+    // enumerate strangers because the filter is pinned to the auth
+    // token, not an arbitrary parameter.
+    function readingMyLinkedAccount() {
+      return isSignedIn()
+        && request.auth.token.email != null
+        && (
+          resource.data.get('email', '') == request.auth.token.email
+          || request.auth.token.email in resource.data.get('linked_google_emails', [])
+        );
+    }
     match /users/{uid} {
-      allow read: if isSignedIn();
+      allow get: if isExec()
+                 || isSelf(uid)
+                 || isPresReadOfOwnChapter(uid)
+                 || readingMyLinkedAccount();
+      allow list: if isExec() || readingMyLinkedAccount();
       allow create: if isSelf(uid) && cleanCreateFields();
       allow update: if isExec()
         || (isSelf(uid) && isFounderToken())
         || (isSelf(uid) && !touchesPrivilegedFields() && selfChapterIdOk() && selfRestaurantIdOk())
         || (isSelf(uid) && isSelfRestaurantSignup() && selfChapterIdOk() && selfRestaurantIdOk());
       allow delete: if isAdmin();
+    }
+
+    // ── public_profiles (audit A2) ──
+    // Minted exclusively by the syncPublicProfileOnWrite Cloud
+    // Function from an allowlist of fields on /users. Clients cannot
+    // write directly — the mirror is the single source of truth, so
+    // no browser-side code can inject private fields or fabricate
+    // leaderboard totals here. Open read because the collection is
+    // designed to be the ONE place consumers (leaderboard, event
+    // rosters, website) read cross-user profile data.
+    match /public_profiles/{uid} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // ── chapters ──

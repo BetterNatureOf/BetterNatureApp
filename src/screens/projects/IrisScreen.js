@@ -20,7 +20,7 @@ import usePickups from '../../hooks/usePickups';
 import useEvents from '../../hooks/useEvents';
 import useAuthStore from '../../store/authStore';
 import { getOrgStats } from '../../services/orgStats';
-import { fetchRestaurants, fetchAllMembers } from '../../services/database';
+import { fetchRestaurants } from '../../services/database';
 import { requireVerifiedId } from '../../services/idGate';
 import PickupCard from '../../components/pickup/PickupCard';
 import Icon from '../../components/ui/Icon';
@@ -44,9 +44,13 @@ export default function IrisScreen({ navigation }) {
   const [liveFridges, setLiveFridges] = useState([]);
 
   useEffect(() => {
-    getOrgStats().then(setStats).catch(() => {});
+    // A2 — pull the public volunteer count from org_stats instead of
+    // enumerating /users (which is now locked to self/exec/pres).
+    getOrgStats().then((s) => {
+      setStats(s);
+      setVolunteers(s?.volunteers || 0);
+    }).catch(() => {});
     fetchRestaurants('approved').then((r) => setPartners(r.length)).catch(() => {});
-    fetchAllMembers().then((m) => setVolunteers(m.length)).catch(() => {});
     loadLiveFridges().then(setLiveFridges).catch(() => {});
   }, []);
 

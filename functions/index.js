@@ -16,6 +16,11 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp();
 
+// A2 — mirror /users → /public_profiles with a strict allowlist.
+// Only writer to the public collection. See syncPublicProfile.js
+// for the allowlist and rationale.
+exports.syncPublicProfileOnWrite = require('./syncPublicProfile').syncPublicProfileOnWrite;
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 exports.sendPushOnNotification = functions.firestore

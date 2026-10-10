@@ -3,6 +3,19 @@
 // status == 'queued', fans out via the right channel (OneSignal
 // for push, Resend for email), flips status to 'sent' or 'failed'.
 //
+// A2 refactor: outbox docs now carry only { user_id, kind, title,
+// body, url, data } — recipient contact details are NOT in the row.
+// The dispatcher resolves /users/{user_id} with the service account
+// to get email, push token and the per-kind preference flags before
+// fanning out. This lets us lock /users reads to self/exec/pres in
+// Firestore rules without starving the notification pipeline.
+//
+// For backward compatibility with any still-in-flight pre-A2 outbox
+// docs that already carry `channel` + `player_id` + `email`, we
+// honour those fields when present and fall back to a lookup only
+// when they're missing. Can be deleted after one cron cycle has
+// drained.
+//
 // Required env (set in `wrangler secret put`):
 //   FIRESTORE_PROJECT_ID      e.g. "better-nature-app"
 //   GOOGLE_SERVICE_ACCOUNT    JSON blob of a service account with
@@ -188,15 +201,79 @@ function parseFrom(raw) {
   return m ? { name: m[1], email: m[2] } : { email: raw };
 }
 
+// Preference key for a given kind. Mirrors
+// src/config/notifications.js `prefKeyForKind()` so the dispatcher
+// honours the same opt-in flags the client sets.
+function prefKeyForKind(kind) {
+  if (kind === 'pickup') return 'notif_pickup';
+  if (kind === 'volunteer' || kind === 'event') return 'notif_volunteer';
+  return 'notif_general';
+}
+
+// Fetch /users/{uid} via Firestore REST and unwrap the fields the
+// dispatcher needs. Returns null on 404 / parse failure — the caller
+// treats that as "no channels available, mark sent and move on".
+async function fetchRecipient(env, token, uid) {
+  if (!uid) return null;
+  const url = `${FS_BASE(env.FIRESTORE_PROJECT_ID)}/users/${uid}`;
+  try {
+    const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    if (!r.ok) return null;
+    const body = await r.json();
+    return unwrapFields(body.fields || {});
+  } catch (e) {
+    console.warn('fetchRecipient failed', uid, e?.message);
+    return null;
+  }
+}
+
+// Decide eligibility + choose channel values, server-side.
+function resolveChannels(user, kind) {
+  if (!user) return { push: false, email: false };
+  const prefKey = prefKeyForKind(kind);
+  const wantsKind = user[prefKey] !== false; // default true
+  return {
+    push:  wantsKind && user.push_enabled === true && !!user.onesignal_player_id,
+    email: wantsKind && user.email_consent !== false && !!user.email,
+    player_id: user.onesignal_player_id || null,
+    email_addr: user.email || null,
+    name: user.name || '',
+  };
+}
+
 // ---- Worker entry points ----
 async function tick(env) {
   const token = await getAccessToken(env);
   const queued = await listQueued(env, token);
   for (const doc of queued) {
     try {
-      if (doc.fields.channel === 'push')  await sendPush(env, doc);
-      if (doc.fields.channel === 'email') await sendEmail(env, doc);
-      await patchStatus(env, token, doc.name, 'sent');
+      // Pre-A2 outbox rows carried channel + player_id/email directly.
+      // Honour them so in-flight work drains cleanly. New-format rows
+      // have no `channel` and we resolve recipient here.
+      if (doc.fields.channel === 'push')  { await sendPush(env, doc); await patchStatus(env, token, doc.name, 'sent'); continue; }
+      if (doc.fields.channel === 'email') { await sendEmail(env, doc); await patchStatus(env, token, doc.name, 'sent'); continue; }
+
+      const recipient = await fetchRecipient(env, token, doc.fields.user_id);
+      const ch = resolveChannels(recipient, doc.fields.kind);
+      let sent = 0, failed = 0, errs = [];
+      if (ch.push) {
+        try {
+          await sendPush(env, { fields: { ...doc.fields, player_id: ch.player_id } });
+          sent += 1;
+        } catch (e) { failed += 1; errs.push(`push:${e?.message}`); }
+      }
+      if (ch.email) {
+        try {
+          await sendEmail(env, { fields: { ...doc.fields, email: ch.email_addr, name: ch.name } });
+          sent += 1;
+        } catch (e) { failed += 1; errs.push(`email:${e?.message}`); }
+      }
+      // Zero-channel-eligible rows (user has push/email off, or no
+      // tokens on file) still complete — the in-app bell was already
+      // dropped by the client. Mark sent so cron doesn't retry forever.
+      await patchStatus(env, token, doc.name,
+        failed && !sent ? 'failed' : 'sent',
+        errs.length ? errs.join(' | ') : null);
     } catch (e) {
       console.warn('dispatch failed', doc.name, e);
       await patchStatus(env, token, doc.name, 'failed', e?.message);
