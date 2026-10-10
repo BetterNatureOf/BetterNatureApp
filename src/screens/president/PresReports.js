@@ -6,10 +6,10 @@ import useAuthStore from '../../store/authStore';
 import {
   fetchEvents,
   fetchPickups,
-  fetchAllMembers,
   fetchAnimalsHelped,
   fetchOrgMetrics,
 } from '../../services/database';
+import { fetchAllPublicProfiles } from '../../services/publicProfiles';
 import Screen from '../../components/ui/Screen';
 
 export default function PresReports({ navigation }) {
@@ -28,17 +28,20 @@ export default function PresReports({ navigation }) {
   useEffect(() => {
     async function load() {
       try {
-        const [events, pickups, allMembers, animals, metrics] =
+        const [events, pickups, chapterMembers, animals, metrics] =
           await Promise.all([
             fetchEvents(chapterId),
             fetchPickups(chapterId),
-            fetchAllMembers(),
+            // R7 — president chapter roster via /public_profiles.
+            // The old fetchAllMembers() enumerated private /users
+            // and is denied by the A2 list rule for non-exec. Public
+            // mirror carries display_name + chapter_id + totals,
+            // sufficient for the "how many members" + aggregated-
+            // lbs/hours stats this screen renders.
+            fetchAllPublicProfiles({ chapterId }),
             fetchAnimalsHelped(chapterId),
             fetchOrgMetrics({ scope: 'chapter', chapterId }),
           ]);
-        const chapterMembers = allMembers.filter(
-          (m) => m.chapters?.name?.toLowerCase().includes('memphis')
-        );
         const animalCount = animals.reduce((sum, a) => sum + (a.count || 0), 0);
         const lbsMetric = metrics.find((m) => m.key === 'lbs_rescued_memphis');
         const water = metrics.find((m) => m.key === 'water_sites_tested');

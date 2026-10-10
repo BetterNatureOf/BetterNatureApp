@@ -21,6 +21,9 @@ admin.initializeApp();
 // for the allowlist and rationale.
 exports.syncPublicProfileOnWrite = require('./syncPublicProfile').syncPublicProfileOnWrite;
 
+// A2 R4 — short-lived signed URL for ID evidence. See idViewer.js.
+exports.getIdViewUrl = require('./idViewer').getIdViewUrl;
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 exports.sendPushOnNotification = functions.firestore

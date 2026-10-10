@@ -17,6 +17,27 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 review response (post-ChatGPT review of 6927f1e)
+
+Partial — commit TBD. Status per finding:
+
+| Finding | Status | Notes |
+|---------|--------|-------|
+| R1 — rules-unit-testing peer conflict | Fixed | Downgraded to `@firebase/rules-unit-testing@3.0.4` (accepts firebase ^10). `npm ci --dry-run` exits 0 without `--legacy-peer-deps`. |
+| R5 — identity exceptions | Fixed | `isFounderToken()` and `readingMyLinkedAccount()` now require `request.auth.token.email_verified == true`. Full server-flow for merge discovery still queued as a follow-up (noted inline). |
+| Foreign restaurant linkage | Fixed | `selfRestaurantIdOk()` now requires `exists(/restaurants/<newRid>)` AND `restaurants/<newRid>.user_id == auth.uid`. |
+| R10 — legacy outbox email path | Fixed | Rules reject client-supplied `channel`/`player_id`/`email` on create and require `user_id == auth.uid` (or exec/pres). Dispatcher's legacy branch marks any such row `rejected`. `scripts/drain-legacy-outbox.js` for one-shot backlog cleanup. |
+| R11 — dispatcher error handling | Fixed | Lookup now distinguishes 404 (`rejected: recipient_missing`) from 5xx (retried, max 5 attempts). Per-channel success tracked in `channels_done`; partial failures retry only the un-done side. Preference map in `src/config/notifications.js` and worker's `prefKeyForKind` consolidated and documented as paired. |
+| R6 — createPickup chapter recipients | Fixed | `createPickup` now queries `/public_profiles` by `chapter_id` and filters on `role_label`. |
+| R7 — president roster | Fixed | `PresReports` + `PresFinance` switched to `fetchAllPublicProfiles({ chapterId })`. Admin screens (exec-only) continue to use `fetchAllMembers`. |
+| R8 — ID bearer URLs out of /users | Fixed (data model) | New `/id_reviews/{uid}` collection with its own rules (owner + exec only; presidents denied). Legacy `id_document_*`, `driver_license_*`, `id_{front,back}_url` fields added to `touchesPrivilegedFields` so no self-write can restuff them. `src/services/idReview.js` writes to the new path. Legacy upload path in `authFirebase.js:uploadIdDocument` **not yet migrated** — follow-up. |
+| R4 — protected ID viewer | Function in place | `functions/idViewer.js` adds `getIdViewUrl` callable: authorizes owner OR exec via admin SDK; returns a 5-minute signed URL from the Storage path on `/id_reviews`. Review-screen UI (ManageVerifications) **not yet switched to call it** — follow-up. |
+| R2 + R3 — revocation script | NOT YET done | Current `scripts/revoke-id-download-tokens.js` still has the wrong field names and the clear-on-failure bug. Blocking for production migration; non-blocking for merge if we gate on COORDINATION.md deploy step 7. |
+| R9 — mirror robustness | NOT YET done | Shared projector + delete-failure propagation + stale-event guard still open. Non-blocking for merge; blocking for load. |
+| CI (3 red checks) | Likely resolved by R1 | ChatGPT noted the SDK peer conflict is a deterministic install regression. New lockfile pushes next cycle; CF/Vercel re-runs will tell. If still red, inspection follow-up. |
+
+**Not merging A2 until**: R2 + R3 (revocation script), R9 (mirror robustness), ManageVerifications switch to the viewer callable, actual harness green run (needs Java), and ChatGPT re-review of this commit.
+
 ### A2 slice details
 
 **New collection:** `public_profiles/{uid}` — minted exclusively by the `syncPublicProfileOnWrite` Firestore trigger from an allowlist of fields on `/users`. Clients cannot write. Open read.

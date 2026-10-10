@@ -67,18 +67,33 @@ service cloud.firestore {
     // require an exec OR the founder editing their own doc. On CREATE,
     // we additionally restrict what the owner can seed so an attacker
     // cannot self-mint `role: executive` via the SDK (audit A1).
+    // Founder bootstrap — a verified-email founder may self-write
+    // privileged fields on their own doc. Verified-email is REQUIRED
+    // (R5): an unverified token on this address must not be able to
+    // self-elevate to super_admin, which the earlier rule allowed.
     function isFounderToken() {
       return request.auth != null
+        && request.auth.token.email_verified == true
         && request.auth.token.email != null
         && request.auth.token.email.lower() in [
              'satvik.koya@betternatureofficial.org',
            ];
     }
     // Hard-privileged fields: authorization vectors that only exec
-    // can self-write (plus the founder's own doc).
+    // can self-write (plus the founder's own doc). Also blocks
+    // self-writes of legacy ID bearer-URL fields on /users — the new
+    // flow (R8) writes ID evidence to /id_reviews, not here. Keeping
+    // id_document_url writable would reintroduce the exact bearer-URL
+    // exposure the R8 split closes.
     function touchesPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['role','roles','member_status','verification_status','restaurant_status','disabled','disabled_at']);
+        .hasAny([
+          'role','roles','member_status','verification_status','restaurant_status',
+          'disabled','disabled_at',
+          'id_document_url','id_document_front_url','id_document_back_url',
+          'driver_license_url','driver_license_front_url','driver_license_back_url',
+          'id_front_url','id_back_url',
+        ]);
     }
     // Roles a user is allowed to self-assign at signup. Everything
     // higher (chapter_president, executive, admin, super_admin) must
@@ -119,12 +134,29 @@ service cloud.firestore {
     }
     // Audit A3 — a member can today self-write restaurant_id to any
     // legit restaurant's id and then post pickups as that partner.
-    // Limit self-writes to the one-shot signup transition: previous
-    // restaurant_id must be null. After the signup finalization write
-    // only exec can touch it.
+    // Original Phase 1a rule only checked that the previous value
+    // was null; ChatGPT's review correctly caught that a member with
+    // null restaurant_id could still link to a foreign restaurant
+    // and then write handoff verification against it.
+    //
+    // Hardened: the destination restaurants/{rid} must exist AND its
+    // user_id must equal the writer's auth.uid. The ownership link
+    // in /restaurants is itself created either by exec onboarding
+    // (isExec branch of the restaurants create rule) or by the
+    // signup-flow self-create where the restaurant doc is written
+    // with user_id == auth.uid before this user-doc update fires.
+    // Either way, the writer must own the restaurant on the
+    // /restaurants side to self-stamp its id on /users.
     function selfRestaurantIdOk() {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['restaurant_id'])
-          || resource.data.get('restaurant_id', null) == null;
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let newRid = request.resource.data.get('restaurant_id', null);
+      return !affected.hasAny(['restaurant_id'])
+          || (
+            resource.data.get('restaurant_id', null) == null
+            && newRid != null
+            && exists(/databases/$(database)/documents/restaurants/$(newRid))
+            && get(/databases/$(database)/documents/restaurants/$(newRid)).data.user_id == request.auth.uid
+          );
     }
     // One-shot restaurant signup finalization carve-out. A freshly
     // created user transitions themselves into a PENDING restaurant
@@ -157,14 +189,25 @@ service cloud.firestore {
     // A2 — "finding my own historical account" carve-out. During a
     // Google-link / cross-provider merge flow, the signed-in user
     // needs to discover another /users row that carries THEIR OWN
-    // verified email. Allowed only when the queried doc's email (or
-    // any linked_google_emails entry) literally equals the auth
-    // token's email — a signed-in user can only ever surface rows
-    // tied to their own verified identity. Cannot be abused to
-    // enumerate strangers because the filter is pinned to the auth
-    // token, not an arbitrary parameter.
+    // verified email.
+    //
+    // Hardened per R5: requires request.auth.token.email_verified
+    // == true so an unverified token cannot discover a stranger's
+    // private doc by signing up with that address. The queried
+    // doc's email (or linked_google_emails entry) must also match
+    // the token's own email exactly — a signed-in user can only
+    // surface rows tied to their own verified identity, never an
+    // arbitrary address.
+    //
+    // There is still a residual risk that a user who re-takes an
+    // email they previously controlled could use this to read a
+    // document carrying that stale email. The intended production
+    // closure for merge-flow discovery is a Cloud Function callable
+    // (listed in COORDINATION.md "A2 next"); this rule narrows the
+    // client-visible surface in the interim.
     function readingMyLinkedAccount() {
       return isSignedIn()
+        && request.auth.token.email_verified == true
         && request.auth.token.email != null
         && (
           resource.data.get('email', '') == request.auth.token.email
@@ -183,6 +226,43 @@ service cloud.firestore {
         || (isSelf(uid) && !touchesPrivilegedFields() && selfChapterIdOk() && selfRestaurantIdOk())
         || (isSelf(uid) && isSelfRestaurantSignup() && selfChapterIdOk() && selfRestaurantIdOk());
       allow delete: if isAdmin();
+    }
+
+    // ── id_reviews (A2 R8) ──
+    // Dedicated collection for identity-document evidence. Isolated
+    // from /users so a same-chapter president reading the public-side
+    // of a volunteer's profile does NOT also get usable ID bearer
+    // links. Owner may read + create/update their own row (upload
+    // + resubmit). Exec may read any row and transition the status
+    // (approve / reject). Presidents are intentionally not granted
+    // read access here — ID review is an executive responsibility.
+    // Nobody deletes — audit trail stays immutable.
+    //
+    // Schema (enforced by client via src/services/idReview.js and
+    // the id_reviews/{uid} onWrite trigger in functions/):
+    //   id_front_present: boolean
+    //   id_back_present:  boolean
+    //   id_front_path:    'id-docs/personal/<uid>-front-<ts>.jpg'
+    //   id_back_path:     'id-docs/personal/<uid>-back-<ts>.jpg'
+    //   driver_license_front_present / _back_present / _path (same pattern)
+    //   status:           'pending' | 'approved' | 'rejected'
+    //   uploaded_at, reviewed_at, reviewed_by
+    //
+    // Download URLs are never stored. Callers mint a short-lived
+    // signed URL through the `getIdViewUrl` Cloud Function callable,
+    // which checks caller identity server-side.
+    function cleanIdReviewFields(d) {
+      // Enforce that the owner can only self-transition to 'pending'.
+      // Anything else requires exec on the write.
+      return d.get('status', 'pending') == 'pending';
+    }
+    match /id_reviews/{uid} {
+      allow read:   if isExec() || isSelf(uid);
+      allow create: if isExec()
+                    || (isSelf(uid) && cleanIdReviewFields(request.resource.data));
+      allow update: if isExec()
+                    || (isSelf(uid) && cleanIdReviewFields(request.resource.data));
+      allow delete: if false;
     }
 
     // ── public_profiles (audit A2) ──
@@ -502,13 +582,37 @@ service cloud.firestore {
     }
 
     // ── notifications_outbox ──
-    // Audit A6: anonymous create was too permissive. Lock to signed-
-    // in writers. Unauth signup-flow surfaces (chapter_applications,
-    // partner forms) that previously dropped a receipt from here now
-    // need a Cloud Function (planned in Phase 2). The dispatcher
-    // reads/updates/deletes via admin SDK, which bypasses rules.
+    // Audit A6 + R10: anonymous create was too permissive before
+    // Phase 1a. The initial A2 fix limited to isSignedIn() but still
+    // allowed any signed-in user to drop a row with
+    // channel='email' + email='<arbitrary>' which the dispatcher's
+    // legacy-compat branch would honour verbatim. That remained an
+    // open mail path for authenticated-but-untrusted content.
+    //
+    // Hardened: client creates must match the new-format contract.
+    // No `channel` field (recipient resolution is server-side), no
+    // `email` / `player_id` field (never trust client-supplied
+    // destination). user_id is required and must match the writer's
+    // auth.uid OR the writer is an exec/president doing a scoped
+    // broadcast (in which case recipients are iterated client-side
+    // and each row is still per-recipient).
+    //
+    // The dispatcher's legacy-compat branch is also being removed
+    // (see worker.js). Any pre-A2 outbox docs that landed on the
+    // old schema and are still queued must drain in a controlled
+    // way: run `node scripts/drain-legacy-outbox.js` once at deploy
+    // time (admin SDK) to flip them to a safe terminal state.
     match /notifications_outbox/{id} {
-      allow create: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.get('user_id', null) is string
+                    && !('channel' in request.resource.data)
+                    && !('email' in request.resource.data)
+                    && !('player_id' in request.resource.data)
+                    && (
+                      request.resource.data.user_id == request.auth.uid
+                      || isExec()
+                      || hasAnyRole(['chapter_president','chapter_pres'])
+                    );
       allow read, update, delete: if isExec();
     }
 

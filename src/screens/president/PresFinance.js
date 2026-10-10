@@ -13,7 +13,8 @@ import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import useAuthStore from '../../store/authStore';
-import { fetchAllDonations, fetchAllMembers, fetchChapterById, fetchEvents } from '../../services/database';
+import { fetchAllDonations, fetchChapterById, fetchEvents } from '../../services/database';
+import { fetchAllPublicProfiles } from '../../services/publicProfiles';
 import { notify } from '../../services/ui';
 
 function fmtMoney(n) {
@@ -50,17 +51,20 @@ export default function PresFinance({ navigation }) {
   const load = useCallback(async () => {
     if (!user?.chapter_id) return;
     try {
-      const [ch, mAll, dAll, ev] = await Promise.all([
+      // R7 — pres roster through /public_profiles (chapter-scoped).
+      // Donation attribution join uses the mirror's uid+chapter_id,
+      // which is enough to credit cross-chapter donors to this
+      // chapter's totals without reading private /users.
+      const [ch, chapterMembers, dAll, ev] = await Promise.all([
         fetchChapterById(user.chapter_id),
-        fetchAllMembers(),
+        fetchAllPublicProfiles({ chapterId: user.chapter_id }),
         fetchAllDonations(),
         fetchEvents(user.chapter_id),
       ]);
       setChapter(ch);
-      setMembers(mAll.filter((u) => u.chapter_id === user.chapter_id && (u.role || 'member') !== 'restaurant'));
-      // Match donations both by chapter_id (clean stamp) and by
-      // donor's chapter_id (best-effort attribution).
-      setDonations(dAll.filter((d) => d.chapter_id === user.chapter_id || mAll.find((u) => u.id === d.user_id)?.chapter_id === user.chapter_id));
+      setMembers(chapterMembers.filter((u) => (u.role_label || 'member') !== 'partner'));
+      const chapterUids = new Set(chapterMembers.map((u) => u.uid || u.id));
+      setDonations(dAll.filter((d) => d.chapter_id === user.chapter_id || chapterUids.has(d.user_id)));
       setEvents(ev || []);
     } catch (e) {
       console.warn('PresFinance load', e);

@@ -508,28 +508,35 @@ export async function createPickup(pickup) {
   const ref = await addDoc(collection(db, 'pickups'), enriched);
   const newPk = { id: ref.id, ...enriched };
 
-  // Notify chapter members
+  // R6 — resolve chapter recipients through /public_profiles.
+  // The restaurant posting the pickup is neither exec nor a chapter
+  // owner, so the prior `collection('users').where('chapter_id'...)`
+  // query is now denied by the A2 rules. public_profiles.role_label
+  // carries the bucketed role (member | president | exec | partner)
+  // we need; partners are excluded as recipients of their own post.
   if (pickup.chapter_id) {
     try {
       const memSnap = await getDocs(
         query(
-          collection(db, 'users'),
+          collection(db, 'public_profiles'),
           where('chapter_id', '==', pickup.chapter_id)
         )
       );
       const targets = snapToList(memSnap)
-        .filter((m) => ['member', 'chapter_president', 'volunteer'].includes(m.role))
-        .map((m) => m.id);
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: targets,
-        kind: 'pickup',
-        title: 'New pickup available!',
-        body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
-        url: `https://app.betternatureofficial.org/#/pickups/${ref.id}`,
-        data: { type: 'new_pickup', pickupId: ref.id },
-        skipInApp: false,
-      });
+        .filter((m) => ['member', 'president'].includes(m.role_label || 'member'))
+        .map((m) => m.uid || m.id);
+      if (targets.length) {
+        const { enqueueNotification } = await import('./notify');
+        await enqueueNotification({
+          recipients: targets,
+          kind: 'pickup',
+          title: 'New pickup available!',
+          body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
+          url: `https://app.betternatureofficial.org/#/pickups/${ref.id}`,
+          data: { type: 'new_pickup', pickupId: ref.id },
+          skipInApp: false,
+        });
+      }
     } catch (e) { console.warn('pickup notify failed', e); }
   }
   return newPk;

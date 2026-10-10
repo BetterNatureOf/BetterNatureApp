@@ -1,20 +1,23 @@
 // Notification dispatcher — runs on a Cloudflare Worker cron
 // every minute. Pulls all `notifications_outbox` docs where
-// status == 'queued', fans out via the right channel (OneSignal
-// for push, Resend for email), flips status to 'sent' or 'failed'.
+// status == 'queued', resolves the recipient server-side with the
+// service account, fans out to push + email, and flips status to
+// 'sent', 'failed' or 'rejected'.
 //
-// A2 refactor: outbox docs now carry only { user_id, kind, title,
-// body, url, data } — recipient contact details are NOT in the row.
-// The dispatcher resolves /users/{user_id} with the service account
-// to get email, push token and the per-kind preference flags before
-// fanning out. This lets us lock /users reads to self/exec/pres in
-// Firestore rules without starving the notification pipeline.
+// A2 refactor: outbox docs carry only { user_id, kind, title, body,
+// url, data } — recipient contact details are NOT in the row. The
+// dispatcher resolves /users/{user_id} to get email, push token and
+// the per-kind preference flags before fanning out. This lets us
+// lock /users reads to self/exec/pres in Firestore rules without
+// starving the notification pipeline.
 //
-// For backward compatibility with any still-in-flight pre-A2 outbox
-// docs that already carry `channel` + `player_id` + `email`, we
-// honour those fields when present and fall back to a lookup only
-// when they're missing. Can be deleted after one cron cycle has
-// drained.
+// R10 — the legacy-compat branch that honoured client-supplied
+// channel/player_id/email directly has been REMOVED. It was an open
+// authenticated-but-untrusted mail path (any signed-in user could
+// queue an email to an arbitrary address). Any pre-A2 queued rows
+// still carrying those fields are now flagged `rejected` with the
+// reason `legacy_format_dropped`. Run scripts/drain-legacy-outbox.js
+// once at deploy time to transition them safely.
 //
 // Required env (set in `wrangler secret put`):
 //   FIRESTORE_PROJECT_ID      e.g. "better-nature-app"
@@ -201,33 +204,35 @@ function parseFrom(raw) {
   return m ? { name: m[1], email: m[2] } : { email: raw };
 }
 
-// Preference key for a given kind. Mirrors
-// src/config/notifications.js `prefKeyForKind()` so the dispatcher
-// honours the same opt-in flags the client sets.
+// Preference key for a given kind.
+//
+// R11 — this map MUST match src/config/notifications.js
+// prefKeyForKind(). Both sides have been consolidated to the same
+// explicit kind list; adding a kind requires editing both files.
+// Unknown kinds default to notif_general on both sides.
 function prefKeyForKind(kind) {
-  if (kind === 'pickup') return 'notif_pickup';
+  if (kind === 'pickup' || kind === 'pickup_alert' || kind === 'pickup_reminder') return 'notif_pickup';
   if (kind === 'volunteer' || kind === 'event') return 'notif_volunteer';
   return 'notif_general';
 }
 
-// Fetch /users/{uid} via Firestore REST and unwrap the fields the
-// dispatcher needs. Returns null on 404 / parse failure — the caller
-// treats that as "no channels available, mark sent and move on".
+// Recipient lookup outcome: distinguishes "no such user" (terminal)
+// from a transient lookup outage (retry) so we never mark a job as
+// sent when we couldn't actually learn whether it was deliverable.
 async function fetchRecipient(env, token, uid) {
-  if (!uid) return null;
+  if (!uid) return { kind: 'missing' };
   const url = `${FS_BASE(env.FIRESTORE_PROJECT_ID)}/users/${uid}`;
   try {
     const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
-    if (!r.ok) return null;
+    if (r.status === 404) return { kind: 'missing' };
+    if (!r.ok) return { kind: 'transient', code: r.status };
     const body = await r.json();
-    return unwrapFields(body.fields || {});
+    return { kind: 'ok', data: unwrapFields(body.fields || {}) };
   } catch (e) {
-    console.warn('fetchRecipient failed', uid, e?.message);
-    return null;
+    return { kind: 'transient', code: 0, message: e?.message || 'network' };
   }
 }
 
-// Decide eligibility + choose channel values, server-side.
 function resolveChannels(user, kind) {
   if (!user) return { push: false, email: false };
   const prefKey = prefKeyForKind(kind);
@@ -241,45 +246,117 @@ function resolveChannels(user, kind) {
   };
 }
 
+const MAX_ATTEMPTS = 5;
+
 // ---- Worker entry points ----
 async function tick(env) {
   const token = await getAccessToken(env);
   const queued = await listQueued(env, token);
   for (const doc of queued) {
     try {
-      // Pre-A2 outbox rows carried channel + player_id/email directly.
-      // Honour them so in-flight work drains cleanly. New-format rows
-      // have no `channel` and we resolve recipient here.
-      if (doc.fields.channel === 'push')  { await sendPush(env, doc); await patchStatus(env, token, doc.name, 'sent'); continue; }
-      if (doc.fields.channel === 'email') { await sendEmail(env, doc); await patchStatus(env, token, doc.name, 'sent'); continue; }
+      // R10 — the pre-A2 legacy format is no longer honoured. Any
+      // queued row carrying client-supplied channel/player_id/email
+      // was writable by any signed-in user and is dropped as
+      // `rejected` here. A one-shot drain script handles backlog.
+      if (doc.fields.channel || doc.fields.player_id || doc.fields.email) {
+        await patchStatus(env, token, doc.name, 'rejected', 'legacy_format_dropped');
+        continue;
+      }
 
-      const recipient = await fetchRecipient(env, token, doc.fields.user_id);
-      const ch = resolveChannels(recipient, doc.fields.kind);
-      let sent = 0, failed = 0, errs = [];
-      if (ch.push) {
+      const look = await fetchRecipient(env, token, doc.fields.user_id);
+      if (look.kind === 'transient') {
+        // Don't mark sent — the row stays queued and the next cron
+        // cycle retries. Bump attempts; after MAX_ATTEMPTS, flag as
+        // failed with the lookup reason so it drops out of the loop.
+        const attempts = (doc.fields.attempts || 0) + 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          await patchStatus(env, token, doc.name, 'failed',
+            `recipient_lookup_${look.code || look.message || 'error'}`);
+        } else {
+          await bumpAttempts(env, token, doc.name, attempts);
+        }
+        continue;
+      }
+      if (look.kind === 'missing') {
+        // Terminal — the recipient doc has been deleted / never
+        // existed. In-app bell was already dropped by the client.
+        await patchStatus(env, token, doc.name, 'rejected', 'recipient_missing');
+        continue;
+      }
+
+      const ch = resolveChannels(look.data, doc.fields.kind);
+
+      // Track per-channel completion so a partial failure doesn't
+      // silently discard the un-sent half.
+      const already = doc.fields.channels_done || {};
+      let push_done = already.push === true;
+      let email_done = already.email === true;
+      let push_err = null, email_err = null;
+
+      if (ch.push && !push_done) {
         try {
           await sendPush(env, { fields: { ...doc.fields, player_id: ch.player_id } });
-          sent += 1;
-        } catch (e) { failed += 1; errs.push(`push:${e?.message}`); }
+          push_done = true;
+        } catch (e) { push_err = e?.message || 'push_error'; }
       }
-      if (ch.email) {
+      if (ch.email && !email_done) {
         try {
           await sendEmail(env, { fields: { ...doc.fields, email: ch.email_addr, name: ch.name } });
-          sent += 1;
-        } catch (e) { failed += 1; errs.push(`email:${e?.message}`); }
+          email_done = true;
+        } catch (e) { email_err = e?.message || 'email_error'; }
       }
-      // Zero-channel-eligible rows (user has push/email off, or no
-      // tokens on file) still complete — the in-app bell was already
-      // dropped by the client. Mark sent so cron doesn't retry forever.
-      await patchStatus(env, token, doc.name,
-        failed && !sent ? 'failed' : 'sent',
-        errs.length ? errs.join(' | ') : null);
+
+      const stillOutstanding = (ch.push && !push_done) || (ch.email && !email_done);
+      const hasAnyChannel = ch.push || ch.email;
+
+      if (stillOutstanding) {
+        const attempts = (doc.fields.attempts || 0) + 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          await patchStatus(env, token, doc.name, 'failed',
+            [push_err && `push:${push_err}`, email_err && `email:${email_err}`].filter(Boolean).join(' | '));
+        } else {
+          await bumpAttempts(env, token, doc.name, attempts, { push: push_done, email: email_done });
+        }
+        continue;
+      }
+
+      // All eligible channels completed OR the user has no eligible
+      // channel (push off AND email off). In-app bell is already
+      // dropped by the client. Terminal state 'sent' is accurate in
+      // both cases — the row has nothing left to do.
+      await patchStatus(env, token, doc.name, hasAnyChannel ? 'sent' : 'no_channels', null);
     } catch (e) {
       console.warn('dispatch failed', doc.name, e);
       await patchStatus(env, token, doc.name, 'failed', e?.message);
     }
   }
   return { processed: queued.length };
+}
+
+async function bumpAttempts(env, token, name, attempts, channelsDone) {
+  const fields = {
+    attempts: { integerValue: String(attempts) },
+    last_attempt_at: { timestampValue: new Date().toISOString() },
+  };
+  const masks = ['attempts', 'last_attempt_at'];
+  if (channelsDone) {
+    fields.channels_done = {
+      mapValue: {
+        fields: {
+          push: { booleanValue: !!channelsDone.push },
+          email: { booleanValue: !!channelsDone.email },
+        },
+      },
+    };
+    masks.push('channels_done');
+  }
+  const url = `https://firestore.googleapis.com/v1/${name}?` +
+    masks.map((m) => `updateMask.fieldPaths=${m}`).join('&');
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  });
 }
 
 export default {
