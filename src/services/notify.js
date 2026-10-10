@@ -1,22 +1,21 @@
 // Unified notification dispatcher — client-side half.
 //
-// A2 refactor: the client used to read each recipient's /users/{uid}
-// doc here to pull push tokens, email and preferences, then stuffed
-// those into the outbox doc. That cross-user profile read is now
-// denied by the A2 rules (and it was always a leak — any signed-in
-// user could enumerate push tokens by calling enqueueNotification).
-//
-// New contract: the client writes ONE outbox doc per recipient with
-// recipient uid + content only. The Cloudflare Worker in
-// workers/notification-dispatcher/ resolves the recipient's channels
-// server-side with service-account creds, fans out to push + email,
-// and flips status.
+// A2 R-followup #3: /notifications_outbox client writes are now
+// locked to self-recipient only (confirmations, bell drops). Every
+// cross-user notification routes through the
+// `queueBusinessNotification` Cloud Function callable, which
+// validates the operation server-side and writes outbox rows with
+// admin SDK. The callable also derives recipients from the actual
+// pickup/event state rather than trusting the caller's list.
 //
 // In-app notifications still fire directly from the client via
-// /notifications create (the bell), because the recipient reading
-// their own doc is authorized by rules.
-import { collection, addDoc, doc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+// /notifications create (recipient reading their own doc is
+// authorized by rules). The dispatcher resolves push_token + email
+// server-side and sends.
+import { collection, addDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, isFirebaseConfigured } from '../config/firebase';
+import useAuthStore from '../store/authStore';
 
 async function dropInApp({ uid, kind, title, body, url }) {
   await addDoc(collection(db, 'notifications'), {
@@ -30,12 +29,10 @@ async function dropInApp({ uid, kind, title, body, url }) {
   });
 }
 
-// One queued row per recipient. The dispatcher owns channel fan-out,
-// recipient lookup, and preference checking.
-async function dropOutbox({ uid, kind, title, body, url, data }) {
+async function dropSelfOutbox({ uid, kind, title, body, url, data }) {
   await addDoc(collection(db, 'notifications_outbox'), {
     user_id: uid,
-    kind,                           // 'pickup' | 'volunteer' | 'general' | ...
+    kind,
     title,
     body,
     url: url || null,
@@ -46,68 +43,99 @@ async function dropOutbox({ uid, kind, title, body, url, data }) {
   });
 }
 
+function currentUid() {
+  try { return useAuthStore.getState?.()?.user?.id || null; } catch { return null; }
+}
+
 /**
- * The one public API every other service calls.
- *
- * @param {Object} opts
- * @param {string[]} opts.recipients      — uids
- * @param {string}   opts.kind            — 'pickup' | 'volunteer' | 'general' | 'broadcast' | 'welcome'
- * @param {string}   opts.title
- * @param {string}   opts.body
- * @param {string=}  opts.url             — deep link / web URL
- * @param {Object=}  opts.data            — payload merged into push data
- * @param {boolean=} opts.skipInApp       — for broadcasts where caller wrote their own inapp row
+ * Legacy direct API. Still supported for SELF notifications only
+ * (confirmations the user queues for themselves). For cross-user
+ * flows prefer the scoped helpers below.
  */
 export async function enqueueNotification(opts) {
   const { recipients = [], kind = 'general', title, body, url, data = {}, skipInApp } = opts;
   if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
   if (!title || !body) return { ok: false, reason: 'missing_content' };
 
-  let outbox = 0, inapp = 0;
+  const me = currentUid();
+  let inapp = 0, outbox = 0, deferred = 0;
   for (const uid of recipients) {
     if (!uid) continue;
-    try {
-      if (!skipInApp) {
-        await dropInApp({ uid, kind, title, body, url });
-        inapp += 1;
-      }
-      await dropOutbox({ uid, kind, title, body, url, data });
-      outbox += 1;
-    } catch (e) {
-      console.warn('enqueueNotification per-user failure', uid, e);
+    if (!skipInApp) {
+      try { await dropInApp({ uid, kind, title, body, url }); inapp += 1; } catch (e) { console.warn('inapp', e); }
+    }
+    if (uid === me) {
+      try { await dropSelfOutbox({ uid, kind, title, body, url, data }); outbox += 1; }
+      catch (e) { console.warn('self outbox', e); }
+    } else {
+      // Direct client write is denied by rules for a non-self
+      // recipient. Caller should migrate to one of the scoped helpers
+      // below. Count as deferred so callers can observe + fix.
+      deferred += 1;
     }
   }
-  return { ok: true, outbox, inapp, total: recipients.length };
+  return { ok: true, inapp, outbox, deferred, total: recipients.length };
 }
 
-// Convenience: pull every uid matching a target audience and queue.
-//   audience:
-//     'bn'          → role_label !== 'partner'
-//     'restaurants' → role_label === 'partner'
-//     'all'         → both
-//     'chapter:<id>' → public_profiles with that chapter_id (volunteers only)
-//
-// A2 note: reads from /public_profiles (open collection), not /users.
-// Previously enumerated /users which is now denied for non-execs.
-// Admins calling this still work the same way (public profile has the
-// role_label we need).
-export async function enqueueAudienceNotification(opts) {
-  const { audience, ...rest } = opts;
+// Scoped helpers — route through the Cloud Function callable so the
+// server validates operation + resolves recipients.
+
+async function callQueue(payload) {
   if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
+  try {
+    const fn = httpsCallable(getFunctions(), 'queueBusinessNotification');
+    const res = await fn(payload);
+    return { ok: true, queued: res?.data?.queued || 0 };
+  } catch (e) {
+    console.warn('queueBusinessNotification failed', e);
+    return { ok: false, reason: e?.code || e?.message || 'queue_failed' };
+  }
+}
 
-  const snap = await getDocs(collection(db, 'public_profiles'));
-  const users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const recipients = users
-    .filter((u) => {
-      const label = u.role_label || 'member';
-      if (audience === 'bn')          return label !== 'partner';
-      if (audience === 'restaurants') return label === 'partner';
-      if (audience === 'all')         return true;
-      if (audience?.startsWith?.('chapter:'))
-        return u.chapter_id === audience.slice('chapter:'.length) && label !== 'partner';
-      return false;
-    })
-    .map((u) => u.uid || u.id);
+/** Partner just posted a pickup — fan out to the chapter. */
+export function queuePickupBroadcast(pickupId, { title, body, url, data }) {
+  return callQueue({
+    scope: 'pickup', pickup_id: pickupId, intent: 'new_pickup_broadcast',
+    kind: 'pickup', title, body, url, data,
+  });
+}
+/** Claimant → partner (claim / enroute / completion). */
+export function queuePickupToPartner(pickupId, { title, body, url, data }) {
+  return callQueue({
+    scope: 'pickup', pickup_id: pickupId, intent: 'to_partner',
+    kind: 'pickup', title, body, url, data,
+  });
+}
+/** Partner → claimant (verify / cancel / etc.). */
+export function queuePickupToClaimant(pickupId, { title, body, url, data }) {
+  return callQueue({
+    scope: 'pickup', pickup_id: pickupId, intent: 'to_claimant',
+    kind: 'pickup', title, body, url, data,
+  });
+}
+/** Scoped broadcast to a chapter (president → own chapter; exec → any). */
+export function queueChapterBroadcast(chapterId, { kind = 'broadcast', title, body, url, data }) {
+  return callQueue({
+    scope: 'broadcast', chapter_id: chapterId, kind, title, body, url, data,
+  });
+}
+/** Event-chapter broadcast (pres of event's chapter or exec). */
+export function queueEventBroadcast(eventId, { kind = 'volunteer', title, body, url, data }) {
+  return callQueue({
+    scope: 'event', event_id: eventId, kind, title, body, url, data,
+  });
+}
 
-  return enqueueNotification({ recipients, ...rest });
+/**
+ * Audience helper — convenience wrapper over queueChapterBroadcast.
+ * Pre-A2 callers passed 'chapter:<id>'; we parse that form through.
+ */
+export async function enqueueAudienceNotification(opts) {
+  const { audience, kind = 'broadcast', title, body, url, data } = opts;
+  if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
+  if (typeof audience === 'string' && audience.startsWith('chapter:')) {
+    return queueChapterBroadcast(audience.slice('chapter:'.length), { kind, title, body, url, data });
+  }
+  // 'bn' / 'all' / 'restaurants' are legacy global audiences — exec only.
+  return callQueue({ scope: 'broadcast', chapter_id: '*', kind, title, body, url, data });
 }

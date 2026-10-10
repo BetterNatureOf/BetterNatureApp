@@ -17,7 +17,69 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
-### A2 review response (post-ChatGPT review of 6927f1e)
+### A2 second review response (post-ChatGPT review of a219914)
+
+ChatGPT's second review verified R1/R5/R6/R7/R10/R11 + foreign-restaurant UPDATE path AS FIXED on `a219914`, confirmed clean dependency resolution and all three deployment checks green, then surfaced seven new blockers. This section is the response to those blockers.
+
+| ChatGPT follow-up finding | Status | Where |
+|---------------------------|--------|-------|
+| **#1 ID viewer arbitrary-path signing** | Fixed | `firestore.rules` `/id_reviews` block now enforces: owner-only writes must use the `cleanIdReviewOwnerFields` allowlist, every `*_path` field is pattern-matched to `id-docs/<kind>/<uid>-<side>-<digits>.<ext>` where `<uid>` is the record's own doc id, `status` can only self-transition to `pending`, reviewer fields are blocked. `functions/idViewer.js` adds defence-in-depth re-matching the exact pattern before signing. |
+| **#2 Signup-time foreign restaurant_id** | Fixed | `cleanCreateFields` now blocks `restaurant_id` entirely at create. Linkage flows only through `isSelfRestaurantSignup`'s update path which calls `selfRestaurantIdOk` (exists + user_id check). |
+| **#3 Notification auth mismatch** | Fixed | Client `/notifications_outbox` writes locked to self-recipient (ordinary) OR exec (admin tooling). Pres cross-chapter writes denied. New `functions/queueNotification.js` HTTPS callable validates `scope: 'pickup'|'event'|'broadcast'`, derives recipients from the operation server-side, writes outbox rows with admin SDK. Client-side `src/services/notify.js` exposes `queuePickupBroadcast`, `queuePickupToPartner`, `queuePickupToClaimant`, `queueChapterBroadcast`, `queueEventBroadcast`. All seven cross-user `enqueueNotification` sites in `src/services/database.js` migrated to the appropriate scoped helper. |
+| **#4 Self-email arbitrary redirect** | Fixed | `email` added to `touchesPrivilegedFields`. A signed-in user can no longer self-rewrite their delivery address and queue a self-notification. Legit email changes must flow through exec. |
+| **#5 ID split incomplete (nested driver.*)** | Fixed | `touchesNestedPrivilegedFields` compares nested `driver.license_url` / `license_front_url` / `license_back_url` old-vs-new values and denies self-writes. `cleanCreateFields` also blocks these at create time. The viewer callable in `functions/idViewer.js` and the service in `src/services/idReview.js` cover both personal and driver kinds end-to-end. |
+| **#6 PresFinance blocked by fetchAllDonations** | Fixed | `src/screens/president/PresFinance.js:load` switched to `Promise.allSettled`; a denied donations fetch no longer blanks the roster/events. Flagged for a dedicated exec-scoped president-donations endpoint as a follow-up. |
+| **#7 Harness fixtures missing email_verified** | Fixed | `scripts/test-a2-rules.cjs` rewritten with `verified(env, ...)` / `unverified(env, ...)` helpers. Harness adds explicit unverified-denial, path-shape, foreign-restaurant create-time, nested driver, email self-redirect, outbox lockdown, pres cross-chapter denial, and ID viewer regression cases. |
+
+Additional work landed in this response:
+
+- **R9 shared projector** — `functions/lib/publicProfileProjection.js` is now the single source of truth used by both the trigger (`functions/syncPublicProfile.js`) and the backfill (`scripts/backfill-public-profiles.js`). The trigger reconciles against live `/users` state (not the event's after snapshot), repairs missing mirrors, propagates deletion failures, and now rethrows on errors so Firestore retries.
+- **R2+R3 revocation rewrite** — `scripts/revoke-id-download-tokens.js` now scans the ACTUAL legacy fields (top-level `id_document_*`, `driver_license_*`, `id_front_url`/`id_back_url`, nested `driver.license_*`), inventories the `id-docs/` Storage prefix for orphan files, writes a per-object ledger at `/id_token_revocation_ledger/{sha256(path)}`, requires explicit `--project` and `--bucket`, and only clears `/users` references for a user whose every path rotated successfully. Preserves evidence.
+
+Build + install verification (local):
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓ (no `--legacy-peer-deps`)
+- `node --check` on every new/changed JS file ✓ (notify, database, publicProfiles, idReview, idViewer, queueNotification, syncPublicProfile, publicProfileProjection, backfill, revoke, drain, test-a2-rules)
+
+Harness: still blocked on Java 17+ on this host (`java -version` fails; Homebrew install blocked by Xcode-license wall needing sudo). Harness is syntactically clean and ChatGPT previously ran it on a Java-equipped environment. Pending a green emulator run before this commit's claims can be independently confirmed.
+
+### Not closed in this commit (deferred follow-ups)
+
+- **ManageVerifications screen migration** to call `getIdViewUrl` + legacy `authFirebase.uploadIdDocument` migration to `idReview.submitIdReview`. Rules + callable + service in place; UI wiring is the remaining work.
+- **id_reviews.status → users.verification_status sync** — a Firestore `onWrite` trigger that mirrors the authoritative review status back to `/users.verification_status` so existing eligibility gates keep working. Follow-up function.
+- **Dispatcher writes** — the worker still doesn't check every Firestore PATCH response code or hold a per-row lease for concurrent dispatcher instances. The current retry changes are progress, not full idempotency.
+- **President-scoped donations endpoint** — PresFinance currently gracefully degrades when exec-only `fetchAllDonations` is denied; a scoped read would restore full visibility.
+- **Legacy-outbox drain** — `scripts/drain-legacy-outbox.js` ships but must run operationally at deploy step 2.5 (before dispatcher deployment can confidently say "no legacy format").
+- **PresFinance CSV / name column** — audit noted the export still expects private `name`; the `public_profile.display_name` field is now populated and used in the roster render, but the CSV export columns need a sweep.
+
+### Updated A2 deployment order
+
+Dispatcher ships before rules lock; function + backfill before rules lock; token revocation after everything is live + the viewer UI switch is in place.
+
+| # | Action | Why this order |
+|---|--------|----------------|
+| 1 | Deploy functions: `syncPublicProfileOnWrite`, `getIdViewUrl`, `queueBusinessNotification` | Trigger populates mirrors on every /users edit; callable serves the ID viewer and the authorized notification queue. All must exist before the rules lock makes them the only path. |
+| 2 | Deploy dispatcher worker | Backward-compatible with any legacy outbox rows; new-format recipient resolution + per-channel retry live. |
+| 2.5 | `node scripts/drain-legacy-outbox.js --dry-run` → review → run for real | Marks any pre-A2 queued row carrying `channel`/`email`/`player_id` as `rejected: legacy_format_dropped` so no legacy row ever flows through the new dispatcher. |
+| 3 | `node scripts/backfill-public-profiles.js --dry-run` → review → run for real | Mint public_profiles for every existing user using the shared reconciler. |
+| 4 | Deploy client bundle | Clients now read public_profiles, write new-format outbox for self, and route cross-user notifications through the callable. |
+| 5 | `firebase deploy --only firestore:rules,storage` | Locks `/users` and `/id-docs` reads. Safe only once backfill + client + callable are live. |
+| 6 | Deploy the ManageVerifications screen migration (follow-up PR) | Reviewer UI calls `getIdViewUrl` before step 7 invalidates all old links. |
+| 7 | `node scripts/revoke-id-download-tokens.js --dry-run --project=<p> --bucket=<b>` → review → run for real | Rotates `firebaseStorageDownloadTokens` on every referenced + orphan id-docs object. Clears `/users` bearer-URL fields only after a per-object ledger confirms rotation succeeded. Preserves evidence. |
+| 8 | Observe dispatcher logs for one cron cycle; verify leaderboard, rosters, volunteer count, notifications, protected-viewer flow | — |
+
+### ChatGPT handoff — next review
+
+Please review on branch `claude/a2-public-profiles` at the new commit above:
+
+1. `functions/idViewer.js` + `firestore.rules` id_reviews block together — does any owner-authored path writeable by rules still reach the signer with a foreign uid?
+2. `functions/queueNotification.js` — any way to make it queue to a recipient the operation's state does not justify? (unauth → `permission-denied`; writer must be pickup party or exec; recipients derived server-side)
+3. `functions/lib/publicProfileProjection.js` as the shared projector + the trigger + backfill — any field in `project()` that leaks something that shouldn't be public?
+4. `scripts/revoke-id-download-tokens.js` — ledger-based retry is restartable, but does the final `/users` field clear ever run when any one path failed? (should not)
+5. `scripts/test-a2-rules.cjs` — any attack from the two review passes not covered?
+
+Report the fresh 25-defect rerun + the eight new attack checks against this commit.
+
+### A2 first review response (post-ChatGPT review of 6927f1e)
 
 Partial — commit TBD. Status per finding:
 

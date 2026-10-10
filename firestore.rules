@@ -82,18 +82,31 @@ service cloud.firestore {
     // Hard-privileged fields: authorization vectors that only exec
     // can self-write (plus the founder's own doc). Also blocks
     // self-writes of legacy ID bearer-URL fields on /users — the new
-    // flow (R8) writes ID evidence to /id_reviews, not here. Keeping
-    // id_document_url writable would reintroduce the exact bearer-URL
-    // exposure the R8 split closes.
+    // flow (R8) writes ID evidence to /id_reviews, not here. `email`
+    // is privileged (R-followup #4) because the dispatcher resolves
+    // delivery address from /users.email; letting a user self-rewrite
+    // it would turn self-notifications into an arbitrary mail path.
     function touchesPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasAny([
           'role','roles','member_status','verification_status','restaurant_status',
-          'disabled','disabled_at',
+          'disabled','disabled_at','email',
           'id_document_url','id_document_front_url','id_document_back_url',
           'driver_license_url','driver_license_front_url','driver_license_back_url',
           'id_front_url','id_back_url',
         ]);
+    }
+    // Catch nested driver.license_* writes that top-level affectedKeys()
+    // misses — the user doc has a `driver` object and `driver.license_url`
+    // is still a bearer-URL for a government document under A2 scrutiny.
+    // Non-sensitive sub-fields (driver_setup_complete, vehicle_type, etc.)
+    // live outside this check and stay writable.
+    function touchesNestedPrivilegedFields() {
+      let newD = request.resource.data.get('driver', {});
+      let oldD = resource.data.get('driver', {});
+      return newD.get('license_url', null)       != oldD.get('license_url', null)
+          || newD.get('license_front_url', null) != oldD.get('license_front_url', null)
+          || newD.get('license_back_url', null)  != oldD.get('license_back_url', null);
     }
     // Roles a user is allowed to self-assign at signup. Everything
     // higher (chapter_president, executive, admin, super_admin) must
@@ -110,6 +123,15 @@ service cloud.firestore {
       // 'restaurant' may start with member_status 'approved' because
       // their gate is restaurant_status, not member_status. Blocks
       // audit B4 — self-create with member_status:'approved' bypass.
+      //
+      // ChatGPT follow-up #2: restaurant_id is NOT accepted at create.
+      // Partner linkage must flow through the signup-finalization
+      // update path (isSelfRestaurantSignup) which verifies ownership
+      // via selfRestaurantIdOk's exists() + user_id check. Permitting
+      // it at create reopened the "new account seeds a foreign
+      // restaurant and forges handoff verification" attack. Legacy ID
+      // bearer-URL fields are also blocked at create for the same R8
+      // reason they are blocked at update.
       let roleAtCreate = d.get('role', 'member');
       return isSelfAssignableRole(roleAtCreate)
           && (!('roles' in d) || d.roles.hasOnly(['member', 'restaurant', 'partner']))
@@ -118,8 +140,22 @@ service cloud.firestore {
               || (roleAtCreate == 'restaurant' && d.member_status in ['pending', 'approved']))
           && (!('verification_status' in d) || d.verification_status in ['pending', 'none', 'unverified'])
           && (!('restaurant_status' in d) || d.restaurant_status in ['pending', 'incomplete'])
+          && !('restaurant_id' in d)
           && !('disabled' in d)
-          && !('disabled_at' in d);
+          && !('disabled_at' in d)
+          && !('id_document_url' in d)
+          && !('id_document_front_url' in d)
+          && !('id_document_back_url' in d)
+          && !('driver_license_url' in d)
+          && !('driver_license_front_url' in d)
+          && !('driver_license_back_url' in d)
+          && !('id_front_url' in d)
+          && !('id_back_url' in d)
+          && (!('driver' in d) || (
+                !('license_url' in d.driver)
+             && !('license_front_url' in d.driver)
+             && !('license_back_url' in d.driver)
+          ));
     }
     // Audit A4 — a chapter president can today self-write chapter_id
     // and acquire admin scope over another chapter's events. Block
@@ -223,8 +259,16 @@ service cloud.firestore {
       allow create: if isSelf(uid) && cleanCreateFields();
       allow update: if isExec()
         || (isSelf(uid) && isFounderToken())
-        || (isSelf(uid) && !touchesPrivilegedFields() && selfChapterIdOk() && selfRestaurantIdOk())
-        || (isSelf(uid) && isSelfRestaurantSignup() && selfChapterIdOk() && selfRestaurantIdOk());
+        || (isSelf(uid)
+            && !touchesPrivilegedFields()
+            && !touchesNestedPrivilegedFields()
+            && selfChapterIdOk()
+            && selfRestaurantIdOk())
+        || (isSelf(uid)
+            && isSelfRestaurantSignup()
+            && !touchesNestedPrivilegedFields()
+            && selfChapterIdOk()
+            && selfRestaurantIdOk());
       allow delete: if isAdmin();
     }
 
@@ -250,18 +294,54 @@ service cloud.firestore {
     //
     // Download URLs are never stored. Callers mint a short-lived
     // signed URL through the `getIdViewUrl` Cloud Function callable,
-    // which checks caller identity server-side.
-    function cleanIdReviewFields(d) {
-      // Enforce that the owner can only self-transition to 'pending'.
-      // Anything else requires exec on the write.
-      return d.get('status', 'pending') == 'pending';
+    // which independently re-validates the stored path shape.
+    //
+    // ChatGPT follow-up #1 — the first cut of these rules only
+    // required status == 'pending' and let the owner stuff ANY path
+    // into id_front_path, including another person's object or an
+    // unrelated bucket file. The callable then trusted the stored
+    // path and signed it. Now every *_path field is pattern-
+    // constrained to a filename whose uid segment MATCHES the
+    // record's own uid, allowed field names are whitelisted, and
+    // reviewer-only fields (status transition to approved/rejected,
+    // reviewer identity) are blocked for owners.
+    //
+    // Path shape per kind/side (literal, matched via .matches):
+    //   personal front: id-docs/personal/<uid>-front-<digits>.jpg
+    //   personal back:  id-docs/personal/<uid>-back-<digits>.jpg
+    //   driver   front: id-docs/driver/<uid>-front-<digits>.jpg
+    //   driver   back:  id-docs/driver/<uid>-back-<digits>.jpg
+    function idPathOk(d, field, kind, side, uid) {
+      return !(field in d)
+          || d[field] is string
+             && d[field].matches('^id-docs/' + kind + '/' + uid + '-' + side + '-[0-9]+\\.(jpe?g|png)$');
+    }
+    function cleanIdReviewOwnerFields(d, uid) {
+      // Only pending-status self-writes. Allowed fields are the
+      // owner-authored evidence set. Reviewer-only fields may not
+      // appear in the owner's write.
+      let allowed = [
+        'id_front_present','id_front_path',
+        'id_back_present','id_back_path',
+        'driver_license_front_present','driver_license_front_path',
+        'driver_license_back_present','driver_license_back_path',
+        'status','uploaded_at','reviewed_at','reviewed_by',
+      ];
+      return d.keys().hasOnly(allowed)
+          && d.get('status', 'pending') == 'pending'
+          && d.get('reviewed_at', null) == null
+          && d.get('reviewed_by', null) == null
+          && idPathOk(d, 'id_front_path',              'personal', 'front', uid)
+          && idPathOk(d, 'id_back_path',               'personal', 'back',  uid)
+          && idPathOk(d, 'driver_license_front_path',  'driver',   'front', uid)
+          && idPathOk(d, 'driver_license_back_path',   'driver',   'back',  uid);
     }
     match /id_reviews/{uid} {
       allow read:   if isExec() || isSelf(uid);
       allow create: if isExec()
-                    || (isSelf(uid) && cleanIdReviewFields(request.resource.data));
+                    || (isSelf(uid) && cleanIdReviewOwnerFields(request.resource.data, uid));
       allow update: if isExec()
-                    || (isSelf(uid) && cleanIdReviewFields(request.resource.data));
+                    || (isSelf(uid) && cleanIdReviewOwnerFields(request.resource.data, uid));
       allow delete: if false;
     }
 
@@ -602,17 +682,35 @@ service cloud.firestore {
     // old schema and are still queued must drain in a controlled
     // way: run `node scripts/drain-legacy-outbox.js` once at deploy
     // time (admin SDK) to flip them to a safe terminal state.
+    // ChatGPT follow-up #3 — the prior rule's `|| isExec() || isPres()`
+    // branch let a president queue a notification to any recipient in
+    // any chapter, and the partner-to-volunteer / volunteer-to-partner
+    // operational paths were simultaneously denied. Client writes are
+    // now locked to self-recipient only (confirmations, bell drops).
+    // Cross-user notifications go through `queueBusinessNotification`
+    // (Cloud Function callable) which validates the operation
+    // server-side and writes outbox rows with the admin SDK, bypassing
+    // this rule entirely.
     match /notifications_outbox/{id} {
-      allow create: if isSignedIn()
-                    && request.resource.data.get('user_id', null) is string
-                    && !('channel' in request.resource.data)
-                    && !('email' in request.resource.data)
-                    && !('player_id' in request.resource.data)
-                    && (
-                      request.resource.data.user_id == request.auth.uid
-                      || isExec()
-                      || hasAnyRole(['chapter_president','chapter_pres'])
-                    );
+      allow create: if (
+          // Self-recipient: ordinary signed-in client confirmation.
+          isSignedIn()
+          && request.resource.data.get('user_id', null) is string
+          && request.resource.data.user_id == request.auth.uid
+          && !('channel' in request.resource.data)
+          && !('email' in request.resource.data)
+          && !('player_id' in request.resource.data)
+        ) || (
+          // Exec may direct-write to any recipient (admin tooling,
+          // ChapterApprovals outreach). Still forbidden from stuffing
+          // channel/player_id/email to prevent the R10 arbitrary-
+          // address path.
+          isExec()
+          && request.resource.data.get('user_id', null) is string
+          && !('channel' in request.resource.data)
+          && !('email' in request.resource.data)
+          && !('player_id' in request.resource.data)
+        );
       allow read, update, delete: if isExec();
     }
 

@@ -52,20 +52,29 @@ export default function PresFinance({ navigation }) {
     if (!user?.chapter_id) return;
     try {
       // R7 — pres roster through /public_profiles (chapter-scoped).
-      // Donation attribution join uses the mirror's uid+chapter_id,
-      // which is enough to credit cross-chapter donors to this
-      // chapter's totals without reading private /users.
-      const [ch, chapterMembers, dAll, ev] = await Promise.all([
+      // R-followup #7 — fetchAllDonations is exec-only; isolate its
+      // failure so pres sees roster + events even when the donations
+      // read is denied (rules enforce exec OR donor). An exec-only
+      // "pres donations endpoint" is tracked for a follow-up; until
+      // then the pres finance screen shows an empty donations panel
+      // with an inline notice instead of blank-screening the whole
+      // page via Promise.all throwing.
+      const [chRes, membersRes, evRes, donRes] = await Promise.allSettled([
         fetchChapterById(user.chapter_id),
         fetchAllPublicProfiles({ chapterId: user.chapter_id }),
-        fetchAllDonations(),
         fetchEvents(user.chapter_id),
+        fetchAllDonations(),
       ]);
-      setChapter(ch);
+      const chapterMembers = membersRes.status === 'fulfilled' ? membersRes.value : [];
+      const dAll           = donRes.status     === 'fulfilled' ? donRes.value     : [];
+      setChapter(chRes.status === 'fulfilled' ? chRes.value : null);
       setMembers(chapterMembers.filter((u) => (u.role_label || 'member') !== 'partner'));
       const chapterUids = new Set(chapterMembers.map((u) => u.uid || u.id));
       setDonations(dAll.filter((d) => d.chapter_id === user.chapter_id || chapterUids.has(d.user_id)));
-      setEvents(ev || []);
+      setEvents(evRes.status === 'fulfilled' ? (evRes.value || []) : []);
+      if (donRes.status === 'rejected') {
+        console.warn('PresFinance donations denied — pending exec-scoped endpoint:', donRes.reason?.message);
+      }
     } catch (e) {
       console.warn('PresFinance load', e);
     }

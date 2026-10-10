@@ -508,36 +508,22 @@ export async function createPickup(pickup) {
   const ref = await addDoc(collection(db, 'pickups'), enriched);
   const newPk = { id: ref.id, ...enriched };
 
-  // R6 — resolve chapter recipients through /public_profiles.
-  // The restaurant posting the pickup is neither exec nor a chapter
-  // owner, so the prior `collection('users').where('chapter_id'...)`
-  // query is now denied by the A2 rules. public_profiles.role_label
-  // carries the bucketed role (member | president | exec | partner)
-  // we need; partners are excluded as recipients of their own post.
+  // A2 R-followup #3 — chapter broadcast flows through the
+  // queueBusinessNotification callable, which resolves eligible
+  // chapter recipients from /public_profiles server-side and writes
+  // outbox rows with admin SDK. The partner posting the pickup
+  // cannot direct-write outbox rows for other users under the new
+  // self-only rule.
   if (pickup.chapter_id) {
     try {
-      const memSnap = await getDocs(
-        query(
-          collection(db, 'public_profiles'),
-          where('chapter_id', '==', pickup.chapter_id)
-        )
-      );
-      const targets = snapToList(memSnap)
-        .filter((m) => ['member', 'president'].includes(m.role_label || 'member'))
-        .map((m) => m.uid || m.id);
-      if (targets.length) {
-        const { enqueueNotification } = await import('./notify');
-        await enqueueNotification({
-          recipients: targets,
-          kind: 'pickup',
-          title: 'New pickup available!',
-          body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
-          url: `https://app.betternatureofficial.org/#/pickups/${ref.id}`,
-          data: { type: 'new_pickup', pickupId: ref.id },
-          skipInApp: false,
-        });
-      }
-    } catch (e) { console.warn('pickup notify failed', e); }
+      const { queuePickupBroadcast } = await import('./notify');
+      await queuePickupBroadcast(ref.id, {
+        title: 'New pickup available!',
+        body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
+        url: `https://app.betternatureofficial.org/#/pickups/${ref.id}`,
+        data: { type: 'new_pickup', pickupId: ref.id },
+      });
+    } catch (e) { console.warn('pickup broadcast failed', e); }
   }
   return newPk;
 }
@@ -732,18 +718,15 @@ export async function claimPickup(pickupId, userId) {
   } catch (e) { console.warn('claim notify', e); }
 
   // #10 from drop-off audit — also push the restaurant so they know
-  // someone's coming from the moment of claim, not when the volunteer
-  // eventually taps "on my way". The gap between claim and enroute
-  // could be hours in real life; the restaurant deserves to know a
-  // volunteer accepted the job as soon as it happens.
+  // someone's coming. A2 R-followup #3: routed through the server-
+  // side queueBusinessNotification callable because the volunteer
+  // isn't the pickup's partner and can't direct-write outbox docs
+  // for them under the new self-only rule.
   try {
     if (pk.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      const { queuePickupToPartner } = await import('./notify');
       const who = claimantName || 'A volunteer';
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      await queuePickupToPartner(pickupId, {
         title: 'Your donation was claimed',
         body: `${who} is on the way. You'll get another ping when they mark en route — tap Confirm the moment they arrive.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -827,11 +810,9 @@ export async function cancelClaim(pickupId, reason = '') {
   // food is unclaimed and might not get picked up in time.
   try {
     if (pk.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      // A2 R-followup #3 — routed through the callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, {
         title: 'Pickup released',
         body: `Your pickup is back on the board — looking for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -878,10 +859,9 @@ export async function cancelPickup(pickupId, reason = '') {
   // flow.
   try {
     if (pk.claimed_by) {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
+      // A2 R-followup #3 — restaurant → claimant via callable.
+      const { queuePickupToClaimant } = await import('./notify');
+      await queuePickupToClaimant(pickupId, {
         title: 'Pickup cancelled',
         body: `${pk.restaurant_name || 'The restaurant'} cancelled their pickup.${reason ? ' Reason: ' + reason : ''} Don't drive out.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -934,10 +914,9 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
     const snap = await getDoc(ref);
     const pk = snap.exists() ? snap.data() : null;
     if (pk?.claimed_by) {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
+      // A2 R-followup #3 — restaurant → claimant via callable.
+      const { queuePickupToClaimant } = await import('./notify');
+      await queuePickupToClaimant(pickupId, {
         title: 'Pickup confirmed by restaurant',
         body: `${pk.restaurant_name || 'The restaurant'} just confirmed you picked up the food. Drop it off to finish the run.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -1022,9 +1001,9 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
       const body = wasHandedOff
         ? `${volunteerName || 'A volunteer'} just left with your donation${dropOff}.`
         : `${volunteerName || 'A volunteer'} is on the way${dropOff ? '' : ' to pick up your donation'}. Tap Confirm when they arrive.`;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      // A2 R-followup #3 — claimant → partner via callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, {
         title: wasHandedOff ? 'Your donation is on the move' : 'Volunteer is on the way',
         body,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -1179,11 +1158,9 @@ export async function handOffPickup(pickupId, reason = '') {
     const snap = await getDoc(ref);
     const pk = snap.exists() ? snap.data() : null;
     if (pk?.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      // A2 R-followup #3 — claimant → partner via callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, {
         title: 'Volunteer handoff in progress',
         body: `${pk.handoff_from_name || 'The volunteer'} needs to hand off your pickup. It's back on the board for another volunteer to claim.${reason ? ' Reason: ' + reason : ''}`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -1234,9 +1211,9 @@ export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', not
       const explain = kind === 'fridge_full' ? 'the fridge was full and the volunteer couldn\'t find another in time'
                     : kind === 'fridge_broken' ? 'the drop-off fridge was broken'
                     : 'the food had spoiled in transit';
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'general',
+      // A2 R-followup #3 — claimant → partner via callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, {
         title: 'Pickup didn\'t make it',
         body: `Your donation couldn't be delivered — ${explain}. No tax receipt will be issued for this run.${note ? ' Note from volunteer: ' + note : ''}`,
         data: { type: 'pickup_spoiled', pickupId, kind },
@@ -1536,11 +1513,9 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     if (pk.restaurant_id) {
       try {
         const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-        const { enqueueNotification } = await import('./notify');
-        const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-        await enqueueNotification({
-          recipients: [linkedUid],
-          kind: 'general',
+        // A2 R-followup #3 — claimant → partner via callable.
+        const { queuePickupToPartner } = await import('./notify');
+        await queuePickupToPartner(pickupId, {
           title: 'Your surplus made it',
           body: `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Your tax receipt is on the way.`,
           url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -1625,10 +1600,9 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
       // hop, which was rate-limited and silently failing.
       if (receipt?.id && restaurantUserUid) {
         try {
-          const { enqueueNotification } = await import('./notify');
-          await enqueueNotification({
-            recipients: [restaurantUserUid],
-            kind: 'general',
+          // A2 R-followup #3 — claimant → partner via callable.
+          const { queuePickupToPartner } = await import('./notify');
+          await queuePickupToPartner(pickupId, {
             title: `Your tax receipt for ${weight} lbs is ready`,
             body: `BetterNature has minted receipt #${receipt.receipt_no || '0001'} for your donation. Open it to print or save as PDF for your records.`,
             url: receiptUrl(receipt.id),
