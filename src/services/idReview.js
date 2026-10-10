@@ -58,20 +58,27 @@ export async function submitIdReview(userId, { frontUri, backUri, kind = 'person
   ]);
 
   const map = KIND_PATHS[kind];
-  const existing = await getDoc(doc(db, 'id_reviews', userId));
-  const prior = existing.exists() ? existing.data() : {};
-  const next = {
-    ...prior,
+  // F6 — do NOT spread the prior document into the write. Server
+  // and reviewer-only fields (reviewed_at, reviewed_by,
+  // id_tokens_migrated_at) must remain unchanged on resubmission;
+  // the Firestore rules on UPDATE now enforce the owner only
+  // CHANGES owner-authored keys. A spread-and-set-with-merge wrote
+  // every prior field back and tripped the diff-check for migrated
+  // rows. We write ONLY the fields the owner is changing.
+  const existingSnap = await getDoc(doc(db, 'id_reviews', userId));
+  const existed = existingSnap.exists();
+  const update = {
     [`${map.front}_present`]: true,
     [`${map.front}_path`]:    frontPath,
     [`${map.back}_present`]:  true,
     [`${map.back}_path`]:     backPath,
     status: 'pending',
     uploaded_at: serverTimestamp(),
-    reviewed_at: null,
-    reviewed_by: null,
   };
-  await setDoc(doc(db, 'id_reviews', userId), next, { merge: true });
+  // merge:true leaves everything else on the doc untouched. If the
+  // row doesn't exist yet we're doing a CREATE and the rule's
+  // cleanIdReviewOwnerCreate accepts exactly the keys above.
+  await setDoc(doc(db, 'id_reviews', userId), update, { merge: existed });
   return { frontPath, backPath, status: 'pending' };
 }
 

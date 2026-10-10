@@ -109,6 +109,21 @@ async function resolvePartnerUidFromPickup(db, pk) {
   return maybeUser ? maybeUser.id : null;
 }
 
+// F9 — ex-claimant authority must be time-boxed. Once a run is
+// handed off / released, the former participant can post ONE
+// post-event notification shortly after the transition. Beyond this
+// window the pickup is someone else's run and messaging authority
+// must not persist indefinitely.
+const EX_PARTICIPANT_WINDOW_MS = 30 * 60 * 1000;
+
+function toMillisTx(v) {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v.toMillis === 'function') { try { return v.toMillis(); } catch { return 0; } }
+  if (v.seconds != null) return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  const d = new Date(v); return Number.isFinite(d.getTime()) ? d.getTime() : 0;
+}
+
 async function resolvePickupScope(db, caller, callerUser, data) {
   const pickupId = String(data?.pickup_id || '').trim();
   if (!pickupId) throw new functions.https.HttpsError('invalid-argument', 'pickup_id required');
@@ -124,9 +139,19 @@ async function resolvePickupScope(db, caller, callerUser, data) {
     || partnerUid === caller
     || pk.restaurant_user_id === caller
     || (callerUser && callerUser.restaurant_id && pk.restaurant_id === callerUser.restaurant_id);
-  const callerIsClaimant     = pk.claimed_by          === caller;
-  const callerIsExClaimant   = pk.released_by         === caller;
-  const callerIsHandoffFrom  = pk.handoff_from_uid    === caller;
+  const callerIsClaimant     = pk.claimed_by === caller;
+
+  // Ex-claimant authority: valid only when the matching transition
+  // timestamp (released_at / handoff_at) is within the time window.
+  const now = Date.now();
+  const releasedAtMs = toMillisTx(pk.released_at);
+  const handoffAtMs  = toMillisTx(pk.handoff_at);
+  const callerIsExClaimant =
+    pk.released_by === caller &&
+    (releasedAtMs !== 0 && now - releasedAtMs <= EX_PARTICIPANT_WINDOW_MS);
+  const callerIsHandoffFrom =
+    pk.handoff_from_uid === caller &&
+    (handoffAtMs !== 0 && now - handoffAtMs <= EX_PARTICIPANT_WINDOW_MS);
   const callerIsPickupParty  = callerIsRest || callerIsClaimant || callerIsExClaimant || callerIsHandoffFrom;
 
   if (!isExec && !callerIsPickupParty) {

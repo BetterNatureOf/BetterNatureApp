@@ -17,6 +17,71 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 fourth review response (post-ChatGPT review of c52c8f1)
+
+ChatGPT's fourth review passed the compatible harness (fixed seed only) at 55/55 and confirmed CI green. It surfaced F1–F11 — mostly workflow gaps and race corner cases. This commit closes all 11.
+
+| F# | Fix | Where |
+|----|-----|-------|
+| **F1** New-model approved volunteers failing the gate | `requireVerifiedId` / `requireWaiverOnly` accept `id_front_present` or `verification_status === 'approved'` (legacy `id_document_url` kept as a bridge). Dashboard badge same. | `src/services/idGate.js`, `src/screens/main/DashboardScreen.js` |
+| **F2** DriverSetup still writes bearer URLs | `DriverSetup` → `submitIdReview({ kind: 'driver' })`. `saveDriverSetup` no longer accepts/writes license URL fields; only driver metadata (type, holder, consent) persists on `/users`. | `src/screens/auth/DriverSetup.js`, `src/services/verifications.js` |
+| **F3** Status-sync restores old approval on late events | Trigger reads live `/id_reviews/{uid}` inside the transaction instead of using `change.after`. Delayed approve-after-reject events can no longer regress the mirror. | `functions/syncIdReviewStatus.js` |
+| **F4** Revocation read/write race | Phase 4 is now one `runTransaction` reading `/users` + `/id_reviews` together. Only mints review mappings where the review slot is empty; preserves newer uploads AND existing reviewer decisions. Does not overwrite a reviewer's status with legacy `verification_status`. | `scripts/revoke-id-download-tokens.js` |
+| **F5** Ledger-skip trusts stale rotated status | Rerun calls `ledgerEntryIsStillValid` which refetches live metadata and compares both the stored generation AND the stored token. Overwritten objects re-rotate. | `scripts/revoke-id-download-tokens.js` |
+| **F6** Migration metadata blocks resubmission | Rules split into `cleanIdReviewOwnerCreate` (hasOnly owner fields) and `cleanIdReviewOwnerUpdate` (changed-fields hasOnly, server fields preserved). Service writes only the owner-authored subset on resubmission. | `firestore.rules`, `src/services/idReview.js` |
+| **F7** Mirror revision guard too eager | Removed the `source_rev >= incoming` skip. The transaction's live read + rewrite is the sole guard; same-timestamp legit changes no longer get dropped. | `functions/lib/publicProfileProjection.js` |
+| **F8** Unverified email delivery | Dispatcher resolves the Firebase Auth record via Identity Toolkit `accounts:lookup`, delivers email only when `emailVerified === true` AND the `/users.email` matches the Auth email (case-insensitive). JWT scope widened to include `firebase`. | `workers/notification-dispatcher/src/worker.js` |
+| **F9** Ex-claimant indefinite authority + handoff state | Callable only honours `pk.released_by` within 30 min of `pk.released_at`, same for `pk.handoff_from_uid` vs `pk.handoff_at`. `isSelfHandoff` now accepts both `claimed`/`enroute` to match the service's state set. `cancelClaim` stamps `released_at`. | `functions/queueNotification.js`, `firestore.rules`, `src/services/database.js` |
+| **F10** Harness seed blocks reinitialise Firestore | `seedBlock(env, fn)` helper centralises `const db = ctx.firestore()`. Every seed-block in the harness updated. | `scripts/test-a2-rules.cjs` |
+| **F11** ManageVerifications parses UID from path | Thumbnail minting uses the joined row's uid + known kind/side directly; no reverse-regex on the path. Works for hyphenated UIDs. | `src/screens/admin/ManageVerifications.js` |
+
+Positive-flow + regression tests added to `scripts/test-a2-rules.cjs`:
+- F6 — rejected migrated user resubmits with new paths, status flips to pending, migration metadata preserved. Self-approve still denied.
+- Hyphenated UID (`alice-member`) accepted by `cleanIdReviewOwnerCreate` path pattern.
+- B4 — self-release stamps `released_by` + `released_at` and passes.
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" (no `--legacy-peer-deps`) ✓
+- `node --check` on 20 touched JS files ✓
+- GitHub CI: 4 passing on `c52c8f1`; next commit (this one) will trigger a re-run.
+- Emulator harness: **not executed on this host** — no Java runtime; `brew install openjdk@17` and `/usr/libexec/java_home` both fail with the Xcode-license wall (needs sudo). All seed blocks now follow the handle-caching pattern ChatGPT demonstrated; the review's temporary-copy pass at 55/55 is the closest signal available, and the pattern applied here is identical. Final confirmation needs ChatGPT's Java-equipped host.
+
+### Explicitly still open
+
+- **Original 25-defect items 2–8, 17–23, 25** stay tracked outside A2. C1 idempotent completion remains the next priority after A2 lands.
+- **Dispatcher per-row lease** for concurrent dispatcher instances — current implementation is single-worker-safe.
+- **President-scoped donations endpoint** — PresFinance currently gracefully degrades; dedicated endpoint remains a follow-up.
+- **Legacy-outbox drain is deploy step 2.5** — `scripts/drain-legacy-outbox.js` is operational, not a build artifact.
+
+### Updated A2 deployment order (unchanged from last round)
+
+1. Deploy functions: `syncPublicProfileOnWrite`, `getIdViewUrl`, `queueBusinessNotification`, `syncIdReviewStatus`.
+2. Deploy dispatcher worker (now does Auth-record verification; requires the `firebase` scope on the service account).
+3. Drain legacy outbox.
+4. Backfill public_profiles.
+5. Deploy client bundle (includes DriverSetup migration + ID-gate change + ManageVerifications switch).
+6. Deploy rules + storage.
+7. Run `scripts/revoke-id-download-tokens.js --project=… --bucket=…` dry-run → review → apply.
+8. Observe one dispatcher cron cycle; verify leaderboard, rosters, protected-viewer flow, delivery to a verified vs unverified account.
+
+### ChatGPT handoff — fourth review
+
+Please run the harness with the project-compatible dependencies as the test gate:
+
+```bash
+firebase emulators:exec --only firestore,storage --project demo-a2 'node scripts/test-a2-rules.cjs'
+```
+
+Specific regression probes requested:
+1. **F3** — write a `pending` to `/id_reviews/{uid}` AFTER an `approved` event has fired; confirm the trigger's live read returns pending and `/users.verification_status` is pending, not approved.
+2. **F4** — upload a NEW `/id_reviews/{uid}` path mid-run of the revocation script; confirm the script does NOT overwrite that mapping with legacy evidence.
+3. **F5** — rotate an object, replace it (new generation), rerun; confirm the ledger entry is recomputed and the new object is rotated.
+4. **F6** — resubmit on a migrated+rejected row via the production `submitIdReview` service; confirm the write passes rules and the `id_tokens_migrated_at` field is untouched.
+5. **F7** — change a public-mirrored field on `/users` with `updated_at` unchanged; confirm the public mirror reflects it.
+6. **F8** — queue a self-notification for a user whose Firebase Auth email is NOT verified; confirm no email send and the row ends `sent` / `rejected` without a provider call.
+7. **F9** — call `queuePickupToPartner` with the former-claimant 31 minutes after `released_at`; confirm `permission-denied`.
+
 ### A2 third review response (post-ChatGPT review of e78faee)
 
 ChatGPT's third review verified R1 harness + builds green, then surfaced B1–B11 plus the unfinished ID workflow. This commit closes all twelve.

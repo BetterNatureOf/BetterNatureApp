@@ -767,10 +767,12 @@ export async function cancelClaim(pickupId, reason = '') {
       claimed_at: null,
       cancel_reason: reason || null,
       cancelled_at: new Date().toISOString(),
-      // B4 — leave an authorized breadcrumb so the post-release
-      // notification callable can verify the caller is the actual
-      // ex-claimant without relying on the now-cleared claimed_by.
+      // B4 + F9 — authorized breadcrumb that is TIME-BOXED. The
+      // callable only honours it while released_at is recent; this
+      // closes the "former claimant retains indefinite messaging
+      // authority" window.
       released_by: data.claimed_by || null,
+      released_at: new Date().toISOString(),
     });
     return { releasedBy: data.claimed_by || null, pk: data };
   });

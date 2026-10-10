@@ -133,11 +133,14 @@ service cloud.firestore {
       // bearer-URL fields are also blocked at create for the same R8
       // reason they are blocked at update.
       //
-      // B2 — the stored `email` on create MUST equal the auth token's
-      // email. Previously a newly-signed-up account could seed any
-      // delivery address at create time, which the dispatcher later
-      // trusted. The rule compares case-insensitively (Firebase
-      // Auth preserves case; our codebase sometimes lowercases).
+      // B2 — the stored `email` on create MUST equal the auth
+      // token's email. Verification of that address is a separate
+      // concern — we preserve the signup/verify flow (user doc
+      // is created before the user has clicked the verification
+      // email), but the dispatcher (F8) refuses delivery to any
+      // email the Firebase Auth record does not mark verified.
+      // Email also lives in touchesPrivilegedFields so a signed-in
+      // user cannot later rewrite it to a different address.
       let roleAtCreate = d.get('role', 'member');
       let tokenEmail = request.auth.token.email;
       return isSelfAssignableRole(roleAtCreate)
@@ -337,21 +340,48 @@ service cloud.firestore {
           || d[field] is string
              && d[field].matches('^id-docs/' + kind + '/' + uid + '-' + side + '-[0-9]+\\.(jpe?g|png)$');
     }
-    function cleanIdReviewOwnerFields(d, uid) {
-      // Only pending-status self-writes. Allowed fields are the
-      // owner-authored evidence set. Reviewer-only fields may not
-      // appear in the owner's write.
-      let allowed = [
+    // Owner-authored fields (evidence paths + presence booleans +
+    // the user-controllable status transition back to pending).
+    function idReviewOwnerFields() {
+      return [
         'id_front_present','id_front_path',
         'id_back_present','id_back_path',
         'driver_license_front_present','driver_license_front_path',
         'driver_license_back_present','driver_license_back_path',
-        'status','uploaded_at','reviewed_at','reviewed_by',
+        'status','uploaded_at',
       ];
-      return d.keys().hasOnly(allowed)
+    }
+    // Server/reviewer-only fields that the owner cannot touch at
+    // all — but which may already exist on the row (migration
+    // metadata, reviewer stamps). F6 — the previous `hasOnly()`
+    // against owner fields broke owner RESUBMISSION on a row that
+    // had migration metadata like id_tokens_migrated_at.
+    function idReviewServerFields() {
+      return [
+        'reviewed_at','reviewed_by',
+        'id_tokens_migrated_at',
+      ];
+    }
+    // CREATE: owner may set only owner-authored fields. Reviewer
+    // metadata must not appear on a fresh row.
+    function cleanIdReviewOwnerCreate(d, uid) {
+      return d.keys().hasOnly(idReviewOwnerFields())
           && d.get('status', 'pending') == 'pending'
-          && d.get('reviewed_at', null) == null
-          && d.get('reviewed_by', null) == null
+          && idPathOk(d, 'id_front_path',              'personal', 'front', uid)
+          && idPathOk(d, 'id_back_path',               'personal', 'back',  uid)
+          && idPathOk(d, 'driver_license_front_path',  'driver',   'front', uid)
+          && idPathOk(d, 'driver_license_back_path',   'driver',   'back',  uid);
+    }
+    // UPDATE: owner may CHANGE only owner-authored fields. Server
+    // fields that already exist on the row may remain, but every
+    // key the owner is CHANGING must be in the owner-authored list,
+    // AND the resulting status must be 'pending' (owners cannot
+    // self-approve). Resubmission after migration therefore works
+    // because id_tokens_migrated_at stays untouched.
+    function cleanIdReviewOwnerUpdate(d, o, uid) {
+      let changed = d.diff(o).affectedKeys();
+      return changed.hasOnly(idReviewOwnerFields())
+          && d.get('status', 'pending') == 'pending'
           && idPathOk(d, 'id_front_path',              'personal', 'front', uid)
           && idPathOk(d, 'id_back_path',               'personal', 'back',  uid)
           && idPathOk(d, 'driver_license_front_path',  'driver',   'front', uid)
@@ -360,9 +390,9 @@ service cloud.firestore {
     match /id_reviews/{uid} {
       allow read:   if isExec() || isSelf(uid);
       allow create: if isExec()
-                    || (isSelf(uid) && cleanIdReviewOwnerFields(request.resource.data, uid));
+                    || (isSelf(uid) && cleanIdReviewOwnerCreate(request.resource.data, uid));
       allow update: if isExec()
-                    || (isSelf(uid) && cleanIdReviewOwnerFields(request.resource.data, uid));
+                    || (isSelf(uid) && cleanIdReviewOwnerUpdate(request.resource.data, resource.data, uid));
       allow delete: if false;
     }
 
@@ -506,7 +536,7 @@ service cloud.firestore {
         && request.resource.data.get('released_by', null) == request.auth.uid
         && pChanged().hasOnly([
              'status','claimed_by','claimed_at',
-             'cancel_reason','cancelled_at','released_by'
+             'cancel_reason','cancelled_at','released_by','released_at'
            ]);
     }
 
@@ -547,20 +577,25 @@ service cloud.firestore {
            ]);
     }
 
-    // Current claimant hands the run off to another volunteer. Clears
-    // the current claim; next volunteer re-claims via isAtomicClaim.
-    // Preserves handoff audit trail fields.
-    function isSelfHandoffEnroute() {
+    // Current claimant hands the run off to another volunteer. The
+    // service code allows handoff from `claimed` OR `enroute`; F9
+    // called out the earlier rule's enroute-only restriction as a
+    // mismatch. Both transitions are now covered by one function.
+    function isSelfHandoff() {
       return isClaimant()
-        && oldStatus() == 'enroute'
+        && oldStatus() in ['claimed','enroute']
         && newStatus() == 'available'
         && request.resource.data.get('claimed_by', null) == null
+        && request.resource.data.get('handoff_from_uid', null) == request.auth.uid
         && pChanged().hasOnly([
              'status','claimed_by','claimed_at','claimant_name','claimant_phone',
              'handoff_from_uid','handoff_from_name','handoff_from_phone',
              'handoff_reason','handoff_at'
            ]);
     }
+    // Legacy name kept so the match /pickups/{id} block below still
+    // compiles; delegates to the broader isSelfHandoff.
+    function isSelfHandoffEnroute() { return isSelfHandoff(); }
 
     // Current claimant completes delivery. REQUIRES a positive
     // actual_weight_lbs so a direct SDK write cannot land status=

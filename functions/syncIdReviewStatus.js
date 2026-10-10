@@ -19,21 +19,27 @@ exports.syncIdReviewStatus = functions
   .document('id_reviews/{uid}')
   .onWrite(async (change, context) => {
     const uid = context.params.uid;
-    const next = change.after.exists ? (change.after.data().status || null) : null;
-    if (next != null && !VALID_STATUSES.has(next)) return null;
-
-    const userRef = admin.firestore().doc(`users/${uid}`);
+    const userRef   = admin.firestore().doc(`users/${uid}`);
+    const reviewRef = admin.firestore().doc(`id_reviews/${uid}`);
     try {
+      // F3 — derive the mirrored status from the CURRENT review doc
+      // read inside the transaction, not the trigger event's `after`
+      // snapshot. A delayed "approved" event firing after the review
+      // was flipped back to "pending" (rejection + resubmission)
+      // would otherwise reset verification_status to approved.
       await admin.firestore().runTransaction(async (tx) => {
-        const uSnap = await tx.get(userRef);
-        if (!uSnap.exists) return; // user deleted — nothing to mirror
+        const [uSnap, rSnap] = await Promise.all([tx.get(userRef), tx.get(reviewRef)]);
+        if (!uSnap.exists) return;
+        const liveStatus = rSnap.exists ? (rSnap.data().status || null) : null;
+        if (liveStatus != null && !VALID_STATUSES.has(liveStatus)) return;
         const current = uSnap.data().verification_status || null;
-        if (current === next) return;
+        if (current === liveStatus) return;
         tx.update(userRef, {
-          verification_status: next,
-          verification_reviewed_at: next === 'approved' || next === 'rejected'
-            ? admin.firestore.FieldValue.serverTimestamp()
-            : null,
+          verification_status: liveStatus,
+          verification_reviewed_at:
+            liveStatus === 'approved' || liveStatus === 'rejected'
+              ? admin.firestore.FieldValue.serverTimestamp()
+              : null,
         });
       });
     } catch (e) {

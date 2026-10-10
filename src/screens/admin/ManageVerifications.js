@@ -74,23 +74,23 @@ export default function ManageVerifications({ navigation }) {
         });
       setMembers(joined);
 
-      // Pre-mint signed URLs for every path we need to render.
-      // Each URL expires in 5 minutes; reloads cycle them.
-      const paths = new Set();
-      for (const row of joined) {
-        [row.id_front_path, row.id_back_path, row.driver_license_front_path, row.driver_license_back_path]
-          .filter(Boolean).forEach((p) => paths.add(p));
-      }
+      // F11 — mint signed URLs using the joined row's own uid +
+      // the known kind/side for each path we hold. The old
+      // implementation reverse-parsed uid from the path with a
+      // `[^-]+` segment which broke on hyphenated UIDs.
       const map = {};
-      await Promise.all([...paths].map(async (p) => {
-        const m = /^id-docs\/(personal|driver)\/[^-]+-(front|back)-/.exec(p);
-        if (!m) return;
-        const kind = m[1], side = m[2];
-        const uidMatch = /^id-docs\/[^/]+\/([^-]+)-/.exec(p);
-        if (!uidMatch) return;
-        const uid = uidMatch[1];
+      const jobs = [];
+      for (const row of joined) {
+        const uid = row.id || row.uid;
+        if (!uid) continue;
+        if (row.id_front_path) jobs.push(['personal', 'front', row.id_front_path, uid]);
+        if (row.id_back_path)  jobs.push(['personal', 'back',  row.id_back_path,  uid]);
+        if (row.driver_license_front_path) jobs.push(['driver', 'front', row.driver_license_front_path, uid]);
+        if (row.driver_license_back_path)  jobs.push(['driver', 'back',  row.driver_license_back_path,  uid]);
+      }
+      await Promise.all(jobs.map(async ([kind, side, path, uid]) => {
         const url = await getIdViewUrl({ uid, kind, side });
-        if (url) map[p] = url;
+        if (url) map[path] = url;
       }));
       setThumbUrls(map);
     } catch { setMembers([]); }

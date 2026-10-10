@@ -119,17 +119,40 @@ async function rotateOne(bucket, path, ledgerRef) {
   }
   if (DRY_RUN) return { status: 'would_rotate' };
   const [meta] = await file.getMetadata();
+  const newTok = newToken();
   await file.setMetadata({
-    metadata: { ...(meta.metadata || {}), [TOKEN_META_KEY]: newToken() },
+    metadata: { ...(meta.metadata || {}), [TOKEN_META_KEY]: newTok },
   });
+  // F5 — record BOTH the Storage generation AND the token we wrote.
+  // A later run cross-checks live metadata against these before
+  // trusting a ledger entry's `rotated` status.
   const generation = meta.generation || null;
   await ledgerRef.set({
     path, status: 'rotated',
     generation,
+    rotated_token: newTok,
     rotated_at: admin.firestore.FieldValue.serverTimestamp(),
-    had_prior_token: !!(meta.metadata && meta.metadata[TOKEN_META_KEY]),
   }, { merge: true });
-  return { status: 'rotated', generation };
+  return { status: 'rotated', generation, token: newTok };
+}
+
+// F5 — verify a prior ledger entry still describes the live object.
+// Returns true when the generation + stored token match what we
+// wrote; false means the object was replaced (new upload) or the
+// token metadata was overwritten and we must rotate again.
+async function ledgerEntryIsStillValid(bucket, path, ledgerData) {
+  if (!ledgerData || ledgerData.status !== 'rotated') return false;
+  try {
+    const file = bucket.file(path);
+    const [exists] = await file.exists();
+    if (!exists) return false;
+    const [meta] = await file.getMetadata();
+    const liveGen = meta.generation || null;
+    const liveTok = (meta.metadata || {})[TOKEN_META_KEY] || null;
+    if (ledgerData.generation && String(ledgerData.generation) !== String(liveGen)) return false;
+    if (ledgerData.rotated_token && liveTok !== ledgerData.rotated_token) return false;
+    return true;
+  } catch { return false; }
 }
 
 async function main() {
@@ -168,7 +191,12 @@ async function main() {
     const ledgerRef = db.collection(LEDGER_COLLECTION).doc(pathHash(p));
     try {
       const prior = await ledgerRef.get();
-      if (prior.exists && prior.data()?.status === 'rotated' && !DRY_RUN) {
+      // F5 — a 'rotated' ledger entry is only trusted when live
+      // Storage metadata still matches the recorded generation and
+      // token. An overwrite (new upload) advances the generation
+      // and gets rotated again this run.
+      if (prior.exists && !DRY_RUN
+          && await ledgerEntryIsStillValid(bucket, p, prior.data())) {
         rotatedPaths.add(p);
         perObject.rotated += 1;
         continue;
@@ -203,56 +231,76 @@ async function main() {
     for (const [uid, _origRefs] of perUserRefs) {
       userUpdates.attempted += 1;
       try {
-        // Re-read the user — their state may have changed since the
-        // Phase-1 scan (new upload, exec correction, etc.).
-        const freshSnap = await db.doc(`users/${uid}`).get();
-        const u = freshSnap.exists ? freshSnap.data() : null;
-        if (!u) continue;
-        const now = collectReferencedPaths(u);
+        // F4 — read user AND id_review atomically inside a
+        // transaction, then write both from the live state. A
+        // new /users upload or a reviewer decision landing between
+        // the Phase-3 rotation and this write is preserved.
+        const userRef   = db.doc(`users/${uid}`);
+        const reviewRef = db.doc(`id_reviews/${uid}`);
+        await db.runTransaction(async (tx) => {
+          const [uSnap, rSnap] = await Promise.all([tx.get(userRef), tx.get(reviewRef)]);
+          if (!uSnap.exists) return;
+          const u = uSnap.data();
+          const existingReview = rSnap.exists ? (rSnap.data() || {}) : null;
+          const now = collectReferencedPaths(u);
+          const reviewUpdate = {};
+          const userClear = {};
 
-        // Build the review-doc path map AND the user-doc clear map
-        // in one pass. Prefer the current path, not the original.
-        const reviewUpdate = {
-          status: u.verification_status || 'pending',
-          uploaded_at: u.verification_submitted_at || admin.firestore.FieldValue.serverTimestamp(),
-          id_tokens_migrated_at: admin.firestore.FieldValue.serverTimestamp(),
-        };
-        const userClear = {};
-        let anyReviewFieldSet = false;
+          for (const [label, currentPath] of Object.entries(now)) {
+            if (!rotatedPaths.has(currentPath)) {
+              userUpdates.deferred_fields += 1;
+              continue;
+            }
+            const { kind, side } = inferKindAndSide(currentPath);
+            if (!side) { userUpdates.deferred_fields += 1; continue; }
+            const pathField    = fieldForReview(kind, side);
+            const presentField = presentFieldForReview(kind, side);
+            // F4 — only mint the mapping when the review slot is
+            // EMPTY. If a newer /id_reviews path already exists for
+            // this kind/side, the owner (or a reviewer) wrote it
+            // after our Phase-1 scan; we must not overwrite it with
+            // legacy evidence.
+            const reviewAlreadyHasPath = existingReview && existingReview[pathField];
+            if (reviewAlreadyHasPath) {
+              userUpdates.deferred_fields += 1;
+            } else {
+              reviewUpdate[pathField] = currentPath;
+              reviewUpdate[presentField] = true;
+            }
+            // Clear the specific legacy field whose path we rotated.
+            if (label.startsWith('driver.')) {
+              userClear[`driver.${label.slice('driver.'.length)}`] = null;
+            } else {
+              userClear[label] = null;
+            }
+          }
 
-        for (const [label, currentPath] of Object.entries(now)) {
-          // Only act when the CURRENT stored path is in rotatedPaths.
-          if (!rotatedPaths.has(currentPath)) {
-            userUpdates.deferred_fields += 1;
-            continue;
+          const mintedAny = Object.keys(reviewUpdate).length > 0;
+          if (mintedAny) {
+            // F4 — only INITIALIZE verification_status when the
+            // review row has none. We do NOT overwrite an existing
+            // reviewer decision with the legacy /users status.
+            const payload = {
+              ...reviewUpdate,
+              id_tokens_migrated_at: admin.firestore.FieldValue.serverTimestamp(),
+            };
+            if (!existingReview || !existingReview.status) {
+              payload.status = u.verification_status || 'pending';
+              payload.uploaded_at = u.verification_submitted_at
+                ? u.verification_submitted_at
+                : admin.firestore.FieldValue.serverTimestamp();
+            }
+            tx.set(reviewRef, payload, { merge: true });
+            userUpdates.reviews_minted += 1;
           }
-          const { kind, side } = inferKindAndSide(currentPath);
-          if (!side) {
-            userUpdates.deferred_fields += 1;
-            continue;
-          }
-          // Mint review mapping (B10).
-          reviewUpdate[fieldForReview(kind, side)] = currentPath;
-          reviewUpdate[presentFieldForReview(kind, side)] = true;
-          anyReviewFieldSet = true;
-          // Clear the legacy field (B9: only this specific field).
-          if (label.startsWith('driver.')) {
-            userClear[`driver.${label.slice('driver.'.length)}`] = null;
-          } else {
-            userClear[label] = null;
-          }
-        }
 
-        if (anyReviewFieldSet) {
-          await db.doc(`id_reviews/${uid}`).set(reviewUpdate, { merge: true });
-          userUpdates.reviews_minted += 1;
-        }
-        const clearedKeys = Object.keys(userClear);
-        if (clearedKeys.length) {
-          userClear.id_tokens_rotated_at = admin.firestore.FieldValue.serverTimestamp();
-          await db.doc(`users/${uid}`).update(userClear);
-          userUpdates.cleared_fields += clearedKeys.length;
-        }
+          const clearedKeys = Object.keys(userClear);
+          if (clearedKeys.length) {
+            userClear.id_tokens_rotated_at = admin.firestore.FieldValue.serverTimestamp();
+            tx.update(userRef, userClear);
+            userUpdates.cleared_fields += clearedKeys.length;
+          }
+        });
       } catch (e) {
         userUpdates.errors += 1;
         console.warn('user migrate failed', uid, e?.message);

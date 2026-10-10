@@ -42,7 +42,10 @@ async function getAccessToken(env) {
   const header = { alg: 'RS256', typ: 'JWT' };
   const claim = {
     iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/datastore',
+    // F8 — adds `firebase` scope so the Identity Toolkit
+    // accounts:lookup call (used to confirm emailVerified) can
+    // authenticate alongside Firestore writes.
+    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase',
     aud: 'https://oauth2.googleapis.com/token',
     iat: now, exp: now + 3600,
   };
@@ -233,15 +236,72 @@ async function fetchRecipient(env, token, uid) {
   }
 }
 
-function resolveChannels(user, kind) {
+// F8 — resolve the authoritative Firebase Auth record for the
+// recipient. The Auth record's email + emailVerified fields are
+// the trust boundary for the delivery address. A /users.email that
+// was seeded at signup from an unverified token stays unverified
+// until the user clicks the verify link; we must not deliver until
+// Auth confirms. Identity Toolkit REST exposes this at
+// projects/<id>/accounts:lookup.
+async function fetchAuthRecord(env, token, uid) {
+  if (!uid) return { kind: 'missing' };
+  const url = `https://identitytoolkit.googleapis.com/v1/projects/${env.FIRESTORE_PROJECT_ID}/accounts:lookup`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ localId: [uid] }),
+    });
+    if (!r.ok) {
+      // 400 "USER_NOT_FOUND" is terminal; other codes retry.
+      if (r.status === 400) return { kind: 'missing' };
+      return { kind: 'transient', code: r.status };
+    }
+    const body = await r.json();
+    const u = (body.users || [])[0];
+    if (!u) return { kind: 'missing' };
+    return {
+      kind: 'ok',
+      email: u.email || null,
+      emailVerified: u.emailVerified === true,
+      disabled: u.disabled === true,
+    };
+  } catch (e) {
+    return { kind: 'transient', code: 0, message: e?.message || 'auth_lookup_error' };
+  }
+}
+
+function resolveChannels(user, kind, authRecord) {
   if (!user) return { push: false, email: false };
   const prefKey = prefKeyForKind(kind);
   const wantsKind = user[prefKey] !== false; // default true
+
+  // Email delivery requires:
+  //  (1) kind preference not off,
+  //  (2) email consent not revoked,
+  //  (3) Auth record reports emailVerified: true,
+  //  (4) /users.email matches the Auth email (defense in depth —
+  //      stale /users.email never selects a different address).
+  const authEmail = authRecord?.email || null;
+  const emailMatches =
+    authRecord?.kind === 'ok' &&
+    authEmail &&
+    user.email &&
+    String(user.email).toLowerCase() === String(authEmail).toLowerCase();
+  const emailOk =
+    wantsKind &&
+    user.email_consent !== false &&
+    authRecord?.emailVerified === true &&
+    emailMatches;
+
   return {
     push:  wantsKind && user.push_enabled === true && !!user.onesignal_player_id,
-    email: wantsKind && user.email_consent !== false && !!user.email,
+    email: !!emailOk,
     player_id: user.onesignal_player_id || null,
-    email_addr: user.email || null,
+    // Always use the Auth email as the delivery destination — never
+    // the /users row, which can be stale or (historically) seeded
+    // from an unverified token.
+    email_addr: emailOk ? authEmail : null,
     name: user.name || '',
   };
 }
@@ -265,9 +325,6 @@ async function tick(env) {
 
       const look = await fetchRecipient(env, token, doc.fields.user_id);
       if (look.kind === 'transient') {
-        // Don't mark sent — the row stays queued and the next cron
-        // cycle retries. Bump attempts; after MAX_ATTEMPTS, flag as
-        // failed with the lookup reason so it drops out of the loop.
         const attempts = (doc.fields.attempts || 0) + 1;
         if (attempts >= MAX_ATTEMPTS) {
           await patchStatus(env, token, doc.name, 'failed',
@@ -278,13 +335,31 @@ async function tick(env) {
         continue;
       }
       if (look.kind === 'missing') {
-        // Terminal — the recipient doc has been deleted / never
-        // existed. In-app bell was already dropped by the client.
         await patchStatus(env, token, doc.name, 'rejected', 'recipient_missing');
         continue;
       }
 
-      const ch = resolveChannels(look.data, doc.fields.kind);
+      // F8 — resolve the authoritative Auth record alongside the
+      // profile. A transient lookup failure retries; a missing
+      // record is terminal.
+      const authLook = await fetchAuthRecord(env, token, doc.fields.user_id);
+      if (authLook.kind === 'transient') {
+        const attempts = (doc.fields.attempts || 0) + 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          await patchStatus(env, token, doc.name, 'failed',
+            `auth_lookup_${authLook.code || authLook.message || 'error'}`);
+        } else {
+          await bumpAttempts(env, token, doc.name, attempts);
+        }
+        continue;
+      }
+      if (authLook.kind === 'missing' || authLook.disabled) {
+        await patchStatus(env, token, doc.name, 'rejected',
+          authLook.disabled ? 'recipient_disabled' : 'recipient_missing');
+        continue;
+      }
+
+      const ch = resolveChannels(look.data, doc.fields.kind, authLook);
 
       // Track per-channel completion so a partial failure doesn't
       // silently discard the un-sent half.

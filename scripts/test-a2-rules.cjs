@@ -32,9 +32,20 @@ const OUT_PRES = 'oscar-pres';
 const REST_OWNER = 'rose-rest';
 const REST_ID = 'rose-restaurant';
 
-async function seed(env) {
+// F10 — every withSecurityRulesDisabled callback MUST capture
+// ctx.firestore() once and reuse that handle. rules-unit-testing
+// 3.0.4 reapplies emulator settings on every ctx.firestore() call,
+// which throws after the first operation. Helpers below enforce
+// the pattern.
+async function seedBlock(env, fn) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
+    await fn(db);
+  });
+}
+
+async function seed(env) {
+  await seedBlock(env, async (db) => {
     await db.doc(`users/${ALICE}`).set({ id: ALICE, name: 'Alice', email: 'alice@x', role: 'member', member_status: 'approved', chapter_id: 'ch-memphis', lbs_rescued: 10 });
     await db.doc(`users/${BOB}`).set({ id: BOB, name: 'Bob', email: 'bob@x', role: 'member', member_status: 'approved', chapter_id: 'ch-nyc' });
     await db.doc(`users/${PRES}`).set({ id: PRES, name: 'Pat', email: 'pat@x', role: 'chapter_president', member_status: 'approved', chapter_id: 'ch-memphis' });
@@ -110,8 +121,8 @@ async function main() {
   await assertFails(fs_(bobUnverified).doc(`users/${ALICE}`).get());
   // Unverified founder-email cannot self-elevate.
   const founderUnv = unverified(env, 'mallory', 'satvik.koya@betternatureofficial.org');
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc('users/mallory').set({ id: 'mallory', name: 'M', role: 'member', member_status: 'pending' });
+  await seedBlock(env, async (db) => {
+    await db.doc('users/mallory').set({ id: 'mallory', name: 'M', role: 'member', member_status: 'pending' });
   });
   await assertFails(fs_(founderUnv).doc('users/mallory').update({ role: 'super_admin' }));
   // Verified founder-email still works.
@@ -145,7 +156,8 @@ async function main() {
   await assertFails   (fs_(bobUnverified).collection('users').where('email', '==', 'alice@x').get());
 
   // ── id_reviews (R8 + R4 path shape) ────────────────────────────
-  // Alice can create her own pending review with a correctly-shaped path.
+  // F11 — hyphenated UIDs must still match the path pattern.
+  // ALICE constant is 'alice-member'; both halves are regex-safe.
   await assertSucceeds(fs_(alice).doc(`id_reviews/${ALICE}`).set({
     id_front_present: true,
     id_front_path: `id-docs/personal/${ALICE}-front-1700000000000.jpg`,
@@ -172,6 +184,33 @@ async function main() {
   // Exec can read.
   await assertSucceeds(fs_(exec).doc(`id_reviews/${ALICE}`).get());
 
+  // ── F6 — resubmission after migration ──────────────────────────
+  // Seed a migrated review for Bob: has id_tokens_migrated_at + a
+  // reviewer decision (rejected). Bob must be able to resubmit by
+  // writing new paths + status:pending without touching migration
+  // metadata.
+  await seedBlock(env, async (db) => {
+    await db.doc(`id_reviews/${BOB}`).set({
+      id_front_present: true,
+      id_front_path: `id-docs/personal/${BOB}-front-1690000000000.jpg`,
+      status: 'rejected',
+      reviewed_at: new Date(),
+      reviewed_by: EXEC,
+      id_tokens_migrated_at: new Date(),
+    });
+  });
+  // Resubmit — change evidence + flip status back to pending.
+  await assertSucceeds(fs_(bob).doc(`id_reviews/${BOB}`).update({
+    id_front_present: true,
+    id_front_path: `id-docs/personal/${BOB}-front-1710000000000.jpg`,
+    id_back_present: true,
+    id_back_path: `id-docs/personal/${BOB}-back-1710000000001.jpg`,
+    status: 'pending',
+    uploaded_at: new Date(),
+  }));
+  // Bob still cannot self-approve a resubmitted row.
+  await assertFails(fs_(bob).doc(`id_reviews/${BOB}`).update({ status: 'approved' }));
+
   // ── Outbox lockdown ────────────────────────────────────────────
   // Self-recipient OK, no channel/email/player_id stuffing.
   await assertSucceeds(fs_(alice).collection('notifications_outbox').add({
@@ -195,27 +234,25 @@ async function main() {
   }));
 
   // ── tax_receipts list vs get ──────────────────────────────────
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc('tax_receipts/r1').set({ pickup_id: 'p1', donor: 'alice@x' });
+  await seedBlock(env, async (db) => {
+    await db.doc('tax_receipts/r1').set({ pickup_id: 'p1', donor: 'alice@x' });
   });
   await assertSucceeds(fs_(anon).doc('tax_receipts/r1').get());
   await assertFails   (fs_(anon).collection('tax_receipts').get());
 
   // ── B1 — signup finalization allowlist ─────────────────────────
-  // Legitimate finalization (restaurant signup) must still succeed.
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc(`restaurants/mine`).set({ user_id: 'carl', status: 'pending' });
-    await ctx.firestore().doc(`users/carl`).set({ id: 'carl', name: 'Carl', email: 'carl@x', role: 'member', member_status: 'pending' });
+  await seedBlock(env, async (db) => {
+    await db.doc(`restaurants/mine`).set({ user_id: 'carl', status: 'pending' });
+    await db.doc(`users/carl`).set({ id: 'carl', name: 'Carl', email: 'carl@x', role: 'member', member_status: 'pending' });
   });
   const carl = verified(env, 'carl', 'carl@x');
   await assertSucceeds(fs_(carl).doc(`users/carl`).update({
     restaurant_id: 'mine', restaurant_status: 'pending', chapter_id: 'ch-memphis',
     chapter_name: 'Memphis', partner_type: 'restaurant', role: 'restaurant',
   }));
-  // Attack — signup finalization + email change in one update → DENIED.
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc(`restaurants/mine2`).set({ user_id: 'dana', status: 'pending' });
-    await ctx.firestore().doc(`users/dana`).set({ id: 'dana', name: 'Dana', email: 'dana@x', role: 'member', member_status: 'approved' });
+  await seedBlock(env, async (db) => {
+    await db.doc(`restaurants/mine2`).set({ user_id: 'dana', status: 'pending' });
+    await db.doc(`users/dana`).set({ id: 'dana', name: 'Dana', email: 'dana@x', role: 'member', member_status: 'approved' });
   });
   const dana = verified(env, 'dana', 'dana@x');
   await assertFails(fs_(dana).doc(`users/dana`).update({
@@ -233,21 +270,19 @@ async function main() {
   await assertSucceeds(fs_(ed).doc('users/ed').set({ id: 'ed', name: 'E', email: 'ed@x', role: 'member', member_status: 'pending' }));
 
   // ── B4 — isSelfReleaseClaim requires released_by == auth.uid ──
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc(`pickups/rp1`).set({
+  await seedBlock(env, async (db) => {
+    await db.doc(`pickups/rp1`).set({
       restaurant_id: REST_ID, chapter_id: 'ch-memphis',
       status: 'claimed', claimed_by: ALICE,
     });
   });
-  // Alice releases her own claim — must stamp released_by: herself.
   await assertSucceeds(fs_(alice).doc(`pickups/rp1`).update({
     status: 'available', claimed_by: null, claimed_at: null,
-    released_by: ALICE, cancel_reason: 'change_of_plans',
-    cancelled_at: new Date().toISOString(),
+    released_by: ALICE, released_at: new Date().toISOString(),
+    cancel_reason: 'change_of_plans', cancelled_at: new Date().toISOString(),
   }));
-  // Attack — Bob tries to release Alice's pickup → DENIED.
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc(`pickups/rp2`).set({
+  await seedBlock(env, async (db) => {
+    await db.doc(`pickups/rp2`).set({
       restaurant_id: REST_ID, chapter_id: 'ch-memphis',
       status: 'claimed', claimed_by: ALICE,
     });

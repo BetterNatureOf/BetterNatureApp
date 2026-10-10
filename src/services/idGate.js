@@ -28,8 +28,18 @@ export function requireVerifiedId(user, navigation) {
        user.roles.includes('partner') || user.roles.includes('restaurant')
      )) return true;
 
-  // Missing ID upload.
-  if (!user?.id_document_url) {
+  // F1 — ID presence is now mirrored from /id_reviews via the new
+  // evidence pipeline. Legacy user.id_document_url is a bridge for
+  // rows that haven't been migrated yet; migration also stamps
+  // id_front_present:true on the user doc via the revocation
+  // script's Phase 4. verification_status alone is also sufficient
+  // — if an exec approved the review the user is cleared regardless
+  // of which schema their evidence is in.
+  const hasEvidence =
+    user?.id_front_present === true ||
+    user?.id_document_url ||  // legacy bridge
+    user?.verification_status === 'approved';
+  if (!hasEvidence) {
     (async () => {
       const ok = await confirm(
         'Verify your ID first',
@@ -103,7 +113,11 @@ export function requireWaiverOnly(user, navigation) {
   if (Array.isArray(user?.roles) && (
        user.roles.includes('partner') || user.roles.includes('restaurant')
      )) return true;
-  if (!user?.id_document_url) return requireVerifiedId(user, navigation);
+  const hasEvidence =
+    user?.id_front_present === true ||
+    user?.id_document_url ||
+    user?.verification_status === 'approved';
+  if (!hasEvidence) return requireVerifiedId(user, navigation);
   if (user.verification_status && user.verification_status !== 'approved') return requireVerifiedId(user, navigation);
   if (!user?.waiver_signed) return requireVerifiedId(user, navigation);
   return true;

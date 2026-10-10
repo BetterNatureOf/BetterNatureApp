@@ -77,17 +77,19 @@ function projectionsEqual(a, b) {
  *
  * B7 — runs inside a Firestore transaction so a stale invocation
  * cannot overwrite a newer one. The transaction reads /users and
- * /public_profiles together, then writes the destination with the
- * source's observed revision marker (source_rev). On commit retry
- * the transaction re-reads live state, so a late event never
- * resurrects a deleted mirror and an older /users snapshot cannot
- * stomp a newer one.
+ * /public_profiles together, then writes the destination from the
+ * CURRENT /users state. On commit retry the transaction re-reads
+ * live state, so a late event never resurrects a deleted mirror
+ * and an older /users snapshot cannot stomp a newer one — the
+ * trigger invocation is effectively just a scheduling signal.
  *
- * `source_rev` is pulled from the /users row's `updated_at`
- * timestamp when present. If the source has no `updated_at` we
- * fall back to writing without preconditions (first write of a
- * long-lived legacy row); subsequent writes get the precondition
- * once the row has been touched.
+ * F7 — the previous version additionally compared `updated_at`
+ * timestamps and returned `skipped_stale` when the mirror's stored
+ * `source_rev` was >= the source's `updated_at`. That broke
+ * legitimate current-state updates: many /users writes in this
+ * codebase don't bump `updated_at`, so a real change (name, hours)
+ * was silently skipped. The transaction's live read + rewrite is
+ * sufficient; drop the client-timestamp guard entirely.
  */
 async function reconcile(db, uid) {
   const srcRef = db.doc(`users/${uid}`);
@@ -101,8 +103,7 @@ async function reconcile(db, uid) {
       }
       return 'missing_source';
     }
-    const srcData = srcSnap.data();
-    const next = project(uid, srcData);
+    const next = project(uid, srcSnap.data());
     if (!next) {
       if (pubSnap.exists) {
         tx.delete(pubRef);
@@ -111,33 +112,15 @@ async function reconcile(db, uid) {
       return 'missing_source';
     }
     const existing = pubSnap.exists ? pubSnap.data() : null;
-    // Stale-event guard — if the mirror already carries a
-    // source_rev newer than this event's /users snapshot, skip.
-    // Compares the stored ms-epoch; falls through when either side
-    // lacks a timestamp (legacy rows), relying on the transaction
-    // itself to serialise.
-    const incomingRev = toMillis(srcData.updated_at);
-    const existingRev = existing ? toMillis(existing.source_rev) : 0;
-    if (incomingRev && existingRev && existingRev >= incomingRev) {
-      return 'skipped_stale';
-    }
     // Short-circuit no-op writes — a private-field edit shouldn't
     // bump the mirror's updated_at. But still write if the mirror
-    // is missing (destination repair).
+    // is missing (destination repair) or the projection changed.
     if (existing && projectionsEqual(existing, next)) {
       return 'unchanged';
     }
-    tx.set(pubRef, { ...next, source_rev: incomingRev || null }, { merge: false });
+    tx.set(pubRef, next, { merge: false });
     return 'wrote';
   });
-}
-
-function toMillis(v) {
-  if (!v) return 0;
-  if (typeof v === 'number') return v;
-  if (typeof v.toMillis === 'function') { try { return v.toMillis(); } catch { return 0; } }
-  if (v.seconds != null && v.nanoseconds != null) return v.seconds * 1000 + Math.floor(v.nanoseconds / 1e6);
-  const d = new Date(v); return Number.isFinite(d.getTime()) ? d.getTime() : 0;
 }
 
 module.exports = { project, projectionsEqual, reconcile, ALLOWLIST, roleLabel };
