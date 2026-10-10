@@ -56,17 +56,13 @@ service cloud.firestore {
     }
 
     // ── users ──
-    // Anyone signed in can read member profiles (for leaderboard, signups).
-    // The user themselves can update non-privileged fields. Privileged
-    // fields (role, member_status, verification_status, restaurant_status)
-    // can only be changed by execs — OR by the user themselves if and
-    // only if their auth email is on the BetterNature founder domain.
-    // This closes the rule-level hole where a regular member could call
-    // setDoc({role:'executive'}) on their own doc via the JS SDK.
-    // EXPLICIT founder allowlist. Mirrors src/services/founder.js.
-    // Anyone NOT on this list — including other @betternatureofficial.org
-    // staff — cannot self-promote and must be promoted by an exec
-    // through Manage Members.
+    // Reads: any signed-in user. (Audit A2 — split to public_profiles
+    // deferred to a follow-up PR; too many call sites to break at once.)
+    //
+    // Writes: owner can touch non-privileged fields; privileged ones
+    // require an exec OR the founder editing their own doc. On CREATE,
+    // we additionally restrict what the owner can seed so an attacker
+    // cannot self-mint `role: executive` via the SDK (audit A1).
     function isFounderToken() {
       return request.auth != null
         && request.auth.token.email != null
@@ -74,21 +70,81 @@ service cloud.firestore {
              'satvik.koya@betternatureofficial.org',
            ];
     }
+    // Hard-privileged fields: authorization vectors that only exec
+    // can self-write (plus the founder's own doc).
     function touchesPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasAny(['role','roles','member_status','verification_status','restaurant_status','disabled','disabled_at']);
     }
+    // Roles a user is allowed to self-assign at signup. Everything
+    // higher (chapter_president, executive, admin, super_admin) must
+    // come from an exec update, not a client write.
+    function isSelfAssignableRole(r) {
+      return r == null || r in ['member', 'restaurant'];
+    }
+    // Create-time field discipline (audit A1). Blocks a signed-up
+    // member from seeding themselves as executive, pre-approved,
+    // pre-verified, or role-elevated via the signup write.
+    function cleanCreateFields() {
+      let d = request.resource.data;
+      // Member role must start pending (requires exec approval). Only
+      // 'restaurant' may start with member_status 'approved' because
+      // their gate is restaurant_status, not member_status. Blocks
+      // audit B4 — self-create with member_status:'approved' bypass.
+      let roleAtCreate = d.get('role', 'member');
+      return isSelfAssignableRole(roleAtCreate)
+          && (!('roles' in d) || d.roles.hasOnly(['member', 'restaurant', 'partner']))
+          && (!('member_status' in d)
+              || (roleAtCreate == 'member' && d.member_status == 'pending')
+              || (roleAtCreate == 'restaurant' && d.member_status in ['pending', 'approved']))
+          && (!('verification_status' in d) || d.verification_status in ['pending', 'none', 'unverified'])
+          && (!('restaurant_status' in d) || d.restaurant_status in ['pending', 'incomplete'])
+          && !('disabled' in d)
+          && !('disabled_at' in d);
+    }
+    // Audit A4 — a chapter president can today self-write chapter_id
+    // and acquire admin scope over another chapter's events. Block
+    // chapter_id self-writes from users who currently hold a chapter-
+    // scoped admin role. Ordinary members may still self-set their
+    // own chapter (signup, Complete Profile) because that write
+    // doesn't elevate any scope — their role has no chapter-admin
+    // powers. Execs bypass via the outer isExec() clause.
+    function selfChapterIdOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['chapter_id'])
+          || !hasAnyRole(['chapter_president','chapter_pres']);
+    }
+    // Audit A3 — a member can today self-write restaurant_id to any
+    // legit restaurant's id and then post pickups as that partner.
+    // Limit self-writes to the one-shot signup transition: previous
+    // restaurant_id must be null. After the signup finalization write
+    // only exec can touch it.
+    function selfRestaurantIdOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['restaurant_id'])
+          || resource.data.get('restaurant_id', null) == null;
+    }
+    // One-shot restaurant signup finalization carve-out. A freshly
+    // created user transitions themselves into a PENDING restaurant
+    // partner by stamping restaurant_id + chapter linkage + roles.
+    // Exec approval in Manage Restaurants is still required before
+    // the partner is active, so this self-write doesn't elevate any
+    // real power — it just gets them into the approval queue.
+    function isSelfRestaurantSignup() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return o.get('restaurant_status', null) in [null, 'incomplete']
+          && d.get('restaurant_status', null) in ['pending', 'incomplete']
+          && d.get('role', o.get('role', 'member')) in ['member', 'restaurant']
+          && (!('roles' in d) || d.roles.hasOnly(['member', 'restaurant', 'partner']))
+          && !d.diff(o).affectedKeys()
+             .hasAny(['member_status','verification_status','disabled','disabled_at']);
+    }
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isSelf(uid);
-      // Anyone can edit their own non-privileged fields (name, phone,
-      // address, prefs). Privileged fields (role, member_status, etc.)
-      // require an exec, OR the writer being a founder editing their
-      // own doc. Non-founder members literally cannot escalate
-      // themselves no matter what JS they run.
+      allow create: if isSelf(uid) && cleanCreateFields();
       allow update: if isExec()
-        || (isSelf(uid) && !touchesPrivilegedFields())
-        || (isSelf(uid) && isFounderToken());
+        || (isSelf(uid) && isFounderToken())
+        || (isSelf(uid) && !touchesPrivilegedFields() && selfChapterIdOk() && selfRestaurantIdOk())
+        || (isSelf(uid) && isSelfRestaurantSignup() && selfChapterIdOk() && selfRestaurantIdOk());
       allow delete: if isAdmin();
     }
 
@@ -161,16 +217,163 @@ service cloud.firestore {
     // volunteers progress them through the claim/enroute/complete
     // states; execs can do anything for org-wide queue management.
     //
-    // Helper: does the signed-in user own this restaurant_id? True
-    // if the rid equals their auth uid OR matches the restaurant_id
-    // we stamped on their user doc at signup. We re-fetch the user
-    // doc inside the rule so even brand-new restaurant accounts
-    // work without a fresh sign-in.
+    // Updates are now FIELD-LEVEL (audit A3): each legitimate
+    // transition has its own allow-function enforcing the exact set
+    // of fields it may touch, the status it must come from, the
+    // status it must land in, and the identity doing the write.
+    // This closes:
+    //   • a current claimant arbitrarily rewriting status/weight/
+    //     verified_by_restaurant_at (which minted fraudulent receipts
+    //     and hours),
+    //   • "claim-via-update" theft of an in-progress run by any
+    //     signed-in user,
+    //   • restaurant_id self-write mis-attributing pickups.
     function pickupRid() { return request.resource.data.restaurant_id; }
     function existingRid() { return resource.data.restaurant_id; }
     function userRid() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id;
     }
+    function isRestaurantOwner() {
+      return isSignedIn() && existingRid() != null
+        && (existingRid() == request.auth.uid || existingRid() == userRid());
+    }
+    function pChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function newStatus() { return request.resource.data.status; }
+    function oldStatus() { return resource.data.status; }
+    function isClaimant() {
+      return isSignedIn() && resource.data.claimed_by == request.auth.uid;
+    }
+
+    // Volunteer atomically claims an available pickup. Blocks claim-
+    // via-update theft (audit A3/C2) by requiring the previous status
+    // to be 'available' and the previous claimed_by to be null.
+    function isAtomicClaim() {
+      return isSignedIn()
+        && oldStatus() == 'available'
+        && newStatus() == 'claimed'
+        && resource.data.get('claimed_by', null) == null
+        && request.resource.data.claimed_by == request.auth.uid
+        && pChanged().hasOnly([
+             'status','claimed_by','claimed_at','claimant_phone','claimant_name'
+           ]);
+    }
+
+    // Current claimant releases their own claim before enroute. Clears
+    // ownership + stamps cancel audit fields. Cannot be used after
+    // enroute (handoff/abandonment is the right path there).
+    function isSelfReleaseClaim() {
+      return isClaimant()
+        && oldStatus() == 'claimed'
+        && newStatus() == 'available'
+        && request.resource.data.get('claimed_by', null) == null
+        && pChanged().hasOnly([
+             'status','claimed_by','claimed_at','cancel_reason','cancelled_at'
+           ]);
+    }
+
+    // Current claimant sets themselves enroute (travelling to pickup).
+    // Narrow fields so the volunteer cannot smuggle a status→completed
+    // or a weight write through this path.
+    function isSelfSetEnroute() {
+      return isClaimant()
+        && oldStatus() == 'claimed'
+        && newStatus() == 'enroute'
+        && pChanged().hasOnly([
+             'status','enroute_at',
+             'fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng'
+           ]);
+    }
+
+    // Current claimant swaps the destination fridge mid-run.
+    function isSelfUpdateFridge() {
+      return isClaimant()
+        && pChanged().hasOnly([
+             'fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng','fridge_changed_at'
+           ]);
+    }
+
+    // Current claimant reports food spoiled/unusable. Lands in
+    // 'completed' with spoiled=true + actual_weight_lbs=0 (so dashboard
+    // reducers that fall back to estimated weight will no longer count
+    // this as rescued — audit C7 is a separate reducer fix on top).
+    function isSelfReportSpoiled() {
+      return isClaimant()
+        && oldStatus() in ['claimed','enroute']
+        && newStatus() == 'completed'
+        && request.resource.data.get('spoiled', false) == true
+        && request.resource.data.get('actual_weight_lbs', 1) == 0
+        && pChanged().hasOnly([
+             'status','spoiled','spoiled_kind','spoiled_note',
+             'completed_at','actual_weight_lbs','hours_earned'
+           ]);
+    }
+
+    // Current claimant hands the run off to another volunteer. Clears
+    // the current claim; next volunteer re-claims via isAtomicClaim.
+    // Preserves handoff audit trail fields.
+    function isSelfHandoffEnroute() {
+      return isClaimant()
+        && oldStatus() == 'enroute'
+        && newStatus() == 'available'
+        && request.resource.data.get('claimed_by', null) == null
+        && pChanged().hasOnly([
+             'status','claimed_by','claimed_at','claimant_name','claimant_phone',
+             'handoff_from_uid','handoff_from_name','handoff_from_phone',
+             'handoff_reason','handoff_at'
+           ]);
+    }
+
+    // Current claimant completes delivery. REQUIRES a positive
+    // actual_weight_lbs so a direct SDK write cannot land status=
+    // completed with weight=0 (which would mint hours + an empty
+    // receipt). The weight check is enforced server-side by the
+    // transaction in completePickup; this rule is the belt-and-
+    // suspenders enforcement at the auth layer.
+    function isSelfComplete() {
+      return isClaimant()
+        && oldStatus() == 'enroute'
+        && newStatus() == 'completed'
+        && request.resource.data.actual_weight_lbs is number
+        && request.resource.data.actual_weight_lbs > 0
+        && pChanged().hasOnly([
+             'status','completed_at','actual_weight_lbs','hours_earned',
+             'dropoff_photo_url',
+             'fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng','fridge_changed_at',
+             'handoff_unverified','handoff_unverified_note','handoff_unverified_at'
+           ]);
+    }
+
+    // Claimant stamps the receipt link onto their completed pickup.
+    // Separate rule because the status does not change here but the
+    // write happens outside the completion transaction.
+    function isSelfStampReceipt() {
+      return isClaimant()
+        && oldStatus() == 'completed'
+        && newStatus() == 'completed'
+        && pChanged().hasOnly(['tax_receipt_id','tax_receipt_url','delivered_visible_to_restaurant']);
+    }
+
+    // Restaurant physically confirms the handoff. Audit C3: today the
+    // CLAIMANT could stamp verified_by_restaurant_at themselves — this
+    // isolates the write to the restaurant owner.
+    function isRestaurantVerify() {
+      return isRestaurantOwner()
+        && pChanged().hasOnly([
+             'verified_by_restaurant_at','verified_by_restaurant_uid','verified_by_restaurant_name'
+           ]);
+    }
+
+    // Restaurant cancels before any claim OR before enroute. The
+    // service layer already blocks cancel after enroute; this rule
+    // enforces the field set.
+    function isRestaurantCancel() {
+      return isRestaurantOwner()
+        && newStatus() == 'cancelled'
+        && pChanged().hasOnly(['status','cancel_reason','cancelled_at']);
+    }
+
     match /pickups/{id} {
       allow read: if isSignedIn();
 
@@ -184,13 +387,21 @@ service cloud.firestore {
         && (pickupRid() == request.auth.uid || pickupRid() == userRid())
       );
 
-      // Update: exec, original poster, or the volunteer who's
-      // currently claimed the pickup.
+      // Update: exec OR any of the narrow transition rules above.
+      // Everything that doesn't match a transition is denied, which
+      // means a direct SDK write with arbitrary fields can no longer
+      // forge a completion or steal a claim.
       allow update: if isExec()
-        || (isSignedIn() && existingRid() != null
-            && (existingRid() == request.auth.uid || existingRid() == userRid()))
-        || (isSignedIn() && resource.data.claimed_by == request.auth.uid)
-        || (isSignedIn() && request.resource.data.claimed_by == request.auth.uid);
+        || isAtomicClaim()
+        || isSelfReleaseClaim()
+        || isSelfSetEnroute()
+        || isSelfUpdateFridge()
+        || isSelfReportSpoiled()
+        || isSelfHandoffEnroute()
+        || isSelfComplete()
+        || isSelfStampReceipt()
+        || isRestaurantVerify()
+        || isRestaurantCancel();
 
       allow delete: if isAdmin();
     }
@@ -241,13 +452,13 @@ service cloud.firestore {
     }
 
     // ── notifications_outbox ──
-    // Drained by the Cloudflare dispatcher worker, which sends each
-    // doc out as email/push. Open create so unauth signup-flow
-    // surfaces (chapter applications, partner forms) can drop a
-    // receipt; read/delete reserved for the dispatcher's service
-    // account and execs.
+    // Audit A6: anonymous create was too permissive. Lock to signed-
+    // in writers. Unauth signup-flow surfaces (chapter_applications,
+    // partner forms) that previously dropped a receipt from here now
+    // need a Cloud Function (planned in Phase 2). The dispatcher
+    // reads/updates/deletes via admin SDK, which bypasses rules.
     match /notifications_outbox/{id} {
-      allow create: if true;
+      allow create: if isSignedIn();
       allow read, update, delete: if isExec();
     }
 
@@ -284,19 +495,32 @@ service cloud.firestore {
     // an auth round-trip. Writes only happen from inside the app via
     // bumpOrgStats() — restricted to signed-in users so anonymous traffic
     // can't inflate the counters.
+    //
+    // Audit A7: beyond field-set whitelist, each counter must be a
+    // non-negative forward increment bounded by a sane per-op maximum
+    // so a logged-in attacker cannot console-write meals: -9999 or
+    // meals: 99999999 to tank or inflate the ticker.
+    function isForwardBump(key, maxDelta) {
+      let old = resource.data.get(key, 0);
+      let new_ = request.resource.data.get(key, old);
+      return new_ is number
+        && new_ >= old
+        && (new_ - old) <= maxDelta;
+    }
     match /org_stats/{id} {
       allow read: if true;
-      // bumpOrgStats is called as a side effect of legitimate writes
-      // (pickup complete, event check-in, donation). The doc only
-      // carries running counters — no PII, no privileges. To stop
-      // a logged-in user from inflating the ticker via the JS
-      // console, restrict writes to ONLY the known counter fields
-      // (no arbitrary keys) and gate destructive resets behind
-      // exec. Any signed-in user can bump; only an exec can clear.
       allow update: if isSignedIn()
-        && request.resource.data.keys().hasOnly(
-             ['meals','lbs','individuals','co2','water','events','hours','volunteers','chapters','updated_at']
-           );
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['meals','lbs','individuals','co2','water','events','hours','volunteers','chapters','updated_at'])
+        && isForwardBump('meals',       50000)
+        && isForwardBump('lbs',         50000)
+        && isForwardBump('individuals', 50000)
+        && isForwardBump('co2',       1000000)
+        && isForwardBump('water',    10000000)
+        && isForwardBump('events',       1000)
+        && isForwardBump('hours',       10000)
+        && isForwardBump('volunteers',   1000)
+        && isForwardBump('chapters',       10);
       allow create, delete: if isExec();
     }
 
@@ -308,12 +532,13 @@ service cloud.firestore {
     match /checklist_progress/{id}{ allow read: if isSignedIn(); allow write: if isExec(); }
 
     // ── tax_receipts ──
-    // Public read so a restaurant can open the receipt URL we email them
-    // without signing in. The doc id is unguessable (Firestore-generated)
-    // so it functions as a capability token. Only execs can mint or edit;
-    // nobody deletes — receipt history is immutable for audit.
+    // Audit A5: `allow read: if true` permitted anonymous LIST of the
+    // whole collection, exposing donor + volunteer PII and receipt
+    // URLs. Split into `get` (open — doc id is unguessable, so the
+    // URL itself is the capability) and `list` (exec-only).
     match /tax_receipts/{id} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isExec();
       // Receipts must be tied to a real /pickups/{id} that the
       // CURRENT signed-in user actually delivered (claimed_by ==
       // auth.uid) and that's in 'completed' status. Without this
