@@ -53,6 +53,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "babel-preset-expo": "~54.0.10",
     "firebase-admin": "^13.10.0"
   }

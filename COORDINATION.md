@@ -60,28 +60,55 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 ### A2 deployment order (do not deploy until I review)
 
+Revised ordering: the dispatcher ships **before** the Firestore rules lock, so no window exists where new-format outbox rows are being written but the old dispatcher is still live (which would silently drop them). The dispatcher is backward-compatible with pre-A2 outbox rows via the `channel` compat path, so putting it in front of the client bundle is safe.
+
 | Step | Action | Why this order |
 |------|--------|----------------|
-| 1 | `cd functions && npm i && firebase deploy --only functions:syncPublicProfileOnWrite` | Trigger must exist before any new `/users` edit so mirror stays live |
-| 2 | `GOOGLE_APPLICATION_CREDENTIALS=./sa.json node scripts/backfill-public-profiles.js --dry-run` | Preview: counts + non-PII sample |
-| 3 | Review dry-run output; then re-run **without** `--dry-run` | Mint `public_profiles` for every existing user — rules in step 5 would otherwise strand leaderboards |
-| 4 | Deploy client (web + app bundle). Includes refactored notify.js + consumer switches | Clients read from `public_profiles` before `/users` reads get locked |
-| 5 | `firebase deploy --only firestore:rules,storage` | Locks `/users` and `id-docs` reads. Only safe once backfill is complete and clients are reading the mirror |
-| 6 | `cd workers/notification-dispatcher && wrangler deploy` | Dispatcher now resolves recipient contact server-side |
-| 7 | Observe dispatcher logs for one cron cycle; verify leaderboard, event rosters, and website volunteer count render |
+| 1 | `cd functions && npm i && firebase deploy --only functions:syncPublicProfileOnWrite` | Trigger must exist before any new `/users` edit so the mirror stays live from the moment anyone touches their profile. |
+| 2 | `cd workers/notification-dispatcher && wrangler deploy` | Dispatcher now resolves recipient contact server-side. Backward-compatible with the old outbox format (`channel` + `player_id` + `email`), so queued-but-not-sent pre-A2 rows drain cleanly. Must land **before** clients start writing new-format rows. |
+| 3 | `GOOGLE_APPLICATION_CREDENTIALS=./sa.json node scripts/backfill-public-profiles.js --dry-run` | Preview: counts + non-PII sample. |
+| 4 | Review dry-run output; then re-run **without** `--dry-run` | Mint `public_profiles` for every existing user. Rules in step 6 would otherwise strand leaderboards and rosters. |
+| 5 | Deploy client (web + app bundle). Includes refactored `notify.js` + consumer switches | Clients now read from `public_profiles` and write new-format outbox rows the already-deployed dispatcher understands. |
+| 6 | `firebase deploy --only firestore:rules,storage` | Locks `/users` and `/id-docs` reads. Safe only once backfill is complete, clients are reading the mirror, and the dispatcher is already resolving `/users` server-side via its service account. |
+| 7 | `GOOGLE_APPLICATION_CREDENTIALS=./sa.json node scripts/revoke-id-download-tokens.js --dry-run` → review → run for real | **Required closure for A2.** Rotates `firebaseStorageDownloadTokens` metadata on every existing `/id-docs/*` object, which invalidates every URL already handed out. Preserves the file (evidence is kept). Clears stale `id_front_url` / `id_back_url` fields on `/users` and marks `id_front_present` / `id_back_present` so the reviewer still knows an ID was uploaded; they fetch a fresh signed URL on demand through the admin SDK. |
+| 8 | Observe dispatcher logs for one cron cycle; verify leaderboard, event rosters, website volunteer count, and sample notifications | — |
 
-**Rollback:** revert the `firestore.rules` and `storage.rules` commit → read access restores. The `public_profiles` docs are additive and harmless if ignored. The function and the dispatcher refactor are also safe to revert (dispatcher still honours old-schema outbox docs).
+**Rollback:**
+- Rules commit revert → read access restores.
+- `public_profiles` docs are additive, harmless if ignored.
+- The function and dispatcher refactor are both safe to revert — the dispatcher still honours the pre-A2 outbox format.
+- Token rotation (step 7) is **not** reversible: once a token is rotated, old URLs that depended on it are permanently invalid. By design — the whole point is to revoke them. If an exec needs the ID visually, they request a fresh download URL via the admin SDK after step 6.
 
-### Existing ID-link handling (not auto-revoked)
+### Existing ID-link revocation (required closure, not optional)
 
-Firebase Storage download URLs carry a per-object token that survives rules tightening. Deploying step 5 does NOT revoke links already handed out. Required operational cleanup:
+Firebase Storage download URLs carry a per-object token stored in the object's metadata (`firebaseStorageDownloadTokens`). Rules tightening in step 6 does NOT invalidate URLs already handed out. Clearing the `id_front_url` field on `/users` or re-uploading does NOT invalidate those links either — the token lives on the file, not in Firestore. Any copy of an old URL (email thread, screenshot, pasted into chat, cached in a browser) keeps working after step 6.
 
-1. For every user whose `/users/<uid>.verification_status == 'pending'`, exec contacts them to re-upload ID. The re-upload writes to a new filename (new token), and the exec clears the stale `id_front_url` / `id_back_url` fields.
-2. For `verification_status == 'approved'`, we optionally delete the Storage object (ID is no longer needed) through the admin SDK. Not a security-critical path but worth doing — a reviewer can be prompted to delete after approval.
-3. For `verification_status == 'rejected'`, same as approved — delete the object.
-4. No exposure change for `verification_status in [null, 'none']` (no ID was ever uploaded).
+`scripts/revoke-id-download-tokens.js` (step 7) handles this by rotating the metadata token on every existing `/id-docs/*` object. Rotating replaces the current token with a fresh UUID; every URL carrying the old token stops working the moment the metadata update propagates. The file itself is preserved — this is deliberate so pending-review evidence isn't lost.
 
-I will NOT run this cleanup — it needs admin tooling that reads `/users` with the service account and can call Storage delete. Separate task; coordinate with ChatGPT.
+What the script does per user that has `id_front_url` or `id_back_url`:
+1. Parse the object path from the URL (e.g. `id-docs/front/<uid>-front-123.jpg`).
+2. `storage.file(path).setMetadata({ metadata: { firebaseStorageDownloadTokens: <new uuid> } })` — invalidates all prior tokens for that object.
+3. Null out `id_front_url` / `id_back_url` on `/users` and set `id_{front,back}_present: true` so reviewers still know evidence exists; they fetch a fresh URL on demand.
+4. Stamp `id_tokens_rotated_at` for audit.
+
+Dry-run is required first. Verification steps post-run:
+- Pick 2–3 random pre-A2 IDs; open the old URL you have on file (from an exec's email thread or an earlier screenshot). Expect `403 permission denied`.
+- An exec signs in and views the Verify IDs queue; they should still see `id_{front,back}_present: true` and can click to generate a fresh download URL.
+- Confirm no file was deleted (`gsutil ls -r gs://<bucket>/id-docs/ | wc -l` before and after should match).
+
+Pending-review ownership: a volunteer whose ID is in flight at the moment of rotation can still re-upload — the upload rule is unchanged. Their new upload mints a brand-new file with its own token. The now-null `id_*_url` field gets rewritten on re-upload (owner self-update is allowed under the A2 rules).
+
+### Harness execution — not yet run
+
+The emulator harness in `scripts/test-a2-rules.cjs` **has not been executed yet**. The dev environment on this host does not have a Java runtime (`java -version` fails) and `firebase-tools@15.19.1` requires Java 17+. The harness is written and the `@firebase/rules-unit-testing` dependency is installed (via `--legacy-peer-deps` due to a Firebase SDK v10 vs v12 peer conflict in the project's lockfile — recorded for follow-up).
+
+One-liner to run once Java is on PATH (JDK 17+ via Homebrew: `brew install openjdk@17`):
+
+```bash
+firebase emulators:exec --only firestore,storage --project demo-a2 'node scripts/test-a2-rules.cjs'
+```
+
+I will treat A2 as **not** closed until that command exits 0 with "all assertions passed ✓", and I expect ChatGPT to re-run its own 25-defect harness against the new rules independently. Both results belong on the PR before merge.
 
 ### Remaining risks + unverified assumptions
 
