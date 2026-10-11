@@ -195,24 +195,36 @@ async function main() {
 
   console.log(`[A2 revoke] mode=${DRY_RUN ? 'DRY-RUN' : 'WRITE'} project=${PROJECT} bucket=${BUCKET}`);
 
-  // H4 — write-barrier lock. Storage rules deny all id-docs/* uploads
-  // while this Firestore doc exists, so no new upload can replace a
-  // path we're mid-rotating. Removed in the finally{} after Phase 4.
+  // H4 + I4 — write-barrier lock, ATOMICALLY acquired.
+  // Storage rules deny /id-docs/* uploads while this doc exists.
+  // We use Firestore's create() (fails if doc exists) so two
+  // concurrent script runs cannot both acquire the lock. The
+  // owner_id is a per-run UUID; release only deletes a lock whose
+  // owner_id still matches, which prevents one run from stepping
+  // on another's barrier if clocks skew.
   const lockRef = db.doc('migration_locks/id_docs_rotation');
+  const runOwnerId = crypto.randomUUID();
   let lockAcquired = false;
   if (!DRY_RUN) {
-    const prior = await lockRef.get();
-    if (prior.exists) {
+    try {
+      await lockRef.create({
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        script: 'revoke-id-download-tokens.js',
+        project: PROJECT, bucket: BUCKET,
+        owner_id: runOwnerId,
+      });
+      lockAcquired = true;
+      console.log('LOCK_ACQUIRED owner_id=' + runOwnerId);
+    } catch (e) {
+      // create() throws ALREADY_EXISTS when the doc is live.
       console.error('[A2 revoke] another migration lock is already held; abort.');
-      process.exit(2);
+      process.exitCode = 2;
+      return;
     }
-    await lockRef.set({
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      script: 'revoke-id-download-tokens.js',
-      project: PROJECT, bucket: BUCKET,
-    });
-    lockAcquired = true;
   }
+  // I4 — do NOT process.exit() inside this try block. All error
+  // paths set process.exitCode and `return` so the finally{}
+  // cleanup runs reliably.
   try {
 
   // Phase 1 — scan /users, collect per-user references.
@@ -224,7 +236,13 @@ async function main() {
   // URL still provides until an operator canonicalizes them. The
   // final exit code is non-zero while any remain.
   const perUserRefs = new Map();
-  const referencedPaths = new Set();
+  // I1 — track two distinct sets:
+  //   canonicalReferencedPaths — eligible for rotation (and Phase 4 clear)
+  //   allReferencedPaths       — used ONLY for orphan classification, so
+  //                              a non-canonical referenced path doesn't
+  //                              sneak back into rotation as a false orphan.
+  const canonicalReferencedPaths = new Set();
+  const allReferencedPaths = new Set();
   const nonCanonicalReferenced = []; // {uid, label, path}
   const usersSnap = await db.collection('users').get();
   for (const d of usersSnap.docs) {
@@ -232,10 +250,11 @@ async function main() {
     if (!Object.keys(refs).length) continue;
     const canonicalRefs = {};
     for (const [label, path] of Object.entries(refs)) {
+      allReferencedPaths.add(path);
       const { kind, side } = inferKindAndSide(path);
       if (side && canonicalPathOk(path, d.id, kind, side)) {
         canonicalRefs[label] = path;
-        referencedPaths.add(path);
+        canonicalReferencedPaths.add(path);
       } else {
         nonCanonicalReferenced.push({ uid: d.id, label, path });
       }
@@ -244,16 +263,19 @@ async function main() {
   }
 
   // Phase 2 — Storage prefix inventory for orphans.
+  // I1 — orphans excludes ALL referenced paths, not just canonical ones.
   const [storageFiles] = await bucket.getFiles({ prefix: 'id-docs/' });
   const storagePaths = new Set(storageFiles.map((f) => f.name));
-  const orphans = [...storagePaths].filter((p) => !referencedPaths.has(p));
+  const orphans = [...storagePaths].filter((p) => !allReferencedPaths.has(p));
 
-  console.log(`[inventory] users_with_refs=${perUserRefs.size} referenced=${referencedPaths.size} storage=${storagePaths.size} orphans=${orphans.length}`);
+  console.log(`[inventory] users_with_refs=${perUserRefs.size} canonical_referenced=${canonicalReferencedPaths.size} all_referenced=${allReferencedPaths.size} storage=${storagePaths.size} orphans=${orphans.length}`);
 
-  // Phase 3 — rotate every path we discovered. Record ledger.
+  // Phase 3 — rotate canonical referenced paths + genuine orphans.
+  // Non-canonical referenced paths are DELIBERATELY excluded so their
+  // old bearer URLs remain live until an operator canonicalizes them.
   const perObject = { rotated: 0, missing: 0, would_rotate: 0, errors: 0 };
   const rotatedPaths = new Set();  // only paths our rotation confirmed
-  const allPaths = new Set([...referencedPaths, ...orphans]);
+  const allPaths = new Set([...canonicalReferencedPaths, ...orphans]);
   // rotationState: path -> { generation, token } observed when we
   // confirmed rotation. Phase 4 cross-checks live Storage against
   // this before clearing /users references (G4 — guards against
@@ -437,14 +459,36 @@ async function main() {
     orphans_rotated: orphans.length,
     non_canonical_referenced: nonCanonicalReferenced,
   }, null, 2));
+  // I4 — all exits inside this try use exitCode + return so the
+  // finally{} below runs. process.exit() would terminate Node
+  // before the lock is released, which is the operational
+  // regression the reviewer reproduced.
   if (nonCanonicalReferenced.length > 0) {
     console.error(`[A2 revoke] ${nonCanonicalReferenced.length} non-canonical reference(s) unresolved; migration INCOMPLETE.`);
-    process.exit(3);
+    process.exitCode = 3;
+    return;
   }
-  if (perObject.errors > 0 || userUpdates.errors > 0) process.exit(2);
+  if (perObject.errors > 0 || userUpdates.errors > 0) {
+    process.exitCode = 2;
+    return;
+  }
   } finally {
     if (lockAcquired) {
-      try { await lockRef.delete(); } catch (e) { console.warn('[A2 revoke] failed to release lock:', e?.message); }
+      // Owner-safe release — only delete if we still own the lock.
+      // Guards against a stale lock from a crashed earlier run being
+      // yanked by a new owner mid-flight (we didn't acquire this one,
+      // so we shouldn't delete it).
+      try {
+        await db.runTransaction(async (tx) => {
+          const snap = await tx.get(lockRef);
+          if (!snap.exists) return;
+          if (snap.data()?.owner_id !== runOwnerId) return;
+          tx.delete(lockRef);
+        });
+        console.log('LOCK_RELEASED owner_id=' + runOwnerId);
+      } catch (e) {
+        console.warn('[A2 revoke] lock release failed:', e?.message);
+      }
     }
   }
 }

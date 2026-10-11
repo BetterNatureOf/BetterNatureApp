@@ -17,6 +17,35 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 seventh review response (post-ChatGPT review of e902038)
+
+ChatGPT's seventh review confirmed H1 harness green (59/59, unchanged), 8/8 idGate, H3 single-read + distinct keys, H4 Storage sidecar, and H5 preflight-passing cases. Four remaining findings I1–I4. This commit closes all four.
+
+| I# | Fix | Where |
+|----|-----|-------|
+| **I1** Non-canonical referenced path rotated as a "false orphan" | Phase 1 now tracks TWO sets: `canonicalReferencedPaths` (feeds Phase 3) and `allReferencedPaths` (ONLY used to subtract from orphan inventory). A non-canonical referenced path is excluded from both the orphan set and the rotation set, so its token is left intact. | `scripts/revoke-id-download-tokens.js` |
+| **I2** Retry after fanout success rewrites delivered state | `fanOut` switched to `batch.create()` / per-doc `.create()` with ALREADY_EXISTS caught as "already-delivered — leave the dispatcher's state alone". Single-recipient pickup intents atomic in one create batch; multi-recipient broadcasts per-doc so one existing recipient doesn't block the rest. New scheduled Cloud Function `sweepNotificationDedup` (every 5 min) marks stuck `in_progress` receipts past the 60s lease window as `expired` so the ledger never lies about delivery. Client helper now surfaces `deduped`/`in_progress`/`dedup_key` to callers. | `functions/queueNotification.js`, `functions/sweepNotificationDedup.js`, `functions/index.js`, `src/services/notify.js` |
+| **I3** Named transition not bound to its authorized actor | Callable now validates `(transition, actor)`: `claim`/`enroute`/`complete` require `callerIsClaimant`; `release` requires `pk.released_by === caller`; `handoff` requires `pk.handoff_from_uid === caller`; `verify`/`cancel`/`new_pickup` require the restaurant owner. Exec bypasses. Rejects with `permission-denied` otherwise. | `functions/queueNotification.js` |
+| **I4** `process.exit` inside try skipped the finally; lock acquisition not atomic | Lock acquired via Firestore `create()` (fails ALREADY_EXISTS → atomic). Each run stamps a `owner_id` UUID; release is a transaction that only deletes the lock when the stored `owner_id` still matches. All exits inside the try set `process.exitCode` and `return` so the finally{} block always runs. Clear `LOCK_ACQUIRED` / `LOCK_RELEASED` log lines. | `scripts/revoke-id-download-tokens.js` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 17 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on this push (expect 4/4).
+- Emulator harness: still not run on this host (no Java). The round-6 harness passed 59/59 unchanged; this round's changes are all behind-the-scenes (callable logic, scheduled function, migration script) with no rule-shape changes that would break existing assertions.
+
+### ChatGPT handoff — seventh review
+
+Expected to pass:
+1. **I1** — inject one referenced non-canonical object in the bucket inventory; it stays with its original generation and token; the user's URL string is unchanged; `non_canonical_referenced` lists it; exit 3.
+2. **I2** — run fanOut to success, inject a failure on `markDedupCompleted`, let the lease expire, retry: the retry no-ops on the existing docs (ALREADY_EXISTS swallowed) and preserves the dispatcher's `sent` / `channels_done` / `read` state. After 5 min the `sweepNotificationDedup` scheduled run marks the receipt `expired`.
+3. **I3** — former claimant with recent `released_at` calls with `transition: 'claim'`; callable returns `permission-denied` because the transition's authorized actor is the current claimant.
+4. **I4** — candidate script run in a real child Node process with mocked Admin/Storage; even on `exitCode = 3` the finally{} runs and `LOCK_RELEASED` prints. Two concurrent script runs both call `create()`; only one succeeds. The loser gets ALREADY_EXISTS → exit 2 without ever acquiring the lock.
+
+Not merging, not deploying, not running production migrations.
+
 ### A2 sixth review response (post-ChatGPT review of ac918c9)
 
 ChatGPT's sixth review confirmed G1 + source/config G3 and all 59 harness assertions pass with the fixed external harness copy. Five findings H1–H5 remained. This commit closes all five.

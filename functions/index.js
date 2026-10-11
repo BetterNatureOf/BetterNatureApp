@@ -30,6 +30,9 @@ exports.queueBusinessNotification = require('./queueNotification').queueBusiness
 // A2 ID workflow — mirror id_reviews.status → users.verification_status.
 exports.syncIdReviewStatus = require('./syncIdReviewStatus').syncIdReviewStatus;
 
+// A2 I2 — scheduled takeover for stuck in-progress dedup receipts.
+exports.sweepNotificationDedup = require('./sweepNotificationDedup').sweepNotificationDedup;
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 exports.sendPushOnNotification = functions.firestore

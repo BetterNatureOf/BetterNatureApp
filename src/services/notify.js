@@ -85,7 +85,21 @@ async function callQueue(payload) {
   try {
     const fn = httpsCallable(getFunctions(), 'queueBusinessNotification');
     const res = await fn(payload);
-    return { ok: true, queued: res?.data?.queued || 0 };
+    // I2 — surface deduped / in_progress so callers can tell apart
+    // "already delivered" from "someone else's lease is live right
+    // now". A production retry path would wait LEASE_WINDOW_MS and
+    // call again; most of our call sites currently fire-and-forget,
+    // so the scheduled sweep (sweepNotificationDedup) is the
+    // ultimate fallback that marks stale receipts expired.
+    const d = res?.data || {};
+    return {
+      ok: true,
+      queued: d.queued || 0,
+      inapp: d.inapp || 0,
+      deduped: !!d.deduped,
+      in_progress: !!d.in_progress,
+      dedup_key: d.dedup_key || null,
+    };
   } catch (e) {
     console.warn('queueBusinessNotification failed', e);
     return { ok: false, reason: e?.code || e?.message || 'queue_failed' };

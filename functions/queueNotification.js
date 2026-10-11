@@ -55,51 +55,103 @@ function userIsPres(u) {
   return PRES_ROLES.has(r) || rs.some((x) => PRES_ROLES.has(x));
 }
 
-// H2 — fan out with DETERMINISTIC document IDs derived from the
-// dedup key + the recipient uid, so retries after a partial failure
-// are idempotent. The in-app bell and outbox job IDs are stable per
-// (dedupKey, recipient), making `.set()` a safe re-run.
+// H2 + I2 — fan out with DETERMINISTIC document IDs derived from
+// the dedup key + the recipient uid, so retries after a partial
+// failure converge on the same docs. Each per-recipient write uses
+// `batch.create()` (not `set()`): if the doc already exists the
+// batch fails ALREADY_EXISTS and we treat that recipient as
+// already-delivered. This preserves live dispatcher state
+// (status: sent / channels_done / attempts) and the recipient's
+// read:false flag — the reviewer's I2 reproduction (expired lease
+// retry resetting a sent job back to queued and a read bell back
+// to unread) is prevented at the write boundary.
 //
-// When no dedup key is available (broadcasts), fall back to the
-// prior random-id behavior and accept at-least-once semantics for
-// those paths.
+// Multi-batch broadcasts (new_pickup, event, chapter) use batches
+// of up to 200 recipients. If any single doc in a batch already
+// exists, the whole batch fails; we fall back to a per-doc
+// create() loop that skips existing docs. This keeps progress
+// recoverable without rewriting completed work.
 function safeKeyFragment(s) {
   return String(s || '').replace(/[\/\s]/g, '_').slice(0, 400);
 }
+async function fanOutOne(db, row, inAppKind, title, body, url, base) {
+  const inboxRef = base
+    ? db.collection('notifications').doc(`${base}__inapp`)
+    : db.collection('notifications').doc();
+  const outRef = base
+    ? db.collection('notifications_outbox').doc(`${base}__outbox`)
+    : db.collection('notifications_outbox').doc();
+  // I2 — create() each; swallow ALREADY_EXISTS so retries don't
+  // overwrite dispatcher state.
+  let inappCreated = false, outboxCreated = false;
+  try {
+    await inboxRef.create({
+      user_id: row.user_id, kind: inAppKind, title, body,
+      url: url || null, read: false,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    inappCreated = true;
+  } catch (e) {
+    if ((e?.code || '') !== 6 /* ALREADY_EXISTS */ && !/ALREADY_EXISTS/i.test(String(e?.message || ''))) throw e;
+  }
+  try {
+    await outRef.create({
+      ...row, status: 'queued', attempts: 0,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    outboxCreated = true;
+  } catch (e) {
+    if ((e?.code || '') !== 6 && !/ALREADY_EXISTS/i.test(String(e?.message || ''))) throw e;
+  }
+  return { inappCreated, outboxCreated };
+}
 async function fanOut(db, rows, inAppKind, title, body, url, dedupKey) {
   if (!rows.length) return { queued: 0, inapp: 0 };
-  const BATCH = 200;
   let queued = 0, inapp = 0;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const slice = rows.slice(i, i + BATCH);
+  // Single-recipient pickup intents: one atomic batch with create()
+  // semantics on both docs so partial first-write failures don't
+  // leave split state.
+  if (rows.length === 1 && dedupKey) {
+    const row = rows[0];
+    const base = `${safeKeyFragment(dedupKey)}__${row.user_id}`;
     const batch = db.batch();
-    for (const row of slice) {
-      const base = dedupKey ? `${safeKeyFragment(dedupKey)}__${row.user_id}` : null;
-      const inboxRef = base
-        ? db.collection('notifications').doc(`${base}__inapp`)
-        : db.collection('notifications').doc();
-      batch.set(inboxRef, {
-        user_id: row.user_id,
-        kind: inAppKind,
-        title,
-        body,
-        url: url || null,
-        read: false,
-        created_at: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      const outRef = base
-        ? db.collection('notifications_outbox').doc(`${base}__outbox`)
-        : db.collection('notifications_outbox').doc();
-      batch.set(outRef, {
-        ...row,
-        status: 'queued',
-        attempts: 0,
-        created_at: admin.firestore.FieldValue.serverTimestamp(),
-      });
+    const inboxRef = db.collection('notifications').doc(`${base}__inapp`);
+    const outRef   = db.collection('notifications_outbox').doc(`${base}__outbox`);
+    batch.create(inboxRef, {
+      user_id: row.user_id, kind: inAppKind, title, body,
+      url: url || null, read: false,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    batch.create(outRef, {
+      ...row, status: 'queued', attempts: 0,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    try {
+      await batch.commit();
+      queued += 1; inapp += 1;
+    } catch (e) {
+      if ((e?.code || '') === 6 || /ALREADY_EXISTS/i.test(String(e?.message || ''))) {
+        // Both docs already exist from a prior invocation. Not an
+        // error; previously-delivered state is preserved. Counts
+        // stay at 0 for this call — the caller sees deduped=true
+        // from the receipt layer, or ok with 0/0 if the receipt
+        // layer wasn't engaged (which can only happen for
+        // zero-recipient edge cases).
+      } else {
+        throw e;
+      }
     }
-    await batch.commit();
-    queued += slice.length;
-    inapp  += slice.length;
+    return { queued, inapp };
+  }
+  // Multi-recipient broadcasts: per-recipient create() so a single
+  // existing doc doesn't block the rest. This is at-least-once at
+  // the recipient granularity; receipt-layer dedup prevents whole-
+  // broadcast replay.
+  for (const row of rows) {
+    const base = dedupKey ? `${safeKeyFragment(dedupKey)}__${row.user_id}` : null;
+    const r = await fanOutOne(db, row, inAppKind, title, body, url, base);
+    if (r.inappCreated)  inapp  += 1;
+    if (r.outboxCreated) queued += 1;
   }
   return { queued, inapp };
 }
@@ -173,6 +225,33 @@ async function resolvePickupScope(db, caller, callerUser, data) {
   if (!isExec && !callerIsPickupParty) {
     throw new functions.https.HttpsError('permission-denied',
       'Only this pickup\'s partner, current claimant, or former claimant may queue notifications for it.');
+  }
+
+  // I3 — the caller named a transition in `data.transition`. The
+  // actor authorized for THAT transition must match the caller.
+  // Previously any pickup party could spoof any transition name
+  // and consume a different party's dedup key.
+  const transition = String(data?.transition || '');
+  const transitionActorOk = isExec || (() => {
+    if (transition === 'claim' || transition === 'enroute' || transition === 'complete') {
+      // These transitions are performed by the CURRENT claimant.
+      return callerIsClaimant;
+    }
+    if (transition === 'release') {
+      return pk.released_by === caller;
+    }
+    if (transition === 'handoff') {
+      // Originating actor (the person handing off) is handoff_from_uid.
+      return pk.handoff_from_uid === caller;
+    }
+    if (transition === 'verify' || transition === 'cancel' || transition === 'new_pickup') {
+      return callerIsRest;
+    }
+    return false;
+  })();
+  if (!transitionActorOk) {
+    throw new functions.https.HttpsError('permission-denied',
+      `Caller is not the authorized actor for transition '${transition}'.`);
   }
 
   const intent = String(data?.intent || 'to_partner');
