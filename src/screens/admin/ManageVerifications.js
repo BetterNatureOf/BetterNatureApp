@@ -22,6 +22,8 @@ import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import { fetchAllMembers } from '../../services/database';
 import { setVerificationStatus } from '../../services/verifications';
+import { listIdReviews, getIdViewUrl, setIdReviewStatus } from '../../services/idReview';
+import useAuthStore from '../../store/authStore';
 import { notify, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
@@ -31,41 +33,84 @@ const FILTERS = [
   { key: 'rejected', label: 'Rejected' },
 ];
 
-function statusOf(u) {
-  if (u.verification_status) return u.verification_status;
-  // Legacy users who uploaded before this screen existed — treat as
-  // pending so an admin actually looks at the file.
-  if (u.id_document_url) return 'pending';
-  return 'none';
-}
+// A2 ID workflow — the review queue is now driven by /id_reviews.
+// A legacy /users row with id_document_* URLs that hasn't been
+// migrated yet still shows up here (bridge) with status derived
+// from the user's verification_status.
 
 export default function ManageVerifications({ navigation }) {
   const [filter, setFilter] = useState('pending');
-  const [members, setMembers] = useState(null);
-  const [busy, setBusy] = useState(null);          // uid currently being acted on
-  const [lightbox, setLightbox] = useState(null);  // uri of the image to enlarge
+  const [members, setMembers] = useState(null); // users joined with id_reviews
+  const [busy, setBusy] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
+  const [thumbUrls, setThumbUrls] = useState({}); // path -> short-lived signed url cache
+  const reviewer = useAuthStore((s) => s.user);
 
   const load = useCallback(async () => {
-    try { setMembers(await fetchAllMembers()); }
-    catch { setMembers([]); }
+    try {
+      const [users, reviews] = await Promise.all([
+        fetchAllMembers().catch(() => []),
+        listIdReviews().catch(() => []),
+      ]);
+      const reviewByUid = new Map(reviews.map((r) => [r.id, r]));
+      // Join: include every user who has a review row OR a legacy
+      // id_document_url. Attach the review's paths (new flow) or
+      // fall back to the legacy URLs (migration-bridge).
+      const joined = users
+        .filter((u) => reviewByUid.has(u.id) || u.id_document_url)
+        .map((u) => {
+          const r = reviewByUid.get(u.id) || null;
+          const status = r?.status || u.verification_status || (u.id_document_url ? 'pending' : 'none');
+          return {
+            ...u,
+            review: r,
+            status,
+            // Shortcut path-or-url fields the renderer uses.
+            id_front_path:              r?.id_front_path || null,
+            id_back_path:               r?.id_back_path || null,
+            driver_license_front_path:  r?.driver_license_front_path || null,
+            driver_license_back_path:   r?.driver_license_back_path || null,
+          };
+        });
+      setMembers(joined);
+
+      // F11 — mint signed URLs using the joined row's own uid +
+      // the known kind/side for each path we hold. The old
+      // implementation reverse-parsed uid from the path with a
+      // `[^-]+` segment which broke on hyphenated UIDs.
+      const map = {};
+      const jobs = [];
+      for (const row of joined) {
+        const uid = row.id || row.uid;
+        if (!uid) continue;
+        if (row.id_front_path) jobs.push(['personal', 'front', row.id_front_path, uid]);
+        if (row.id_back_path)  jobs.push(['personal', 'back',  row.id_back_path,  uid]);
+        if (row.driver_license_front_path) jobs.push(['driver', 'front', row.driver_license_front_path, uid]);
+        if (row.driver_license_back_path)  jobs.push(['driver', 'back',  row.driver_license_back_path,  uid]);
+      }
+      await Promise.all(jobs.map(async ([kind, side, path, uid]) => {
+        const url = await getIdViewUrl({ uid, kind, side });
+        if (url) map[path] = url;
+      }));
+      setThumbUrls(map);
+    } catch { setMembers([]); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // Only users who actually uploaded something show up here. Then we
-  // bucket by status.
-  const withIds = (members || []).filter((m) => m.id_document_url);
-  const inBucket = withIds.filter((m) => statusOf(m) === filter);
+  const withIds = members || [];
+  const inBucket = withIds.filter((m) => m.status === filter);
 
   const counts = {
-    pending:  withIds.filter((m) => statusOf(m) === 'pending').length,
-    approved: withIds.filter((m) => statusOf(m) === 'approved').length,
-    rejected: withIds.filter((m) => statusOf(m) === 'rejected').length,
+    pending:  withIds.filter((m) => m.status === 'pending').length,
+    approved: withIds.filter((m) => m.status === 'approved').length,
+    rejected: withIds.filter((m) => m.status === 'rejected').length,
   };
 
   async function approve(u) {
     setBusy(u.id);
     try {
-      await setVerificationStatus(u.id, 'approved');
+      if (u.review) await setIdReviewStatus(u.id, 'approved', reviewer?.id);
+      else           await setVerificationStatus(u.id, 'approved');
       await load();
       notify('Approved', `${u.name || u.email} can now claim pickups.`);
     } catch (e) {
@@ -81,11 +126,31 @@ export default function ManageVerifications({ navigation }) {
     if (!ok) return;
     setBusy(u.id);
     try {
-      await setVerificationStatus(u.id, 'rejected');
+      if (u.review) await setIdReviewStatus(u.id, 'rejected', reviewer?.id);
+      else           await setVerificationStatus(u.id, 'rejected');
       await load();
     } catch (e) {
       notify('Could not reject', e?.message || 'Try again.');
     } finally { setBusy(null); }
+  }
+
+  // Resolve a thumb's render URL. Prefer the signed URL for a stored
+  // path (new flow); fall back to the legacy bearer URL (bridge).
+  function resolveUri(u, side, kind = 'personal') {
+    if (kind === 'personal') {
+      const path = side === 'back' ? u.id_back_path : u.id_front_path;
+      if (path && thumbUrls[path]) return thumbUrls[path];
+    } else {
+      const path = side === 'back' ? u.driver_license_back_path : u.driver_license_front_path;
+      if (path && thumbUrls[path]) return thumbUrls[path];
+    }
+    // Legacy bridge: use the old field if the migration hasn't run yet.
+    if (kind === 'personal') {
+      if (side === 'back') return u.id_document_back_url || null;
+      return u.id_document_front_url || u.id_document_url || null;
+    }
+    if (side === 'back') return u.driver?.license_back_url || null;
+    return u.driver?.license_front_url || u.driver?.license_url || null;
   }
 
   return (
@@ -104,7 +169,7 @@ export default function ManageVerifications({ navigation }) {
             ID uploaded, the most likely cause is that Firebase
             Storage isn't initialized for the project. Surface that
             instead of letting the screen sit silently empty. */}
-        {members && members.length > 0 && (members || []).every((m) => !m.id_document_url) ? (
+        {members && members.length > 0 && (members || []).every((m) => !m.id_front_path && !m.id_document_url) ? (
           <View style={styles.storageBanner}>
             <Text style={styles.storageBannerTitle}>No IDs uploaded yet — check Firebase Storage</Text>
             <Text style={styles.storageBannerBody}>
@@ -157,13 +222,13 @@ export default function ManageVerifications({ navigation }) {
                 <View style={styles.thumbStack}>
                   <Thumb
                     label="ID front"
-                    uri={u.id_document_front_url || u.id_document_url}
+                    uri={resolveUri(u, 'front', 'personal')}
                     onPress={setLightbox}
                   />
-                  {u.id_document_back_url ? (
+                  {resolveUri(u, 'back', 'personal') ? (
                     <Thumb
                       label="ID back"
-                      uri={u.id_document_back_url}
+                      uri={resolveUri(u, 'back', 'personal')}
                       onPress={setLightbox}
                     />
                   ) : null}
@@ -191,29 +256,30 @@ export default function ManageVerifications({ navigation }) {
                       license URL, or pink "missing" copy. The license image is
                       tappable too so admins can compare to the personal ID
                       side-by-side. */}
-                  {u.driver?.license_front_url || u.driver?.license_url ? (
+                  {resolveUri(u, 'front', 'driver') ? (
                     <View style={styles.driverBlock}>
                       <View style={[styles.waiverPill, { backgroundColor: Colors.cream }]}>
                         <Icon name="id-card" size={12} color={Colors.green} />
                         <Text style={styles.waiverText}>
-                          {u.driver.type === 'self'
+                          {u.driver?.type === 'self'
                             ? `Driver: self`
-                            : `Driver: ${u.driver.holder_name} (${u.driver.holder_relationship})${u.driver.consent_signed_name ? ' · signed' : ''}`
+                            : u.driver?.holder_name
+                            ? `Driver: ${u.driver.holder_name} (${u.driver.holder_relationship})${u.driver.consent_signed_name ? ' · signed' : ''}`
+                            : 'Driver on file'
                           }
                         </Text>
                       </View>
-                      {/* License thumbnails — front + back, side by side. */}
                       <View style={styles.licenseRow}>
                         <Thumb
                           label="License front"
-                          uri={u.driver.license_front_url || u.driver.license_url}
+                          uri={resolveUri(u, 'front', 'driver')}
                           onPress={setLightbox}
                           size="small"
                         />
-                        {u.driver.license_back_url ? (
+                        {resolveUri(u, 'back', 'driver') ? (
                           <Thumb
                             label="License back"
-                            uri={u.driver.license_back_url}
+                            uri={resolveUri(u, 'back', 'driver')}
                             onPress={setLightbox}
                             size="small"
                           />

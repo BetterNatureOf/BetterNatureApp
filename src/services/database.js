@@ -260,16 +260,17 @@ export async function fetchEventSignups(eventId) {
     query(collection(db, 'event_signups'), where('event_id', '==', eventId))
   );
   const rows = snapToList(snap).filter((s) => s.status !== 'cancelled');
-  // Hydrate user names
-  const out = [];
-  for (const r of rows) {
-    let user_name = 'Volunteer';
-    try {
-      const u = await getDoc(doc(db, 'users', r.user_id));
-      if (u.exists()) user_name = u.data().name || 'Volunteer';
-    } catch {}
-    out.push({ ...r, user_name });
-  }
+  // A2 — hydrate names from /public_profiles. Attendee lists are
+  // read by presidents/execs (for check-in) and sometimes by other
+  // signed-up volunteers (to see who else is coming). Both legit
+  // paths work against the public mirror; neither needs email/phone
+  // from the private /users doc.
+  const { fetchPublicProfiles } = await import('./publicProfiles');
+  const profMap = await fetchPublicProfiles(rows.map((r) => r.user_id));
+  const out = rows.map((r) => ({
+    ...r,
+    user_name: profMap.get(r.user_id)?.display_name || 'Volunteer',
+  }));
   return out;
 }
 
@@ -507,29 +508,22 @@ export async function createPickup(pickup) {
   const ref = await addDoc(collection(db, 'pickups'), enriched);
   const newPk = { id: ref.id, ...enriched };
 
-  // Notify chapter members
+  // A2 R-followup #3 — chapter broadcast flows through the
+  // queueBusinessNotification callable, which resolves eligible
+  // chapter recipients from /public_profiles server-side and writes
+  // outbox rows with admin SDK. The partner posting the pickup
+  // cannot direct-write outbox rows for other users under the new
+  // self-only rule.
   if (pickup.chapter_id) {
     try {
-      const memSnap = await getDocs(
-        query(
-          collection(db, 'users'),
-          where('chapter_id', '==', pickup.chapter_id)
-        )
-      );
-      const targets = snapToList(memSnap)
-        .filter((m) => ['member', 'chapter_president', 'volunteer'].includes(m.role))
-        .map((m) => m.id);
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: targets,
-        kind: 'pickup',
+      const { queuePickupBroadcast } = await import('./notify');
+      await queuePickupBroadcast(ref.id, {
         title: 'New pickup available!',
         body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
         url: `https://app.betternatureofficial.org/#/pickups/${ref.id}`,
         data: { type: 'new_pickup', pickupId: ref.id },
-        skipInApp: false,
       });
-    } catch (e) { console.warn('pickup notify failed', e); }
+    } catch (e) { console.warn('pickup broadcast failed', e); }
   }
   return newPk;
 }
@@ -724,18 +718,15 @@ export async function claimPickup(pickupId, userId) {
   } catch (e) { console.warn('claim notify', e); }
 
   // #10 from drop-off audit — also push the restaurant so they know
-  // someone's coming from the moment of claim, not when the volunteer
-  // eventually taps "on my way". The gap between claim and enroute
-  // could be hours in real life; the restaurant deserves to know a
-  // volunteer accepted the job as soon as it happens.
+  // someone's coming. A2 R-followup #3: routed through the server-
+  // side queueBusinessNotification callable because the volunteer
+  // isn't the pickup's partner and can't direct-write outbox docs
+  // for them under the new self-only rule.
   try {
     if (pk.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      const { queuePickupToPartner } = await import('./notify');
       const who = claimantName || 'A volunteer';
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      await queuePickupToPartner(pickupId, 'claim', {
         title: 'Your donation was claimed',
         body: `${who} is on the way. You'll get another ping when they mark en route — tap Confirm the moment they arrive.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -776,6 +767,13 @@ export async function cancelClaim(pickupId, reason = '') {
       claimed_at: null,
       cancel_reason: reason || null,
       cancelled_at: new Date().toISOString(),
+      // B4 + F9 + G2 — authorized breadcrumb that is TIME-BOXED,
+      // with the stamp coming from the server (request.time ==
+      // serverTimestamp). The rule rejects any other value so a
+      // client cannot submit a future timestamp to extend
+      // former-claimant authority.
+      released_by: data.claimed_by || null,
+      released_at: serverTimestamp(),
     });
     return { releasedBy: data.claimed_by || null, pk: data };
   });
@@ -819,11 +817,9 @@ export async function cancelClaim(pickupId, reason = '') {
   // food is unclaimed and might not get picked up in time.
   try {
     if (pk.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      // A2 R-followup #3 — routed through the callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, 'release', {
         title: 'Pickup released',
         body: `Your pickup is back on the board — looking for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -870,10 +866,9 @@ export async function cancelPickup(pickupId, reason = '') {
   // flow.
   try {
     if (pk.claimed_by) {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
+      // A2 R-followup #3 — restaurant → claimant via callable.
+      const { queuePickupToClaimant } = await import('./notify');
+      await queuePickupToClaimant(pickupId, 'cancel', {
         title: 'Pickup cancelled',
         body: `${pk.restaurant_name || 'The restaurant'} cancelled their pickup.${reason ? ' Reason: ' + reason : ''} Don't drive out.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -926,10 +921,9 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
     const snap = await getDoc(ref);
     const pk = snap.exists() ? snap.data() : null;
     if (pk?.claimed_by) {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
+      // A2 R-followup #3 — restaurant → claimant via callable.
+      const { queuePickupToClaimant } = await import('./notify');
+      await queuePickupToClaimant(pickupId, 'verify', {
         title: 'Pickup confirmed by restaurant',
         body: `${pk.restaurant_name || 'The restaurant'} just confirmed you picked up the food. Drop it off to finish the run.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -989,11 +983,16 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
   try {
     const pk = fresh || {};
     if (pk.restaurant_id) {
+      // A2 — read volunteer display name from /public_profiles. The
+      // writer here is the volunteer themselves (self-read of
+      // /users would work), but the restaurant may also trigger this
+      // path on confirm, and public_profiles works for both.
       let volunteerName = '';
       if (pk.claimed_by) {
         try {
-          const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
-          if (vSnap.exists()) volunteerName = vSnap.data().name || '';
+          const { fetchPublicProfile } = await import('./publicProfiles');
+          const vp = await fetchPublicProfile(pk.claimed_by);
+          volunteerName = vp?.display_name || '';
         } catch {}
       }
       const dropOff = pk.fridge_name ? ` to ${pk.fridge_name}` : '';
@@ -1009,9 +1008,9 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
       const body = wasHandedOff
         ? `${volunteerName || 'A volunteer'} just left with your donation${dropOff}.`
         : `${volunteerName || 'A volunteer'} is on the way${dropOff ? '' : ' to pick up your donation'}. Tap Confirm when they arrive.`;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      // A2 R-followup #3 — claimant → partner via callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, 'enroute', {
         title: wasHandedOff ? 'Your donation is on the move' : 'Volunteer is on the way',
         body,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -1148,7 +1147,10 @@ export async function handOffPickup(pickupId, reason = '') {
       handoff_from_name: data.claimant_name || null,
       handoff_from_phone: data.claimant_phone || null,
       handoff_reason: reason || null,
-      handoff_at: new Date().toISOString(),
+      // G2 — server-stamped so the time-boxed ex-claimant authority
+      // in queueBusinessNotification cannot be extended by a future
+      // client-supplied value.
+      handoff_at: serverTimestamp(),
       claimed_by: null,
       claimed_at: null,
       claimant_name: null,
@@ -1166,11 +1168,9 @@ export async function handOffPickup(pickupId, reason = '') {
     const snap = await getDoc(ref);
     const pk = snap.exists() ? snap.data() : null;
     if (pk?.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      // A2 R-followup #3 — claimant → partner via callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, 'handoff', {
         title: 'Volunteer handoff in progress',
         body: `${pk.handoff_from_name || 'The volunteer'} needs to hand off your pickup. It's back on the board for another volunteer to claim.${reason ? ' Reason: ' + reason : ''}`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -1221,9 +1221,13 @@ export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', not
       const explain = kind === 'fridge_full' ? 'the fridge was full and the volunteer couldn\'t find another in time'
                     : kind === 'fridge_broken' ? 'the drop-off fridge was broken'
                     : 'the food had spoiled in transit';
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'general',
+      // A2 R-followup #3 — claimant → partner via callable.
+      // Spoiled lands as status:'completed' with weight 0, so the
+      // transition timestamp is pk.completed_at — same as a normal
+      // completion. The receipt branch runs separately and will
+      // see this call's dedup record already completed.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, 'complete', {
         title: 'Pickup didn\'t make it',
         body: `Your donation couldn't be delivered — ${explain}. No tax receipt will be issued for this run.${note ? ' Note from volunteer: ' + note : ''}`,
         data: { type: 'pickup_spoiled', pickupId, kind },
@@ -1520,36 +1524,36 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     // completion. Single enqueueNotification call: the earlier code
     // wrote BOTH a raw addDoc AND an enqueueNotification, producing
     // two duplicate rows in the restaurant's inbox for every rescue.
-    if (pk.restaurant_id) {
-      try {
-        const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-        const { enqueueNotification } = await import('./notify');
-        const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-        await enqueueNotification({
-          recipients: [linkedUid],
-          kind: 'general',
-          title: 'Your surplus made it',
-          body: `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Your tax receipt is on the way.`,
-          url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-          data: { type: 'pickup_delivered_restaurant', pickupId, meals, lbs: weight },
-        });
-      } catch (e) { console.warn('restaurant delivered notify', e); }
-    }
+    // H3 — the "surplus delivered" and "tax receipt ready" partner
+    // notifications used to fire separately but share the completion
+    // transition, so they collided on the dedup key. Collapsed into
+    // ONE notification minted below after the receipt is issued (or
+    // immediately when no receipt is produced because of a spoiled
+    // / override completion).
+    const delivered = { fired: false, pk };
 
     // Mint the restaurant's tax receipt and surface the link to them
     // through every channel: app bell, push, email. Never blocks
     // completion if any one channel fails.
     try {
       const { issueReceiptForPickup, receiptUrl } = await import('./taxReceipts');
-      // Pull volunteer name for the receipt body.
+      // A2 — volunteer name comes from /public_profiles (we're the
+      // claimant so a self-read on /users would also work, but the
+      // public mirror is cheaper and keeps the pattern uniform).
       let volunteerName = '';
       try {
-        const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
-        if (vSnap.exists()) volunteerName = vSnap.data().name || '';
+        const { fetchPublicProfile } = await import('./publicProfiles');
+        const vp = await fetchPublicProfile(pk.claimed_by);
+        volunteerName = vp?.display_name || '';
       } catch {}
-      // Resolve the restaurant email + linked user uid. Try the
-      // restaurants doc first; fall back to the linked user's email
-      // if the restaurants doc has no email field.
+      // Resolve the restaurant email from the public /restaurants doc.
+      // A2 note: the fallback that previously read /users/<owner> for
+      // email is removed — a volunteer completing a run cannot read
+      // the partner's private profile under the new rules. If the
+      // /restaurants doc has no email, the receipt still issues but
+      // the email channel on dispatch quietly no-ops; the exec can
+      // backfill the restaurant's contact email through Manage
+      // Restaurants and re-send.
       let restaurantEmail = '';
       let restaurantUserUid = pk.restaurant_user_id || null;
       if (pk.restaurant_id) {
@@ -1560,12 +1564,6 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
             restaurantEmail = r.email || r.contact_email || '';
             restaurantUserUid = restaurantUserUid || r.user_id || null;
           }
-        } catch {}
-      }
-      if (!restaurantEmail && restaurantUserUid) {
-        try {
-          const uSnap = await getDoc(doc(db, 'users', restaurantUserUid));
-          if (uSnap.exists()) restaurantEmail = uSnap.data().email || '';
         } catch {}
       }
 
@@ -1604,24 +1602,51 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
         } catch {}
       }
 
-      // Send the receipt through the unified notification dispatcher.
-      // Drops an in-app bell + queues an email via Resend (once the
-      // dispatcher worker is deployed). Replaces the old FormSubmit
-      // hop, which was rate-limited and silently failing.
-      if (receipt?.id && restaurantUserUid) {
+      // H3 — ONE partner notification per completion transition.
+      // Includes receipt link + delivered summary in a single
+      // outbound message, so both pieces reach the restaurant
+      // without colliding on the dedup key.
+      if (pk.restaurant_id && !delivered.fired) {
         try {
-          const { enqueueNotification } = await import('./notify');
-          await enqueueNotification({
-            recipients: [restaurantUserUid],
-            kind: 'general',
-            title: `Your tax receipt for ${weight} lbs is ready`,
-            body: `BetterNature has minted receipt #${receipt.receipt_no || '0001'} for your donation. Open it to print or save as PDF for your records.`,
-            url: receiptUrl(receipt.id),
-            data: { type: 'tax_receipt', pickupId, receiptId: receipt.id },
+          const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
+          const title = receipt?.id
+            ? `Delivered — tax receipt #${receipt.receipt_no || '0001'} ready`
+            : 'Your surplus made it';
+          const body = receipt?.id
+            ? `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Open the receipt to print or save as PDF.`
+            : `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs).`;
+          const url = receipt?.id
+            ? receiptUrl(receipt.id)
+            : `https://app.betternatureofficial.org/#/pickups/${pickupId}`;
+          const { queuePickupToPartner } = await import('./notify');
+          await queuePickupToPartner(pickupId, 'complete', {
+            title, body, url,
+            data: {
+              type: receipt?.id ? 'tax_receipt' : 'pickup_delivered_restaurant',
+              pickupId, meals, lbs: weight,
+              receiptId: receipt?.id || null,
+            },
           });
-        } catch (e) { console.warn('receipt notify failed', e); }
+          delivered.fired = true;
+        } catch (e) { console.warn('restaurant delivered notify', e); }
       }
     } catch (e) { console.warn('tax receipt issue failed', e); }
+
+    // Fallback — the receipt issuance failed OR there was no
+    // restaurant_user_uid. Still send the delivered notification.
+    if (pk.restaurant_id && !delivered.fired) {
+      try {
+        const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
+        const { queuePickupToPartner } = await import('./notify');
+        await queuePickupToPartner(pickupId, 'complete', {
+          title: 'Your surplus made it',
+          body: `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs).`,
+          url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
+          data: { type: 'pickup_delivered_restaurant', pickupId, meals, lbs: weight },
+        });
+        delivered.fired = true;
+      } catch (e) { console.warn('restaurant delivered notify fallback', e); }
+    }
   }
 }
 
@@ -1961,11 +1986,10 @@ export async function fetchMemberOfMonth(chapterId) {
     if (!list.length) return null;
     const row = list[0];
     if (row.user_id) {
-      const u = await getDoc(doc(db, 'users', row.user_id));
-      if (u.exists()) {
-        const ud = u.data();
-        row.users = { name: ud.name, avatar_url: ud.avatar_url };
-      }
+      // A2 — public roster surface; read the mirror, not /users.
+      const { fetchPublicProfile } = await import('./publicProfiles');
+      const p = await fetchPublicProfile(row.user_id);
+      if (p) row.users = { name: p.display_name, avatar_url: p.avatar_url || null };
     }
     return row;
   } catch {
@@ -2244,8 +2268,24 @@ export async function fetchLeaderboard({
     byUser.set(a.user_id, cur);
   }
 
-  const members = await fetchAllMembers();
-  const memberMap = new Map(members.map((m) => [m.id, m]));
+  // A2 — read the public mirror, not /users. Leaderboards never
+  // need the private profile (email, phone, consent, verification);
+  // public_profiles has the display name, avatar, chapter_id and
+  // the totals we rank on, nothing more.
+  const { fetchAllPublicProfiles } = await import('./publicProfiles');
+  const members = await fetchAllPublicProfiles({ chapterId });
+
+  // Hydrate chapter name once; the public mirror only carries chapter_id.
+  const chapIds = [...new Set(members.map((m) => m.chapter_id).filter(Boolean))];
+  const chapMap = new Map();
+  await Promise.all(chapIds.map(async (cid) => {
+    try {
+      const c = await getDoc(doc(db, 'chapters', cid));
+      if (c.exists()) chapMap.set(cid, c.data().name || '');
+    } catch {}
+  }));
+
+  const memberMap = new Map(members.map((m) => [m.uid || m.id, m]));
 
   const rows = [];
   for (const stats of byUser.values()) {
@@ -2259,10 +2299,10 @@ export async function fetchLeaderboard({
       stats.raised * SCORE_WEIGHTS.raised;
     rows.push({
       ...stats,
-      name: member.name,
+      name: member.display_name || '—',
       avatar_url: member.avatar_url || null,
-      chapter: member.chapters?.name || '—',
-      role: member.role,
+      chapter: chapMap.get(member.chapter_id) || '—',
+      role: member.role_label || 'member',
       score,
     });
   }

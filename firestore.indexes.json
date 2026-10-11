@@ -65,6 +65,14 @@
         { "fieldPath": "chapter_id", "order": "ASCENDING" },
         { "fieldPath": "label", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "notification_work",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "last_attempt_at", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

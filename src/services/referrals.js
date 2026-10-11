@@ -30,10 +30,13 @@ export function referralLink(code) {
 }
 
 // Look up the user that owns a given code. Returns null if not found.
+// A2 — queries /public_profiles (referral_code is in the allowlist),
+// not /users. The old query enumerated private profiles by code,
+// which is denied for non-execs under the A2 read rules.
 export async function findUserByReferralCode(code) {
   if (!isFirebaseConfigured || !code) return null;
   const q = query(
-    collection(db, 'users'),
+    collection(db, 'public_profiles'),
     where('referral_code', '==', String(code).trim().toUpperCase()),
     limit(1),
   );

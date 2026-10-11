@@ -237,7 +237,10 @@ function generateReferralCode(len = 7) {
   return s;
 }
 async function findUserByReferralCode(code) {
-  const q = query(collection(db, 'users'), where('referral_code', '==', code), limit(1));
+  // A2 — look up through /public_profiles, not /users. Website
+  // visitors (often not signed in) cannot read /users under the new
+  // rules; public_profiles exposes referral_code by design.
+  const q = query(collection(db, 'public_profiles'), where('referral_code', '==', code), limit(1));
   const snap = await getDocs(q);
   if (snap.empty) return null;
   const d = snap.docs[0];

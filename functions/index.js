@@ -16,6 +16,23 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp();
 
+// A2 — mirror /users → /public_profiles with a strict allowlist.
+// Only writer to the public collection. See syncPublicProfile.js
+// for the allowlist and rationale.
+exports.syncPublicProfileOnWrite = require('./syncPublicProfile').syncPublicProfileOnWrite;
+
+// A2 R4 — short-lived signed URL for ID evidence. See idViewer.js.
+exports.getIdViewUrl = require('./idViewer').getIdViewUrl;
+
+// A2 R-followup #3 — authorized cross-user notification queue.
+exports.queueBusinessNotification = require('./queueNotification').queueBusinessNotification;
+
+// A2 ID workflow — mirror id_reviews.status → users.verification_status.
+exports.syncIdReviewStatus = require('./syncIdReviewStatus').syncIdReviewStatus;
+
+// A2 I2 — scheduled takeover for stuck in-progress dedup receipts.
+exports.sweepNotificationDedup = require('./sweepNotificationDedup').sweepNotificationDedup;
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 exports.sendPushOnNotification = functions.firestore

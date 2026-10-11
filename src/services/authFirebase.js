@@ -565,29 +565,22 @@ export async function uploadIdImage(userId, fileUri, { kind = 'personal', side =
   return getDownloadURL(storageRef);
 }
 
-// Personal ID — upload front + back and stamp both URLs on the user
-// doc. Sets verification_status to 'pending' so the upload shows up in
-// Admin → Verify IDs for review. Keeps the legacy `id_document_url`
-// field pointing at the front so older code that reads it (e.g. the
-// ID gate, the admin list thumbnail) keeps working.
+// Personal ID — delegates to the A2 /id_reviews pipeline so no
+// bearer URL ever lands on /users. Keeps the historical function
+// signature so existing callers don't need to change today; new
+// code should import submitIdReview directly from
+// services/idReview.
+//
+// A2 verification_status on /users is now mirrored from
+// /id_reviews/<uid>.status by the syncIdReviewStatus Firestore
+// trigger — this function no longer writes it.
 export async function uploadIdDocument(userId, { frontUri, backUri }) {
   if (!isFirebaseConfigured) return null;
   if (!frontUri) throw new Error('Front of the ID is required.');
   if (!backUri)  throw new Error('Back of the ID is required.');
-
-  const [frontUrl, backUrl] = await Promise.all([
-    uploadIdImage(userId, frontUri, { kind: 'personal', side: 'front' }),
-    uploadIdImage(userId, backUri,  { kind: 'personal', side: 'back' }),
-  ]);
-
-  await updateDoc(doc(db, 'users', userId), {
-    id_document_url: frontUrl,            // legacy field — points at front
-    id_document_front_url: frontUrl,
-    id_document_back_url: backUrl,
-    verification_status: 'pending',
-    verification_reviewed_at: null,
-  });
-  return { frontUrl, backUrl };
+  const { submitIdReview } = await import('./idReview');
+  const out = await submitIdReview(userId, { frontUri, backUri, kind: 'personal' });
+  return out ? { frontPath: out.frontPath, backPath: out.backPath } : null;
 }
 
 // Re-authenticate with the current password (Firebase requires this before

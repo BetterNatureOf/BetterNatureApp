@@ -199,7 +199,7 @@ export default function DashboardScreen({ navigation }) {
       {/* First-time checklist — below the fold */}
       {isNewMember && (
         <NewMemberChecklist
-          verified={!!user?.id_document_url}
+          verified={user?.verification_status === 'approved'}
           profileComplete={!!user?.profile_complete}
           navigate={navigation.navigate}
         />
