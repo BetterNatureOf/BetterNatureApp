@@ -676,16 +676,16 @@ service cloud.firestore {
       // We deliberately don't require role=='restaurant' on the rule
       // — the role string can drift during signup (member ->
       // restaurant migration etc.). The id-match is the real check.
-      allow create: if isExec() || (
+      allow create: if request.resource.data.status != 'completed' && (isExec() || (
         isSignedIn() && pickupRid() != null
         && (pickupRid() == request.auth.uid || pickupRid() == userRid())
-      );
+      ));
 
       // Update: exec OR any of the narrow transition rules above.
       // Everything that doesn't match a transition is denied, which
       // means a direct SDK write with arbitrary fields can no longer
       // forge a completion or steal a claim.
-      allow update: if isExec()
+      allow update: if oldStatus() != 'completed' && newStatus() != 'completed' && (isExec()
         || isAtomicClaim()
         || isSelfReleaseClaim()
         || isSelfSetEnroute()
@@ -695,7 +695,7 @@ service cloud.firestore {
         || isSelfComplete()
         || isSelfStampReceipt()
         || isRestaurantVerify()
-        || isRestaurantCancel();
+        || isRestaurantCancel());
 
       allow delete: if isAdmin();
     }
@@ -801,7 +801,12 @@ service cloud.firestore {
     // ── member_activity ──
     match /member_activity/{id} {
       allow read: if isSignedIn();
-      allow write: if isExec();
+      allow write: if isExec() && !id.matches('pickup_.*');
+    }
+
+    match /pickup_completions/{id} {
+      allow read: if isExec();
+      allow write: if false;
     }
 
     // ── announcements ──
@@ -871,23 +876,15 @@ service cloud.firestore {
     // Audit A5: `allow read: if true` permitted anonymous LIST of the
     // whole collection, exposing donor + volunteer PII and receipt
     // URLs. Split into `get` (open — doc id is unguessable, so the
-    // URL itself is the capability) and `list` (exec-only).
+    // URL itself is the capability). LIST is exec or owner-scoped;
+    // partner queries must constrain restaurant_id to their own restaurant.
     match /tax_receipts/{id} {
       allow get: if true;
-      allow list: if isExec();
-      // Receipts must be tied to a real /pickups/{id} that the
-      // CURRENT signed-in user actually delivered (claimed_by ==
-      // auth.uid) and that's in 'completed' status. Without this
-      // anyone signed in could mint a forged receipt for any
-      // restaurant via the JS SDK. Execs can mint anything (manual
-      // backfills, paper receipts). Nobody edits or deletes — the
-      // collection is immutable audit history.
-      allow create: if isExec()
-        || (isSignedIn()
-            && request.resource.data.pickup_id is string
-            && exists(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id))
-            && get(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id)).data.claimed_by == request.auth.uid
-            && get(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id)).data.status == 'completed');
+      allow list: if isExec() || (isSignedIn()
+        && get(/databases/$(database)/documents/restaurants/$(resource.data.restaurant_id)).data.user_id == request.auth.uid);
+      // Pickup receipts are issued only by the audited server transaction.
+      // Manual/backfill issuance requires a separate server operation.
+      allow create: if false;
       allow update, delete: if false;
     }
 
@@ -990,7 +987,7 @@ service cloud.firestore {
     // a general activity feed.
     match /audit_events/{id} {
       allow read: if isExec();
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && !id.matches('pickup_.*');
       allow update, delete: if false;
     }
 

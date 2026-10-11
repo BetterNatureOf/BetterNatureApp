@@ -12,6 +12,35 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 ## Active
 
+### Codex temporary takeover — 2026-10-11
+
+The user authorized Codex to implement C1 review fixes while Claude is paused. Codex works only on `codex/c1-completion-fixes`, starting at `cd81e50`. For this interval Codex owns completion functions, their pure policy helper, completion notification trigger, `functions/index.js`, `firebase.json`, `firestore.rules`, completion client adapters, receipt/impact policy imports, C1 tests, and this handoff section. The older Claude ownership rows below describe the paused draft, not simultaneous editing. No merge, deployment, or production migration is authorized by this takeover. Claude should fetch this branch and read the final handoff before resuming.
+
+#### C1 implementation decisions
+
+- One transaction now owns pickup status, immutable `/pickup_completions/{id}`, member activity, canonical user counters, organization totals, receipt, audit, and frozen A2 notification work. Receipt/activity existence is not the completion sentinel. Legacy or partial completed records fail with `legacy_completion` for explicit reconciliation.
+- Live caller authorization is read inside the transaction before fresh or cached results. Normal delivery requires the actual claimant, approved member status (executive membership bypass matches the app), approved personal ID, volunteer agreement, and driver setup. Disabled, deleted/soft-deleted, merged, or unapproved accounts fail. Business accounts require approved `restaurant_status`, not their default approved member status. Administrators can volunteer normally with their own approved evidence.
+- An override requires a current executive/admin role and `override_reason`. Positive actual weight remains required for delivered food. Actor and claimant are recorded separately. Unclaimed staff deliveries have zero invented volunteer hours. Spoiled reports produce zero hours, points, events, rescue weight/meals, and no donation receipt.
+- Receipts have configured organization identity, authoritative donor/claimant names, a unique immutable `BN-<pickup id>` number, and atomic pickup receipt links. Numbering is deliberately unique rather than per-restaurant sequential. Partner receipt lists are scoped to the owning restaurant. The unused client issuance helper now only reads the server-issued receipt. Manual/backfill issuance is server-only and requires a separate audited operation; this patch does not add a manual issuance UI or reconcile legacy pickups.
+- `dispatchPickupCompletion` is a new retriable Firestore onCreate trigger for immediate fanout of frozen completion work. It reuses A2's `_resumeFromWork`; A2's scheduled sweep remains the fallback. Browser survival/retry is unnecessary. Existing deterministic bell/outbox creation preserves read/sent state and repairs half-pairs.
+- Client adapters return the server result and map `HttpsError.details.reason` to the screen's existing handoff/weight/state recovery codes. They no longer attempt post-completion notification writes or reference an undefined `pkRef`.
+- Rules prohibit direct client completed creates/transitions even for executives, receipt issuance, and pre-seeding reserved completion activity/audit documents. Unrelated executive administration of unfinished pickups/event activity remains allowed. Completed pickup fields are frozen to clients.
+
+#### Verification and remaining rollout conditions
+
+Use `npm ci` at the repo root and `npm install --prefix functions` to install the declared app and function dependencies. Tests load the function's Admin SDK instance so separate root/function SDK installations do not create separate uninitialized default apps.
+
+```bash
+firebase emulators:exec --only firestore,storage --project demo-a2 'node scripts/test-a2-rules.cjs && node scripts/test-c1-complete.cjs && node scripts/test-idgate.cjs && node scripts/test-c1-client.cjs'
+firebase emulators:exec --only auth,functions,firestore --project demo-c1 'node scripts/test-c1-callable.cjs'
+```
+
+The first command uses one project throughout; A2's harness hardcodes `demo-a2`, including its cross-service Storage/Firestore checks. `test-c1-complete` selects `GCLOUD_PROJECT` and refuses non-emulator/non-demo execution. It exercises actual Admin SDK transactions, injected rollback at eight required writes, concurrency, all outcomes, authorization, schema, real rules, half-pair recovery, and read/sent state preservation. Initial transaction reads use `tx.getAll` to begin one read set reliably under concurrent calls.
+
+The full Auth/HTTPS/registered-trigger probe is checked in but **not passed on this host**: Firebase Tools loads every function definition, then its worker cannot listen/connect on `/tmp/fire_emu_*.sock` (`EPERM`). No approval escalation or production substitute was attempted. The callable and trigger implementations themselves are exercised against the Firestore emulator by the transaction/recovery suite. Production Functions target Node 20; this host's emulator uses Node 24. Repeat the full probe on a host supporting the requested runtime and Unix sockets, then do app-level/staging acceptance before declaring C1 closed.
+
+No merge, deployment, real donation, real notification delivery, or production migration ran. A2 staging IAM/index/ID-migration prerequisites still apply. Roll out `completePickupOperation` and `dispatchPickupCompletion` with A2's notification recovery functions/index ready, then the client and C1 rules in an authorized coordinated window. The broader delivery-state audit, dispatcher leases, president donation scope, officer tools, and redesign remain separate work.
+
 | Task | Owner | Branch | Files | Starting commit | Status |
 |------|-------|--------|-------|-----------------|--------|
 | **C1** — server-authorized idempotent pickup completion | Claude | `claude/c1-idempotent-completion` | `functions/completePickup.js` (new); `functions/index.js`; `firestore.rules`; `src/services/database.js`; `scripts/test-c1-complete.cjs` (new) | `900970e` (A2 reviewed tip) | implementation drafted, pre-review. Depends on PR #2 (A2) merge. |

@@ -1,306 +1,236 @@
-#!/usr/bin/env node
-// C1 — idempotency tests for completePickupOperation.
-//
-// These tests exercise the invariants the callable must uphold.
-// They do NOT run the Firebase Functions emulator (that requires
-// Java 17 + the full emulator suite); instead they load the
-// candidate source and replace `firebase-admin` with a minimal
-// in-process mock that preserves transaction semantics for the
-// writes we care about.
-//
-// Run:
-//   node scripts/test-c1-complete.cjs
+// Real Firestore transactions and real security rules, never an in-memory tx.
+// firebase emulators:exec --only firestore --project demo-c1 'node scripts/test-c1-complete.cjs'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const functionsRequire = require('node:module').createRequire(require.resolve('../functions/completePickup'));
+const admin = functionsRequire('firebase-admin');
+const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
+const F = require('firebase/firestore');
+const projectId = process.env.GCLOUD_PROJECT || 'demo-c1';
+if (!process.env.FIRESTORE_EMULATOR_HOST || !projectId.startsWith('demo-')) {
+  throw new Error('This suite requires a demo project and FIRESTORE_EMULATOR_HOST. Never run against production.');
+}
+admin.initializeApp({ projectId });
+const db = admin.firestore();
+const { _complete: complete } = require('../functions/completePickup');
+const { _dispatch: dispatch } = require('../functions/dispatchPickupCompletion');
+const approved = { role: 'member', name: 'Alice', member_status: 'approved', verification_status: 'approved',
+  contract_volunteer_signed: true, driver_setup_complete: true };
+const ctx = (uid = 'alice') => ({ auth: { uid, token: { email_verified: true } } });
+const payload = (extra = {}) => ({ pickup_id: 'p', actual_weight_lbs: 20, ...extra });
+const send = (extra = {}, uid = 'alice') => complete(payload(extra), ctx(uid));
+const read = async (path) => (await db.doc(path).get()).data();
+const has = async (path) => (await db.doc(path).get()).exists;
+const rejection = (code) => (e) => e.code === code;
+let env, passed = 0;
 
-const assert = require('assert');
-const path = require('path');
-const Module = require('module');
-
-// ── Minimal in-process Firestore mock ────────────────────────────
-function makeStore() {
-  // key → doc.data
-  const docs = new Map();
-  // path -> array of events for assertions
-  const writes = [];
-  return { docs, writes };
+async function seed(pickup = {}, user = {}) {
+  await env.clearFirestore();
+  await Promise.all([
+    db.doc('users/alice').set({ ...approved, ...user }),
+    db.doc('users/bob').set({ ...approved, name: 'Bob' }),
+    db.doc('users/eve').set({ ...approved, name: 'Executive', role: 'executive' }),
+    db.doc('users/partner').set({ role: 'restaurant', restaurant_id: 'r', restaurant_status: 'approved' }),
+    db.doc('restaurants/r').set({ user_id: 'partner', name: 'Food Partner' }),
+    db.doc('restaurants/foreign').set({ user_id: 'foreign-owner', name: 'Other Partner' }),
+    db.doc('pickups/p').set({ status: 'enroute', claimed_by: 'alice', restaurant_id: 'r',
+      enroute_at: new Date(Date.now() - 1800000).toISOString(), verified_by_restaurant_at: new Date().toISOString(), ...pickup }),
+    db.doc('org_stats/global').set({ lbs: 0, meals: 0, co2: 0, water: 0, hours: 0, events: 0 }),
+  ]);
 }
-function sentinelsResolve(data) {
-  // Shallow unwrap of our mock FieldValue sentinels.
-  const out = {};
-  for (const [k, v] of Object.entries(data)) {
-    if (v && v.__fieldvalue === 'serverTimestamp') out[k] = new Date();
-    else if (v && v.__fieldvalue === 'increment') out[k] = v.amount; // base value — merged below
-    else out[k] = v;
-  }
-  return out;
+async function test(name, fn) {
+  await seed();
+  await fn();
+  console.log(`PASS ${++passed}: ${name}`);
 }
-function applyIncrementsOnMerge(prev, next) {
-  const out = { ...prev };
-  for (const [k, v] of Object.entries(next)) {
-    if (v && v.__fieldvalue === 'increment') out[k] = (prev[k] || 0) + v.amount;
-    else if (v && v.__fieldvalue === 'serverTimestamp') out[k] = new Date();
-    else out[k] = v;
-  }
-  return out;
+async function assertTotals(weight = 20, meals = 24, events = 1) {
+  const user = await read('users/alice'), org = await read('org_stats/global');
+  assert.equal(user.lbs_rescued, weight); assert.equal(user.meals_rescued, meals);
+  assert.equal(user.events_attended, events); assert.equal(user.pickups_completed, events);
+  assert.equal(user.points, weight ? 10 + Math.min(50, meals) : 0);
+  assert.equal(user.leaderboard_score, user.points);
+  assert.equal(org.lbs, weight); assert.equal(org.meals, meals); assert.equal(org.co2, weight * 3.8);
+  assert.equal(org.water, weight * 175); assert.equal(org.events, events);
+  assert.equal(org.hours, user.hours_logged);
+  assert.equal((await read('member_activity/pickup_p')).hours, user.hours_logged);
 }
-
-function buildAdminStub(store, { onTxAttempt } = {}) {
-  const FieldValue = {
-    serverTimestamp: () => ({ __fieldvalue: 'serverTimestamp' }),
-    increment: (amount) => ({ __fieldvalue: 'increment', amount }),
-  };
-  function docRef(docPath) {
-    return {
-      path: docPath,
-      async get() {
-        return {
-          exists: store.docs.has(docPath),
-          data: () => store.docs.get(docPath),
-          ref: this,
-        };
-      },
-      async set(data, opts) {
-        store.writes.push({ op: 'set', path: docPath, data, opts });
-        const resolved = sentinelsResolve(data);
-        if (opts && opts.merge) {
-          store.docs.set(docPath, applyIncrementsOnMerge(store.docs.get(docPath) || {}, data));
-        } else {
-          store.docs.set(docPath, resolved);
-        }
-      },
-      async update(data) {
-        store.writes.push({ op: 'update', path: docPath, data });
-        store.docs.set(docPath, applyIncrementsOnMerge(store.docs.get(docPath) || {}, data));
-      },
-      async create(data) {
-        if (store.docs.has(docPath)) {
-          const e = new Error('ALREADY_EXISTS');
-          e.code = 6;
-          throw e;
-        }
-        store.writes.push({ op: 'create', path: docPath, data });
-        store.docs.set(docPath, sentinelsResolve(data));
-      },
-      async delete() {
-        store.writes.push({ op: 'delete', path: docPath });
-        store.docs.delete(docPath);
-      },
-    };
-  }
-  function collectionRef(colPath) {
-    return {
-      doc(id) { return docRef(`${colPath}/${id}`); },
-      async add(data) {
-        const id = `auto_${Math.random().toString(36).slice(2, 10)}`;
-        const r = docRef(`${colPath}/${id}`);
-        await r.create(data);
-        return r;
-      },
-    };
-  }
-  function firestore() {
-    return {
-      doc: (p) => docRef(p),
-      collection: (p) => collectionRef(p),
-      async runTransaction(fn) {
-        if (onTxAttempt) onTxAttempt();
-        // Build a tx shim mirroring the admin API we use (get / set / create / update / delete).
-        const tx = {
-          get: (ref) => ref.get(),
-          set: (ref, data, opts) => ref.set(data, opts),
-          update: (ref, data) => ref.update(data),
-          create: (ref, data) => ref.create(data),
-          delete: (ref) => ref.delete(),
-        };
-        return fn(tx);
-      },
-    };
-  }
-  firestore.FieldValue = FieldValue;
-  firestore.Timestamp = { fromMillis: (ms) => ({ toMillis: () => ms, _ms: ms }) };
-  return {
-    firestore,
-    initializeApp: () => {},
-    apps: [{}],
-    storage: () => ({ bucket: () => ({ file: () => ({ exists: async () => [false] }) }) }),
-    auth: () => ({ getUser: async () => ({ emailVerified: true, email: 'x@y' }) }),
-  };
-}
-
-// Intercept require('firebase-admin') + 'firebase-functions' so we
-// can inject the mock + simulate the HttpsError + onCall contract.
-function stubRequire(store) {
-  const originalResolve = Module._resolveFilename;
-  const originalLoad = Module._load;
-  const admin = buildAdminStub(store);
-  // Grab the handler so we can call it directly.
-  let registeredHandler = null;
-  const functionsMock = {
-    https: {
-      onCall: (fn) => {
-        registeredHandler = fn;
-        return fn;
-      },
-      HttpsError: class HttpsError extends Error {
-        constructor(code, message) { super(message); this.code = code; this.name = 'HttpsError'; }
-      },
-    },
-    runWith: () => functionsMock,
-    firestore: { document: () => ({ onWrite: () => () => null }) },
-    pubsub: { schedule: () => ({ onRun: () => () => null }) },
-  };
-  Module._load = function (req, parent, ...rest) {
-    if (req === 'firebase-admin') return admin;
-    if (req === 'firebase-functions') return functionsMock;
-    return originalLoad.call(this, req, parent, ...rest);
-  };
-  // Preload the candidate source.
-  delete require.cache[require.resolve('../functions/completePickup.js')];
-  require('../functions/completePickup.js');
-  Module._load = originalLoad;
-  return { admin, functionsMock, getHandler: () => registeredHandler };
-}
-
-// ── Fixture helpers ──────────────────────────────────────────────
-function seedPickup(store, pickupId, overrides = {}) {
-  store.docs.set(`pickups/${pickupId}`, {
-    status: 'enroute',
-    claimed_by: 'alice',
-    claimed_at: new Date().toISOString(),
-    enroute_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    verified_by_restaurant_at: new Date().toISOString(),
-    restaurant_id: 'rose-restaurant',
-    restaurant_name: 'Rose Diner',
-    chapter_id: 'ch-memphis',
-    chapter_name: 'Memphis',
-    estimated_weight_lbs: 10,
-    ...overrides,
-  });
-}
-function seedUser(store, uid, overrides = {}) {
-  store.docs.set(`users/${uid}`, {
-    role: 'member', member_status: 'approved', disabled: false,
-    name: 'Alice', ...overrides,
-  });
-}
-
-// ── Tests ────────────────────────────────────────────────────────
-async function runOne(ctx, data) {
-  return ctx.getHandler()(data, { auth: { uid: data._caller || 'alice' } });
-}
-
-async function test_happyPath() {
-  const store = makeStore();
-  const ctx = stubRequire(store);
-  seedPickup(store, 'px1');
-  seedUser(store, 'alice');
-  const res = await runOne(ctx, { pickup_id: 'px1', actual_weight_lbs: 20 });
-  assert.strictEqual(res.ok, true);
-  assert.strictEqual(res.cached, false);
-  // Pickup transitioned.
-  assert.strictEqual(store.docs.get('pickups/px1').status, 'completed');
-  // Member activity has the deterministic id.
-  assert.ok(store.docs.has('member_activity/pickup_px1'), 'activity doc created with deterministic id');
-  // Receipt has the deterministic id.
-  assert.ok(store.docs.has('tax_receipts/rcpt_px1'), 'receipt doc created with deterministic id');
-  // User totals bumped.
-  const u = store.docs.get('users/alice');
-  assert.strictEqual(u.events_attended, 1);
-  assert.ok(u.lbs_rescued >= 20, 'lbs_rescued bumped');
-}
-
-async function test_idempotentReplay() {
-  const store = makeStore();
-  const ctx = stubRequire(store);
-  seedPickup(store, 'px1');
-  seedUser(store, 'alice');
-  await runOne(ctx, { pickup_id: 'px1', actual_weight_lbs: 20 });
-  const beforeWrites = store.writes.length;
-  const res2 = await runOne(ctx, { pickup_id: 'px1', actual_weight_lbs: 20 });
-  assert.strictEqual(res2.cached, true);
-  // No additional pickup/activity/receipt writes.
-  const activityWrites = store.writes.filter((w) => w.path === 'member_activity/pickup_px1');
-  assert.strictEqual(activityWrites.length, 1, 'exactly one activity write across both calls');
-  const receiptWrites = store.writes.filter((w) => w.path === 'tax_receipts/rcpt_px1');
-  assert.strictEqual(receiptWrites.length, 1, 'exactly one receipt write across both calls');
-  // User totals NOT double-bumped.
-  const u = store.docs.get('users/alice');
-  assert.strictEqual(u.events_attended, 1, 'events_attended still 1 after replay');
-}
-
-async function test_unauthorized() {
-  const store = makeStore();
-  const ctx = stubRequire(store);
-  seedPickup(store, 'px1');  // claimed_by = alice
-  seedUser(store, 'bob');     // non-exec, non-claimant
-  let threw = null;
-  try {
-    await runOne(ctx, { pickup_id: 'px1', actual_weight_lbs: 20, _caller: 'bob' });
-  } catch (e) { threw = e; }
-  assert.ok(threw, 'should throw on unauthorized');
-  assert.strictEqual(threw.code, 'permission-denied');
-}
-
-async function test_missingWeight() {
-  const store = makeStore();
-  const ctx = stubRequire(store);
-  seedPickup(store, 'px1');
-  seedUser(store, 'alice');
-  let threw = null;
-  try { await runOne(ctx, { pickup_id: 'px1' }); } catch (e) { threw = e; }
-  assert.ok(threw);
-  assert.strictEqual(threw.code, 'invalid-argument');
-}
-
-async function test_wrongStatus() {
-  const store = makeStore();
-  const ctx = stubRequire(store);
-  seedPickup(store, 'px1', { status: 'claimed' });
-  seedUser(store, 'alice');
-  let threw = null;
-  try { await runOne(ctx, { pickup_id: 'px1', actual_weight_lbs: 20 }); } catch (e) { threw = e; }
-  assert.ok(threw);
-  assert.strictEqual(threw.code, 'failed-precondition');
-}
-
-async function test_spoiled_noReceipt() {
-  const store = makeStore();
-  const ctx = stubRequire(store);
-  seedPickup(store, 'px1');
-  seedUser(store, 'alice');
-  const res = await runOne(ctx, { pickup_id: 'px1', spoiled: true, spoiled_kind: 'food_spoiled' });
-  assert.strictEqual(res.spoiled, true);
-  assert.strictEqual(store.docs.get('pickups/px1').status, 'completed');
-  assert.strictEqual(store.docs.get('pickups/px1').spoiled, true);
-  assert.strictEqual(store.docs.get('pickups/px1').actual_weight_lbs, 0);
-  assert.ok(!store.docs.has('tax_receipts/rcpt_px1'), 'spoiled must not mint receipt');
-}
-
-async function test_execOverride() {
-  const store = makeStore();
-  const ctx = stubRequire(store);
-  seedPickup(store, 'px1', { status: 'claimed' }); // not enroute
-  seedUser(store, 'eve', { role: 'executive' });
-  const res = await runOne(ctx, { pickup_id: 'px1', actual_weight_lbs: 15, override: true, _caller: 'eve' });
-  assert.strictEqual(res.ok, true);
-  assert.strictEqual(store.docs.get('pickups/px1').status, 'completed');
-}
-
-const tests = [
-  ['happy path writes all deterministic docs', test_happyPath],
-  ['idempotent replay returns cached',          test_idempotentReplay],
-  ['unauthorized caller denied',                test_unauthorized],
-  ['missing weight invalid-argument',           test_missingWeight],
-  ['wrong status failed-precondition',          test_wrongStatus],
-  ['spoiled sets weight=0 and no receipt',      test_spoiled_noReceipt],
-  ['exec override bypasses enroute gate',       test_execOverride],
-];
 
 (async () => {
-  let failed = 0;
-  for (const [desc, fn] of tests) {
-    try { await fn(); console.log(`ok   ${desc}`); }
-    catch (e) { failed += 1; console.error(`FAIL ${desc}:`, e?.message || e); if (e?.stack) console.error(e.stack); }
-  }
-  if (failed) { console.error(`${failed} case(s) failed`); process.exit(1); }
-  console.log(`[C1 complete] all ${tests.length} cases passed ✓`);
-})();
+  const [host, port] = process.env.FIRESTORE_EMULATOR_HOST.split(':');
+  env = await initializeTestEnvironment({ projectId, firestore: { host, port: Number(port),
+    rules: fs.readFileSync(require.resolve('../firestore.rules'), 'utf8') } });
+  try {
+    await test('normal delivery atomically records canonical accounting and receipt schema', async () => {
+      const out = await send(); assert.equal(out.cached, false); await assertTotals();
+      const rec = await read('tax_receipts/rcpt_p'), pk = await read('pickups/p');
+      assert.equal(rec.org.legalName, 'BetterNature Inc.'); assert.equal(rec.org.ein, '99-4028399');
+      assert.equal(rec.receipt_no, out.receipt_no); assert.equal(rec.volunteer_name, 'Alice');
+      assert.equal(rec.restaurant_name, 'Food Partner'); assert.equal(pk.tax_receipt_id, out.receipt_id);
+      assert.ok(pk.tax_receipt_url.endsWith('id=rcpt_p')); assert.equal(pk.delivered_visible_to_restaurant, true);
+      assert.equal((await read('audit_events/pickup_p')).actor_uid, 'alice');
+      assert.equal((await read('pickup_completions/p')).notification_keys.length, 2);
+    });
+    await test('concurrent delivery and conflicting replay apply one frozen outcome', async () => {
+      const pair = await Promise.all([send(), send()]); assert.equal(pair.filter((r) => r.cached).length, 1);
+      const replay = await send({ actual_weight_lbs: 999, spoiled: true });
+      assert.equal(replay.actual_weight_lbs, 20); assert.equal(replay.spoiled, false); await assertTotals();
+    });
+    await test('unrelated member cannot access a cached completion', async () => {
+      await send(); await assert.rejects(send({}, 'bob'), rejection('permission-denied'));
+    });
+    await test('ordinary claimant cannot claim executive override', async () => {
+      await assert.rejects(send({ override: true, override_reason: 'bypass' }), rejection('permission-denied'));
+      assert.equal((await read('pickups/p')).status, 'enroute');
+    });
+    for (const [name, change] of Object.entries({ missing: null, disabled: { disabled: true }, deleted: { deleted: true },
+      soft_deleted: { deleted_at: new Date().toISOString() }, merged: { merged_into: 'bob' }, pending: { member_status: 'pending' }, unverified: { verification_status: 'pending' },
+      unsigned: { contract_volunteer_signed: false }, no_driver: { driver_setup_complete: false } })) {
+      await test(`normal ${name} account denied`, async () => {
+        if (!change) await db.doc('users/alice').delete(); else await db.doc('users/alice').update(change);
+        await assert.rejects(send()); assert.equal(await has('pickup_completions/p'), false);
+      });
+    }
+    await test('executive can volunteer as the actual claimant', async () => {
+      await db.doc('users/eve').update({ member_status: admin.firestore.FieldValue.delete() });
+      await db.doc('pickups/p').update({ claimed_by: 'eve' }); await send({}, 'eve');
+      assert.equal((await read('tax_receipts/rcpt_p')).volunteer_name, 'Executive');
+      assert.equal((await read('users/eve')).pickups_completed, 1);
+    });
+    await test('pending business approval cannot borrow its default approved member status', async () => {
+      await db.doc('users/alice').update({ role: 'restaurant', restaurant_status: 'pending' });
+      await assert.rejects(send(), rejection('failed-precondition'));
+    });
+    await test('approved food partner can handle a pickup under its business approval', async () => {
+      await db.doc('users/alice').update({ role: 'restaurant', restaurant_status: 'approved', verification_status: 'none',
+        contract_volunteer_signed: false, driver_setup_complete: false });
+      await send(); await assertTotals();
+    });
+    await test('executive acting for another volunteer requires an explicit reason', async () => {
+      await assert.rejects(send({}, 'eve'), rejection('permission-denied'));
+      await assert.rejects(send({ override: true }, 'eve'), rejection('permission-denied'));
+      await send({ override: true, override_reason: 'Delivery confirmed by officer' }, 'eve');
+      assert.equal((await read('tax_receipts/rcpt_p')).volunteer_name, 'Alice');
+      const audit = await read('audit_events/pickup_p'); assert.equal(audit.actor_uid, 'eve');
+      assert.equal(audit.claimant_uid, 'alice'); assert.ok(audit.override_reason); await assertTotals();
+    });
+    await test('revoked executive role cannot use a stale override', async () => {
+      await db.doc('users/eve').update({ role: 'member' });
+      await assert.rejects(send({ override: true, override_reason: 'stale privilege' }, 'eve'), rejection('permission-denied'));
+      assert.equal(await has('pickup_completions/p'), false);
+    });
+    await test('unclaimed override has a universal sentinel and no invented volunteer hours', async () => {
+      await db.doc('pickups/p').update({ claimed_by: null, status: 'available' });
+      const args = { override: true, override_reason: 'Staff delivery entered by executive' };
+      const out = await Promise.all([send(args, 'eve'), send(args, 'eve')]);
+      assert.equal(out.filter((r) => r.cached).length, 1); assert.equal(await has('member_activity/pickup_p'), false);
+      assert.equal((await read('org_stats/global')).lbs, 20); assert.equal((await read('org_stats/global')).hours, 0);
+    });
+    await test('spoiled concurrent completion and replay have zero rescue credit and no receipt', async () => {
+      const pair = await Promise.all([send({ spoiled: true }), send({ spoiled: true })]);
+      assert.equal(pair.filter((r) => r.cached).length, 1); await assertTotals(0, 0, 0);
+      assert.equal(await has('tax_receipts/rcpt_p'), false); assert.equal((await send({ spoiled: true })).cached, true);
+      assert.equal((await read('notification_work/completion:p:partner')).data.type, 'pickup_spoiled');
+    });
+    await test('legacy completion fails explicitly without recounting', async () => {
+      await db.doc('pickups/p').update({ status: 'completed' });
+      await assert.rejects(send(), (e) => e.details.reason === 'legacy_completion');
+      assert.equal((await read('org_stats/global')).lbs, 0);
+    });
+    await test('handoff note is returned as a recoverable screen reason and frozen into receipt', async () => {
+      await db.doc('pickups/p').update({ verified_by_restaurant_at: admin.firestore.FieldValue.delete() });
+      await assert.rejects(send(), (e) => e.details.reason === 'handoff_not_confirmed');
+      await send({ unverified_note: 'Staff handed food over; phone was unavailable.' });
+      assert.equal((await read('tax_receipts/rcpt_p')).handoff_unverified, true);
+      assert.ok((await read('tax_receipts/rcpt_p')).handoff_unverified_note.includes('Staff'));
+    });
+    for (const value of [0, -1, null, '20', Infinity, NaN]) {
+      await test(`invalid actual weight ${String(value)} denied even for exec override`, async () => {
+        await assert.rejects(send({ actual_weight_lbs: value, override: true, override_reason: 'audit' }, 'eve'), rejection('invalid-argument'));
+      });
+    }
+    const required = ['pickups/p', 'member_activity/pickup_p', 'users/alice', 'tax_receipts/rcpt_p', 'org_stats/global',
+      'audit_events/pickup_p', 'notification_work/completion:p:partner', 'pickup_completions/p'];
+    for (const path of required) {
+      await test(`failure writing ${path} rolls back every completion artifact`, async () => {
+        const original = db.runTransaction;
+        db.runTransaction = (fn, options) => original.call(db, (tx) => fn(new Proxy(tx, {
+          get(target, prop) {
+            const method = target[prop];
+            if (['create', 'set', 'update'].includes(prop)) return (ref, ...args) => {
+              if (ref.path === path) throw new Error('injected required write failure');
+              return method.call(target, ref, ...args);
+            };
+            return typeof method === 'function' ? method.bind(target) : method;
+          },
+        })), options);
+        try { await assert.rejects(send(), /injected required write failure/); } finally { db.runTransaction = original; }
+        assert.equal((await read('pickups/p')).status, 'enroute'); assert.equal((await read('org_stats/global')).lbs, 0);
+        for (const absent of ['member_activity/pickup_p', 'tax_receipts/rcpt_p', 'pickup_completions/p', 'audit_events/pickup_p',
+          'notification_work/completion:p:volunteer', 'notification_work/completion:p:partner']) assert.equal(await has(absent), false);
+        assert.equal((await read('users/alice')).lbs_rescued, undefined);
+      });
+    }
+    await test('different concurrent pickups retain distinct receipt identities and aggregate totals', async () => {
+      await db.doc('pickups/q').set(await read('pickups/p'));
+      const [a, b] = await Promise.all([send(), complete({ ...payload(), pickup_id: 'q' }, ctx())]);
+      assert.notEqual(a.receipt_no, b.receipt_no); assert.equal((await read('org_stats/global')).lbs, 40);
+      assert.equal((await read('users/alice')).pickups_completed, 2);
+    });
+    await test('frozen notification work survives client disappearance and server replay preserves read/sent state', async () => {
+      await send(); const snap = await db.doc('pickup_completions/p').get();
+      await dispatch(snap);
+      const bells = await db.collection('notifications').get(), outbox = await db.collection('notifications_outbox').get();
+      assert.equal(bells.size, 2); assert.equal(outbox.size, 2);
+      await bells.docs[0].ref.update({ read: true }); await outbox.docs[0].ref.update({ sent: true, status: 'sent', channels_done: ['email'] });
+      await db.doc('notification_work/completion:p:partner').update({ status: 'pending' });
+      await db.doc('notification_work/completion:p:volunteer').update({ status: 'pending' });
+      await dispatch(snap);
+      assert.equal((await bells.docs[0].ref.get()).data().read, true);
+      assert.equal((await outbox.docs[0].ref.get()).data().status, 'sent');
+      assert.equal((await db.collection('notifications_outbox').get()).size, 2);
+      assert.equal((await read('notification_work/completion:p:partner')).status, 'completed');
+    });
+    await test('failed fanout leaves durable work and a trigger retry repairs the missing half', async () => {
+      await send(); const snap = await db.doc('pickup_completions/p').get();
+      const prototype = Object.getPrototypeOf(db.doc('notifications_outbox/example'));
+      const original = prototype.create;
+      prototype.create = function (value) {
+        if (this.path.startsWith('notifications_outbox/')) throw new Error('injected outbox failure');
+        return original.call(this, value);
+      };
+      try { await assert.rejects(dispatch(snap), /injected outbox failure/); } finally { prototype.create = original; }
+      assert.equal((await db.collection('notifications').get()).size, 1);
+      assert.equal((await db.collection('notifications_outbox').get()).size, 0);
+      assert.equal((await read('notification_work/completion:p:volunteer')).status, 'pending');
+      await dispatch(snap);
+      assert.equal((await db.collection('notifications').get()).size, 2);
+      assert.equal((await db.collection('notifications_outbox').get()).size, 2);
+      assert.equal((await read('notification_work/completion:p:partner')).status, 'completed');
+    });
+    for (const uid of ['alice', 'partner', 'eve']) {
+      await test(`${uid} cannot directly complete/create completed pickup or forge receipt`, async () => {
+        const client = env.authenticatedContext(uid, { email_verified: true }).firestore();
+        await assertFails(F.updateDoc(F.doc(client, 'pickups/p'), { status: 'completed' }));
+        await assertFails(F.setDoc(F.doc(client, 'pickups/new'), { status: 'completed', restaurant_id: 'r' }));
+        await assertFails(F.setDoc(F.doc(client, 'tax_receipts/extra'), { pickup_id: 'p', restaurant_id: 'foreign', weight_lbs: 999 }));
+        await assertFails(F.setDoc(F.doc(client, 'pickup_completions/p'), { result: {} }));
+        await assertFails(F.setDoc(F.doc(client, 'member_activity/pickup_p'), { user_id: uid, hours: 99 }));
+        await assertFails(F.setDoc(F.doc(client, 'audit_events/pickup_p'), { actor_uid: uid }));
+      });
+    }
+    await test('unrelated executive administration still allowed before completion', async () => {
+      const client = env.authenticatedContext('eve').firestore();
+      await assertSucceeds(F.updateDoc(F.doc(client, 'pickups/p'), { internal_notes: 'Check delivery' }));
+      await assertSucceeds(F.setDoc(F.doc(client, 'member_activity/event_checkin'), { user_id: 'alice', hours: 1 }));
+    });
+    await test('partner receipt list is scoped to its owned restaurant', async () => {
+      await send(); const client = env.authenticatedContext('partner').firestore();
+      const own = await assertSucceeds(F.getDocs(F.query(F.collection(client, 'tax_receipts'), F.where('restaurant_id', '==', 'r'))));
+      assert.equal(own.size, 1);
+      await db.doc('tax_receipts/foreign_receipt').set({ restaurant_id: 'foreign', weight_lbs: 5 });
+      await assertFails(F.getDocs(F.query(F.collection(client, 'tax_receipts'), F.where('restaurant_id', '==', 'foreign'))));
+      await assertFails(F.getDocs(F.collection(client, 'tax_receipts')));
+    });
+    console.log(`C1: all ${passed} emulator cases passed`);
+  } finally { await env.cleanup(); await admin.app().delete(); }
+})().catch((error) => { console.error(error); process.exitCode = 1; });

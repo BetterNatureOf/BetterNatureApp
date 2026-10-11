@@ -1186,46 +1186,24 @@ export async function handOffPickup(pickupId, reason = '') {
 // mint a tax receipt (the IRS doesn't recognize spoiled donations,
 // and receipts for undelivered food would destroy partner trust).
 // spoiled === true is the flag downstream stat/receipt code reads.
+// Server error reasons preserve the screen's existing recovery prompts.
+// Notification work is server-owned; no post-completion client queue is needed.
+async function invokePickupCompletion(payload) {
+  const { getFunctions, httpsCallable } = await import('firebase/functions');
+  try {
+    return (await httpsCallable(getFunctions(), 'completePickupOperation')(payload)).data;
+  } catch (error) {
+    if (error?.details?.reason) error.code = error.details.reason;
+    throw error;
+  }
+}
+
 export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', note = '' } = {}) {
   if (useMock() || !isFirebaseConfigured) return;
   if (!pickupId) return;
-  const ref = doc(db, 'pickups', pickupId);
-  // C1 — spoiled completion is now the same server-authorized
-  // operation as a normal completion, routed through the
-  // completePickupOperation callable with `spoiled: true`. The
-  // callable handles weight=0 + no receipt + spoiled fields on
-  // the pickup inside the same atomic transaction. Rules deny
-  // the direct client write that used to live here.
-  const { getFunctions, httpsCallable } = await import('firebase/functions');
-  const fn = httpsCallable(getFunctions(), 'completePickupOperation');
-  try {
-    await fn({
-      pickup_id: pickupId,
-      spoiled: true,
-      spoiled_kind: kind,
-      spoiled_note: note || null,
-    });
-  } catch (e) { throw e; }
-  // Read the pickup for notification body context.
-  let pk = null;
-  try {
-    const snap = await getDoc(ref);
-    pk = snap.exists() ? snap.data() : null;
-  } catch {}
-  // Restaurant gets a candid explainer — no receipt is coming.
-  try {
-    if (pk?.restaurant_id) {
-      const explain = kind === 'fridge_full' ? 'the fridge was full and the volunteer couldn\'t find another in time'
-                    : kind === 'fridge_broken' ? 'the drop-off fridge was broken'
-                    : 'the food had spoiled in transit';
-      const { queuePickupToPartner } = await import('./notify');
-      await queuePickupToPartner(pickupId, 'complete', {
-        title: 'Pickup didn\'t make it',
-        body: `Your donation couldn't be delivered — ${explain}. No tax receipt will be issued for this run.${note ? ' Note from volunteer: ' + note : ''}`,
-        data: { type: 'pickup_spoiled', pickupId, kind },
-      });
-    }
-  } catch (e) { console.warn('spoiled notify', e?.message); }
+  return invokePickupCompletion({
+    pickup_id: pickupId, spoiled: true, spoiled_kind: kind, spoiled_note: note || null,
+  });
 }
 
 // #9 from drop-off audit — allow the fridge choice to change between
@@ -1273,7 +1251,7 @@ export async function updatePickupFridge(pickupId, fridgeId) {
 // but stamp handoff_unverified: true + handoff_unverified_note on the
 // pickup so the receipt page + exec review can see it happened. Trust
 // preserved via audit trail, not blocking.
-export async function completePickup(pickupId, actualWeightLbs, { override = false, dropoffPhotoUrl = null, fridgeId = null, unverifiedNote = null } = {}) {
+export async function completePickup(pickupId, actualWeightLbs, { override = false, overrideReason = null, dropoffPhotoUrl = null, fridgeId = null, unverifiedNote = null } = {}) {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     if (pk) {
@@ -1307,95 +1285,15 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     return;
   }
 
-  // C1 — delegate to the server-authorized completePickupOperation
-  // callable. The old client-side transaction only guarded the pickup
-  // doc write; member_activity / user totals / org_stats / tax_receipt
-  // committed afterward with random IDs, so a retry or crash left
-  // partial state. The callable now owns the whole write set in one
-  // atomic Firestore transaction with deterministic doc IDs; a retry
-  // sees status='completed' and returns the cached receipt without
-  // double-counting. Rules deny client writes to status='completed'
-  // on /pickups, so the callable is the only path.
-  const { getFunctions, httpsCallable } = await import('firebase/functions');
-  const fn = httpsCallable(getFunctions(), 'completePickupOperation');
-  let res;
-  try {
-    const payload = {
-      pickup_id: pickupId,
-      actual_weight_lbs: actualWeightLbs,
-      override: !!override,
-      dropoff_photo_url: dropoffPhotoUrl || null,
-      fridge_id: fridgeId || null,
-      unverified_note: unverifiedNote || null,
-    };
-    res = (await fn(payload)).data || {};
-  } catch (e) {
-    // Idempotent replay: the callable throws cleanly on bad input,
-    // but a transient Functions error should surface so the UI can
-    // retry. If the server has already completed the pickup, the
-    // next client call hits the cached-result path.
-    throw e;
-  }
-
-  const weight = Number(res.actual_weight_lbs) || 0;
-  const hoursEarned = Number(res.hours_earned) || 0;
-  const meals = Number(res.meals) || Math.round(weight * 1.2);
-  const spoiledResult = !!res.spoiled;
-
-  // Fetch the current pickup snapshot for notification bodies. The
-  // callable has already committed everything; this read is purely
-  // for the restaurant/claimant display names + fridge name.
-  let pk = null;
-  try {
-    const snap = await getDoc(pkRef);
-    pk = snap.exists() ? { id: snap.id, ...snap.data() } : null;
-  } catch {}
-
-  // Volunteer celebration (self recipient, no cross-user auth).
-  if (pk?.claimed_by && !spoiledResult && !res.cached) {
-    try {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
-        title: 'Pickup complete!',
-        body: `You rescued ~${meals} meals from ${pk.restaurant_name || 'the restaurant'}. Amazing work!`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_complete', pickupId },
-      });
-    } catch (e) { console.warn('volunteer complete notify', e); }
-  }
-
-  // Partner notification (collapsed delivered+receipt). Only fires
-  // when the callable actually did fresh work (res.cached === false)
-  // AND the operation was a successful delivery (not spoiled). The
-  // queueBusinessNotification callable is J1-recoverable, so a
-  // transient failure here is retried by the scheduled sweep.
-  if (!res.cached && !spoiledResult && pk?.restaurant_id) {
-    try {
-      const { queuePickupToPartner } = await import('./notify');
-      const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-      const title = res.receipt_id
-        ? `Delivered — tax receipt ready`
-        : 'Your surplus made it';
-      const body = res.receipt_id
-        ? `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Open the receipt to print or save as PDF.`
-        : `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs).`;
-      const url = res.receipt_id
-        ? `https://betternatureofficial.org/receipt.html?id=${encodeURIComponent(res.receipt_id)}`
-        : `https://app.betternatureofficial.org/#/pickups/${pickupId}`;
-      await queuePickupToPartner(pickupId, 'complete', {
-        title, body, url,
-        data: {
-          type: res.receipt_id ? 'tax_receipt' : 'pickup_delivered_restaurant',
-          pickupId, meals, lbs: weight,
-          receiptId: res.receipt_id || null,
-        },
-      });
-    } catch (e) { console.warn('partner delivered notify', e); }
-  }
-
-  return res;
+  return invokePickupCompletion({
+    pickup_id: pickupId,
+    actual_weight_lbs: actualWeightLbs,
+    override: !!override,
+    override_reason: overrideReason || null,
+    dropoff_photo_url: dropoffPhotoUrl || null,
+    fridge_id: fridgeId || null,
+    unverified_note: unverifiedNote || null,
+  });
 }
 
 // ── Restaurants ──
