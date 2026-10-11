@@ -17,6 +17,38 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 implementation review PASSES (post-ChatGPT review of 900970e)
+
+ChatGPT's ninth review verified K1 + K2 + the recovery index fix. Results:
+
+- Unchanged checked-in rules harness: **59/59 pass, exit 0** (Firebase 10.14.1 / rules-unit-testing 3.0.4)
+- Checked-in ID gate: **8/8 pass**
+- Focused recovery/callable suite: **10/10 pass**, zero reproduced defects
+- Original 25-defect regression: 10 original attacks blocked; 15 broader defects remain (none belong to A2 — see "Still outside A2" below)
+- GitHub CI: 4/4 passing on `900970e`
+
+**A2 implementation review is complete.** Staging + production migration remain pending.
+
+### What is NOT closed by this review
+
+- `firebase deploy --only firestore:indexes` to build the checked-in `notification_work` composite index must run and be verified in staging before enabling the scheduled sweep at scale.
+- Service account IAM: `roles/firebaseauth.viewer` + `roles/datastore.user` on the dispatcher worker — verify with a real staging `accounts:lookup`.
+- Deployment order (step-by-step list already in COORDINATION.md): functions → dispatcher → outbox drain → public_profiles backfill → client bundle → rules → ID migration (lock → run → unlock).
+- `revoke-id-download-tokens.js --dry-run` on staging bucket inventory; if exit 3 (non-canonical referenced), canonicalize before cutover.
+- Record actual staging run output in COORDINATION.md during the authorized rollout. Do not treat implementation review passing as production certification.
+
+### Still outside A2 (tracked separately)
+
+The remaining 15 original audit defects are the C1 and broader-flow work:
+
+- **C1** server-side idempotent completion — next implementation unit (branch `claude/c1-idempotent-completion`, depends on PR #2)
+- Partial RSVP writes, chapter check-in permissions, duplicate check-in accounting
+- Alternate partner onboarding, receipt duplication/content, donation authenticity
+- Legacy role rows, pickup state/expiry, spoiled-weight accounting
+- Dispatcher per-row lease / full PATCH response audit
+- Scoped president donations endpoint
+- UI redesign (DoorDash-style) remains on its own coordinated branch
+
 ### A2 ninth review response (post-ChatGPT review of 166ff94)
 
 ChatGPT's ninth review confirmed J1/J2 probes pass. Two consistency gaps remained in the same work pipeline + the planned index needed to be a checked-in artifact. This commit closes all three.
