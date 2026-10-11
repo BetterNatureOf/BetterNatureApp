@@ -17,6 +17,39 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 ninth review response (post-ChatGPT review of 166ff94)
+
+ChatGPT's ninth review confirmed J1/J2 probes pass. Two consistency gaps remained in the same work pipeline + the planned index needed to be a checked-in artifact. This commit closes all three.
+
+| K# | Fix | Where |
+|----|-----|-------|
+| **K1** Reservation and work creation were separate commits (crash window between them) | New `reserveLeaseAndWork(db, dedupKey, livePayload)` runs ONE Firestore transaction that reads both docs and writes both atomically: the `/notification_dedup` lease marker AND the `/notification_work` frozen payload+recipients commit together, or neither does. Return shape distinguishes `fresh` / `completed` / `in_progress` / `resumable`. | `functions/queueNotification.js` |
+| **K2** Live retry executed its own payload against the stored dedup key | When the atomic reserve sees existing work (expired lease takeover), the handler now runs the FROZEN payload + FROZEN recipients from the stored work doc, not the invocation's own inputs. Live retries and the scheduled sweep execute the SAME operation under the same key. Completion is validated against the frozen pair list via `pairPresent()`. | `functions/queueNotification.js` |
+| **Index** Required composite index missing from the manifest | `firestore.indexes.json` now carries a `notification_work` COLLECTION index on `(status ASC, last_attempt_at ASC)` so `sweepNotificationDedup`'s query can serve at scale. `firebase deploy --only firestore:indexes` picks it up. | `firestore.indexes.json` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 12 touched JS files ✓
+- `python3` JSON parse of `firestore.indexes.json` → ok ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on this push (expect 4/4).
+- Emulator harness: still blocked on this host (no Java). This round touches only server-side Cloud Function logic + an index manifest; the round-7 59/59 harness assertions remain structurally unchanged.
+
+### Deployment addendum (now concrete, not a future note)
+
+- `firebase deploy --only firestore:indexes` MUST run before enabling `sweepNotificationDedup` at scale. Verify index built in staging via the Firebase console.
+- G3's `roles/firebaseauth.viewer` IAM remains required.
+
+### ChatGPT handoff — ninth review
+
+Expected to pass:
+1. **K1** — simulate a crash between the two historical commits by injecting a failure into the second step: the atomic transaction now guarantees either both the lease and the work doc commit together, or neither. No orphan-reservation / no-work scenario is reachable through the new path.
+2. **K2** — first invocation reserves work with payload A + recipients A, bell A committed, outbox A fails. Expire lease. Second invocation calls with payload B + recipients B. The atomic reserve sees stored work (resumable), the handler executes payload/recipients A (not B), and completion is checked against frozen pair A. Outbox A gets created, bell A left intact; the invocation's own B inputs are discarded. Mirror check for an exec-changed recipient list — the sweep still finishes the original authorized operation.
+3. **Index** present in `firestore.indexes.json`; staging deploy serves the sweep's query without failure.
+
+Still outside A2 (tracked separately): C1 completion, 25-defect items 2–8/17–23/25, dispatcher per-row lease, scoped president donations endpoint.
+
 ### A2 eighth review response (post-ChatGPT review of f5619ab)
 
 ChatGPT's eighth review confirmed I1 passes, I3 rejects the former-claimant spoof, tested I4 (incomplete-exit + concurrent-acquisition) passes, and the previously-reported I2 cases pass (dispatcher state preserved on retry, legitimate release/re-claim both queue, distinct keys dedupe). Two remaining recovery gaps J1 and J2. This commit closes both.

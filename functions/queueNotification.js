@@ -355,87 +355,83 @@ function idempotencyKeyForPickup(pk, intent, transition) {
   return [pk.id || '', intent || '', transition, String(ms)].join(':');
 }
 
-// H2 — the dedup doc records a status, not just presence. A replay
-// is only considered "already-done" when the previous attempt
-// committed (`status: 'completed'`). An in-progress reservation
-// held by a crashed caller gets a lease window after which another
-// caller takes over the work (fanOut is idempotent via deterministic
-// doc IDs so overlapping retries converge on the same rows).
+// K1 — reservation (dedup lease) AND durable work are now written
+// atomically inside ONE Firestore transaction. The reviewer's prior
+// gap: `reserveDedup` committed first and `recordWork` was a
+// separate write; a crash in between left an orphan reservation
+// with no frozen payload for the sweep to recover. Combining them
+// closes that window: either both exist or neither does.
+//
+// Returned shape describes what state the key is in:
+//   kind: 'fresh'       — this caller owns a NEW reservation + work
+//   kind: 'completed'   — a prior attempt finished; replay returns deduped
+//   kind: 'in_progress' — another caller holds an unexpired lease
+//   kind: 'resumable'   — stored work exists but the lease expired
+//                         and this caller took over; frozenWork is
+//                         the authoritative payload+recipients to
+//                         execute (K2 — never substitute live input)
 const LEASE_WINDOW_MS = 60 * 1000;
-async function reserveDedup(db, key) {
-  if (!key) return { kind: 'fresh', ref: null };
-  const ref = db.collection('notification_dedup').doc(safeKeyFragment(key));
+async function reserveLeaseAndWork(db, dedupKey, livePayload) {
+  if (!dedupKey) return { kind: 'fresh', dedupRef: null, workRef: null, frozen: null };
+  const dedupRef = db.collection('notification_dedup').doc(safeKeyFragment(dedupKey));
+  const workRef  = db.collection('notification_work').doc(safeKeyFragment(dedupKey));
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    if (snap.exists) {
-      const d = snap.data() || {};
-      if (d.status === 'completed') return { kind: 'completed', ref, previous: d };
-      // In-progress reservation. If the lease is still live, caller
-      // treats this as "someone else is handling it right now."
-      // Expired leases get taken over.
-      const startedMs =
-        d.started_at && d.started_at.toMillis ? d.started_at.toMillis() :
-        d.started_at && d.started_at.seconds != null ? d.started_at.seconds * 1000 :
-        0;
-      if (startedMs && Date.now() - startedMs < LEASE_WINDOW_MS) {
-        return { kind: 'in_progress', ref, previous: d };
-      }
+    const [dSnap, wSnap] = await Promise.all([tx.get(dedupRef), tx.get(workRef)]);
+    // Fast path: receipt says completed → replay dedupes.
+    if (dSnap.exists && dSnap.data()?.status === 'completed') {
+      return { kind: 'completed', dedupRef, workRef, frozen: wSnap.exists ? wSnap.data() : null };
     }
-    tx.set(ref, {
-      key,
+    // Lease still live → someone else is handling it right now.
+    const startedMs =
+      dSnap.exists && dSnap.data()?.started_at && dSnap.data().started_at.toMillis
+        ? dSnap.data().started_at.toMillis() : 0;
+    if (startedMs && Date.now() - startedMs < LEASE_WINDOW_MS) {
+      return { kind: 'in_progress', dedupRef, workRef, frozen: wSnap.exists ? wSnap.data() : null };
+    }
+    // Stamp the lease; create the work doc if missing (atomic with
+    // the lease write). If the work already exists (expired lease
+    // takeover), KEEP its frozen payload — the current caller
+    // becomes a resumer, not an overwriter.
+    tx.set(dedupRef, {
+      key: dedupKey,
       status: 'in_progress',
       started_at: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
-    return { kind: 'fresh', ref };
+    if (!wSnap.exists) {
+      tx.create(workRef, {
+        key: dedupKey,
+        status: 'pending',
+        attempts: 0,
+        ...livePayload,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return { kind: 'fresh', dedupRef, workRef, frozen: null };
+    }
+    // Work existed; this caller is resuming it.
+    tx.set(workRef, {
+      attempts: admin.firestore.FieldValue.increment(1),
+      last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { kind: 'resumable', dedupRef, workRef, frozen: wSnap.data() };
   });
 }
-async function markDedupCompleted(ref, counts) {
-  if (!ref) return;
-  await ref.set({
+async function markBothCompleted(dedupRef, workRef, counts) {
+  if (!dedupRef && !workRef) return;
+  const batch = admin.firestore().batch();
+  if (dedupRef) batch.set(dedupRef, {
     status: 'completed',
     completed_at: admin.firestore.FieldValue.serverTimestamp(),
     inapp: counts?.inapp || 0,
     queued: counts?.queued || 0,
   }, { merge: true });
-}
-
-// J1 — durable work record. Written BEFORE fanOut so the scheduled
-// recovery worker can resume the operation using the same frozen
-// payload + recipients + dedup key, without having to re-authorize
-// anything. The resumption path uses the same fanOut helper so a
-// crash-mid-fanout is replayed idempotently (deterministic doc IDs
-// + create() swallows ALREADY_EXISTS on anything already written).
-async function recordWork(db, dedupKey, payload) {
-  if (!dedupKey) return null;
-  const ref = db.collection('notification_work').doc(safeKeyFragment(dedupKey));
-  try {
-    await ref.create({
-      key: dedupKey,
-      status: 'pending',
-      attempts: 0,
-      ...payload,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (e) {
-    // ALREADY_EXISTS → a prior invocation already recorded the work.
-    // Bump last_attempt_at + attempts; keep the frozen payload the
-    // first invocation wrote.
-    if ((e?.code || '') === 6 || /ALREADY_EXISTS/i.test(String(e?.message || ''))) {
-      await ref.set({
-        last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
-        attempts: admin.firestore.FieldValue.increment(1),
-      }, { merge: true });
-    } else { throw e; }
-  }
-  return ref;
-}
-async function markWorkCompleted(workRef) {
-  if (!workRef) return;
-  await workRef.set({
+  if (workRef) batch.set(workRef, {
     status: 'completed',
     completed_at: admin.firestore.FieldValue.serverTimestamp(),
+    inapp: counts?.inapp || 0,
+    queued: counts?.queued || 0,
   }, { merge: true });
+  await batch.commit();
 }
 
 // Exported so sweepNotificationDedup can run the SAME fanOut flow
@@ -495,40 +491,57 @@ exports.queueBusinessNotification = functions.https.onCall(async (data, context)
     throw new functions.https.HttpsError('invalid-argument', 'Unknown scope.');
   }
 
-  // H2 — lease-based dedup. A completed receipt returns immediately
-  // without re-queuing. An unexpired in-progress reservation means
-  // another caller is handling this exact (operation, timestamp)
-  // right now; return a soft deduped answer. Expired reservations
-  // get taken over because the fanOut below is idempotent.
-  let dedupRef = null;
+  // K1 + K2 — atomic reserve-and-work. The transaction either
+  // commits BOTH the lease and the frozen work doc or neither; a
+  // crash between the two no longer orphans a reservation. On an
+  // expired-lease takeover (`resumable`), the frozen work in the
+  // DB wins — this caller does NOT substitute its own payload or
+  // recipient list, so a stale restaurant owner or a modified
+  // retry body can never diverge from what was originally
+  // authorized.
+  const livePayload = {
+    scope, kind, title, body, url,
+    data: extra,
+    recipients,
+  };
+  let dedupRef = null, workRef = null;
+  let effective = livePayload; // what this runner will actually execute
   if (dedupKey) {
-    const res = await reserveDedup(db, dedupKey);
+    const res = await reserveLeaseAndWork(db, dedupKey, livePayload);
     if (res.kind === 'completed') {
       return { ok: true, scope, queued: 0, inapp: 0, deduped: true, dedup_key: dedupKey };
     }
     if (res.kind === 'in_progress') {
       return { ok: true, scope, queued: 0, inapp: 0, deduped: true, in_progress: true, dedup_key: dedupKey };
     }
-    dedupRef = res.ref;
+    dedupRef = res.dedupRef;
+    workRef  = res.workRef;
+    if (res.kind === 'resumable' && res.frozen) {
+      // K2 — execute the frozen operation, not the live input.
+      effective = {
+        scope:      res.frozen.scope,
+        kind:       res.frozen.kind,
+        title:      res.frozen.title,
+        body:       res.frozen.body,
+        url:        res.frozen.url || null,
+        data:       res.frozen.data || {},
+        recipients: Array.isArray(res.frozen.recipients) ? res.frozen.recipients : [],
+      };
+    }
   }
 
-  const rows = recipients.map((uid) => ({ user_id: uid, kind, title, body, url, data: extra }));
-
-  // J1 — durable work record. Written BEFORE fanOut so if this
-  // callable dies, sweepNotificationDedup can resume using the
-  // same frozen payload + recipient list rather than lose the
-  // notification. Only scopes with a dedup key get a work record;
-  // uncoupled broadcasts stay fire-and-forget per the review's
-  // scope note.
-  const workRef = await recordWork(db, dedupKey, {
-    scope, kind, title, body, url,
-    data: extra,
-    recipients,
-  });
+  const rows = effective.recipients.map((uid) => ({
+    user_id: uid,
+    kind:    effective.kind,
+    title:   effective.title,
+    body:    effective.body,
+    url:     effective.url,
+    data:    effective.data,
+  }));
 
   let out;
   try {
-    out = await fanOut(db, rows, kind, title, body, url, dedupKey);
+    out = await fanOut(db, rows, effective.kind, effective.title, effective.body, effective.url, dedupKey);
   } catch (e) {
     // Leave reservation + work record in-progress; sweep will
     // resume on lease expiry. Do NOT mark completed with a half-
@@ -536,14 +549,12 @@ exports.queueBusinessNotification = functions.https.onCall(async (data, context)
     throw e;
   }
 
-  // J2 — only mark the receipt + work completed when EVERY pair
-  // (bell + outbox) is confirmed present. If a half is missing,
-  // leave the receipt and work in-progress; sweepNotificationDedup
-  // will take over on lease expiry and finish via the same fanOut
-  // (idempotent).
+  // J2 — only mark completed when EVERY pair (bell + outbox) is
+  // present. If a half is missing, leave both in-progress; the
+  // scheduled sweep's fenced claim takes over on lease expiry and
+  // finishes via the same fanOut (idempotent via deterministic IDs).
   if (out.allPairsPresent !== false) {
-    await markDedupCompleted(dedupRef, out);
-    await markWorkCompleted(workRef);
+    await markBothCompleted(dedupRef, workRef, out);
   }
   return { ok: true, scope, dedup_key: dedupKey, ...out };
 });
