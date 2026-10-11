@@ -18,7 +18,8 @@ import {
   runTransaction,
   arrayUnion,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../config/firebase';
+import { auth, db, isFirebaseConfigured } from '../config/firebase';
+import pickupEligibility from '../../functions/lib/pickupEligibility';
 import { bumpOrgStats } from './orgStats';
 import {
   mockChapters,
@@ -494,6 +495,7 @@ export async function createPickup(pickup) {
   const enriched = {
     status: 'available',
     ...pickup,
+    estimated_weight_lbs: w,
     restaurant_address: address,
     restaurant_lat: restLat ?? null,
     restaurant_lng: restLng ?? null,
@@ -655,38 +657,42 @@ export async function claimPickup(pickupId, userId) {
     return pk ? { ...pk, status: 'claimed', claimed_by: userId } : null;
   }
   const ref = doc(db, 'pickups', pickupId);
-  const claimedAt = new Date().toISOString();
+  if (!auth?.currentUser || auth.currentUser.uid !== userId) {
+    throw new Error('Sign in as the volunteer claiming this pickup.');
+  }
+  const claimedAt = serverTimestamp();
   // ATOMIC claim — without this, two volunteers tapping "Claim" at
   // the same moment both succeed; both drive to the restaurant; the
   // restaurant fields two confused volunteers. A Firestore
   // transaction reads + writes in one round-trip, so the second
   // claimant lands in the `pk.status !== 'available'` branch and
   // gets a friendly error instead of stomping the first volunteer.
-  // Snapshot the volunteer's contact so the restaurant can call
-  // them if they don't show up. Reads from the user doc outside
-  // the transaction because get() inside a transaction on a
-  // different doc requires read+write pairs and complicates
-  // things — the volunteer's phone/name is a snapshot, not a
-  // race-sensitive value.
+  // Read eligibility and the contact snapshot inside the same transaction.
+  // Rules independently enforce eligibility and the server claim timestamp.
   let claimantPhone = '';
   let claimantName = '';
-  try {
-    const uSnap = await getDoc(doc(db, 'users', userId));
-    if (uSnap.exists()) {
-      const u = uSnap.data();
-      claimantPhone = u.phone || '';
-      claimantName = u.name || u.full_name || '';
-    }
-  } catch {}
   const pk = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    const uSnap = await tx.get(doc(db, 'users', userId));
+    if (!uSnap.exists() || !pickupEligibility.pickupEligible(uSnap.data())) {
+      throw new Error('An approved account, ID, volunteer agreement, and driver setup are required to claim.');
+    }
+    const u = uSnap.data();
+    claimantPhone = u.phone || '';
+    claimantName = u.name || u.full_name || '';
+    if (['claimed', 'enroute'].includes(data.status) && data.claimed_by === userId) {
+      return { id: snap.id, ...data, cached: true };
+    }
     if (data.status === 'claimed' && data.claimed_by && data.claimed_by !== userId) {
       throw new Error('Another volunteer just claimed this pickup. Try a different one.');
     }
     if (data.status === 'completed') throw new Error('That pickup has already been delivered.');
     if (data.status === 'cancelled') throw new Error('That pickup was cancelled by the restaurant.');
+    if (data.status !== 'available' || data.claimed_by) {
+      throw new Error('This pickup is no longer available. Refresh and choose another one.');
+    }
     tx.update(ref, {
       status: 'claimed',
       claimed_by: userId,
@@ -700,6 +706,8 @@ export async function claimPickup(pickupId, userId) {
       claimant_phone: claimantPhone, claimant_name: claimantName,
     };
   });
+
+  if (pk.cached) return pk; // A repeated tap neither resets the clock nor queues duplicate notices.
 
   // Smart reminder: confirmation push + email so the volunteer has
   // the pickup details in their inbox. Pre-arrival scheduled reminders
@@ -752,19 +760,23 @@ export async function cancelClaim(pickupId, reason = '') {
   }
   const ref = doc(db, 'pickups', pickupId);
   // Atomic release — refuses to revert anything past 'claimed' and
-  // returns the previous claimant id + restaurant id so downstream
-  // penalty / notification target the right users.
-  const { releasedBy, pk } = await runTransaction(db, async (tx) => {
+  // returns the pickup for the downstream partner notification.
+  const { pk } = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
     if (data.status !== 'claimed') {
       throw new Error('You can only release a pickup before you’ve hit the road.');
     }
+    if (data.verified_by_restaurant_at) {
+      throw new Error('The restaurant confirmed handoff. Use volunteer handoff to transfer the food safely.');
+    }
     tx.update(ref, {
       status: 'available',
       claimed_by: null,
       claimed_at: null,
+      claimant_name: null,
+      claimant_phone: null,
       cancel_reason: reason || null,
       cancelled_at: new Date().toISOString(),
       // B4 + F9 + G2 — authorized breadcrumb that is TIME-BOXED,
@@ -775,43 +787,9 @@ export async function cancelClaim(pickupId, reason = '') {
       released_by: data.claimed_by || null,
       released_at: serverTimestamp(),
     });
-    return { releasedBy: data.claimed_by || null, pk: data };
+    return { pk: data };
   });
-  // Reliability penalty — dropping a claimed pickup costs the
-  // volunteer 5 leaderboard points and bumps a `pickups_dropped`
-  // counter so chapters can see who keeps abandoning runs. We use
-  // a delta so concurrent score updates from event check-ins don't
-  // race with this one.
-  if (releasedBy) {
-    try {
-      const uRef = doc(db, 'users', releasedBy);
-      const uSnap = await getDoc(uRef);
-      if (uSnap.exists()) {
-        const u = uSnap.data();
-        await updateDoc(uRef, {
-          leaderboard_score: Math.max(0, (u.leaderboard_score || 0) - 5),
-          pickups_dropped:   (u.pickups_dropped || 0) + 1,
-          last_drop_at:      serverTimestamp(),
-        });
-      }
-      // Audit row for transparency (the volunteer can see this
-      // when we surface a 'dropped runs' tab on the profile).
-      await addDoc(collection(db, 'member_activity'), {
-        user_id:     releasedBy,
-        date:        new Date().toISOString().split('T')[0],
-        project:     'iris',
-        meals:       0,
-        hours:       0,
-        events:      0,
-        points:      -5,
-        raised:      0,
-        source_type: 'pickup_dropped',
-        source_id:   pickupId,
-        notes:       reason || null,
-        created_at:  serverTimestamp(),
-      });
-    } catch (e) { console.warn('drop penalty failed', e); }
-  }
+  // recordPickupRelease owns accounting atomically and retries server-side.
   // Tell the restaurant — via enqueueNotification so push + email fire.
   // Best-effort. Restaurant needs a real ping here so they know their
   // food is unclaimed and might not get picked up in time.
@@ -850,13 +828,13 @@ export async function cancelPickup(pickupId, reason = '') {
     const data = snap.data();
     if (data.status === 'completed') throw new Error('That pickup is already delivered.');
     if (data.status === 'cancelled') return data; // idempotent
-    if (data.status === 'enroute') {
+    if (data.status === 'enroute' || data.verified_by_restaurant_at || !['available', 'claimed'].includes(data.status)) {
       throw new Error('A volunteer already picked up the food. Call them on the contact in the app — don\'t cancel here.');
     }
     tx.update(ref, {
       status: 'cancelled',
       cancel_reason: reason || null,
-      cancelled_at: new Date().toISOString(),
+      cancelled_at: serverTimestamp(),
     });
     return data;
   });
@@ -889,6 +867,9 @@ export async function cancelPickup(pickupId, reason = '') {
 // the volunteer arrives.
 export async function verifyPickupByRestaurant(pickupId, verifierUid) {
   if (useMock()) return;
+  if (!auth?.currentUser || auth.currentUser.uid !== verifierUid) {
+    throw new Error('Sign in as the food partner confirming this pickup.');
+  }
   const ref = doc(db, 'pickups', pickupId);
   // Guard: only verifiable when a volunteer has actually claimed
   // and not yet delivered. Stops accidental re-verifies on a
@@ -898,8 +879,12 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
-    if (!['claimed', 'enroute'].includes(data.status)) {
+    if (!['claimed', 'enroute'].includes(data.status) || !data.claimed_by) {
       throw new Error('This pickup can only be confirmed while a volunteer is on the way.');
+    }
+    const restaurant = await tx.get(doc(db, 'restaurants', data.restaurant_id));
+    if (!restaurant.exists() || restaurant.data().user_id !== verifierUid) {
+      throw new Error('Only the owner of this food partner can confirm handoff.');
     }
     if (data.verified_by_restaurant_at) {
       // Already verified — silent no-op so a double-tap doesn't
@@ -944,7 +929,7 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
   const ref = doc(db, 'pickups', pickupId);
   const updates = {
     status: 'enroute',
-    enroute_at: new Date().toISOString(),
+    enroute_at: serverTimestamp(),
   };
   if (fridgeId) {
     try {
@@ -968,6 +953,9 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    if (data.claimed_by !== auth?.currentUser?.uid) {
+      throw new Error('Only the current volunteer can start this pickup.');
+    }
     if (data.status === 'enroute') return { id: snap.id, ...data }; // idempotent
     if (data.status !== 'claimed') {
       throw new Error('This pickup isn\'t in a claimed state — nothing to mark en route.');
@@ -1069,7 +1057,8 @@ export async function releaseAbandonedPickup(pickupId, { reason = 'no_show_timeo
       claimed_at: null,
       claimant_name: null,
       claimant_phone: null,
-      abandoned_at: new Date().toISOString(),
+      abandoned_at: serverTimestamp(),
+      abandoned_by: auth?.currentUser?.uid || null,
       abandoned_reason: reason,
       abandoned_prior_claimant: prevClaimant,
     });
@@ -1233,7 +1222,7 @@ export async function updatePickupFridge(pickupId, fridgeId) {
       fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
       fridge_lat: f.lat ?? null,
       fridge_lng: f.lng ?? null,
-      fridge_changed_at: new Date().toISOString(),
+      fridge_changed_at: serverTimestamp(),
     });
   });
 }

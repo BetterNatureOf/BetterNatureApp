@@ -89,3 +89,5 @@ exports.sendPushOnNotification = functions.firestore
     }
     return null;
   });
+
+exports.recordPickupRelease = require('./recordPickupRelease').recordPickupRelease;

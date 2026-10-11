@@ -12,6 +12,25 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 ## Active
 
+### Codex delivery lifecycle follow-up — 2026-10-11
+
+**Implementation complete; Codex releases these files for Claude to review/resume.** Starting `f328150`, branch `codex/c1-completion-fixes`. This handoff also includes the previous C1 commits from Claude base `cd81e50`. No remote push, merge, deployment or production migration. The attached combined Git bundle is the transfer route because GitHub write access is unavailable here. Do not fetch a nonexistent remote Codex branch. Inspect the bundle before integrating, especially if Claude has newer commits.
+
+- Actual restaurant document ownership controls pickup posting and confirmation. Approved partner status is required; a forged profile restaurant pointer does not grant ownership.
+- Shared server/client eligibility and matching rules let approved administrators and chapter officers volunteer while requiring their own approved ID, agreement and driver setup. Pending business approval cannot borrow the default approved member status.
+- Atomic claim checks current identity and eligibility, refuses competing owners, and treats self-replays as cached without restarting clocks. Rules require server timestamps for claim/start/release/confirmation/handoff-related transitions. Transition routing avoids the Firestore expression-budget failure seen during invalid-write probes.
+- Confirmation is for the current assigned pickup, by its actual partner owner, once. Collected food cannot be released/cancelled as an ordinary uncollected run. Handoff preserves partner confirmation, lets the next volunteer claim/start, and completion credits that final volunteer. Fridge changes require an in-progress trip; executive abandoned release is narrow and audited by its actor fields.
+- `recordPickupRelease` is a new retriable onUpdate trigger. Each distinct self-release has a deterministic `/pickup_releases` ledger, activity and audit row, committed with user points/score/drop totals in one transaction. Duplicate/reordered events cannot double-debit or regress the last-drop timestamp. Missing/deleted/merged profiles are recorded without recreation. Low scores floor at zero; activity records the actual deduction. The client-side best-effort penalty has been removed.
+- Points, leaderboard score, drop count and last-drop time are server-owned across all client roles; signup can seed only zero/null values. This closes these accounting fields, not the whole broader A7 audit.
+
+**Release-accounting cutover requirement:** In the authorized rollout window, an administrator must create `/migration_locks/pickup_release_cutover`, deploy the new rules (release denied while the lock exists), deploy `recordPickupRelease` and the new client, verify readiness, then delete the lock to resume releases. Do not enable the trigger against rules permitting old client penalty writes: that could double-charge old clients. The lock prevents unaccounted releases during the rules-to-trigger deployment gap. Stage and test this sequence; no such operation ran here. Existing A2/C1 rollout requirements still apply.
+
+**Verified result:** 172/172 combined checks passed (delivery 40, release 15, unchanged A2 59, C1 44, ID gate 8, client adapters 6); Expo web export passed; diff checks clean. No remote CI result claimed.
+
+**Checks:** `scripts/test-delivery-flow.cjs` exercises 40 cases using the actual extracted client service functions, real Firestore SDK transactions and rules. It includes a partner-confirmed handoff ending in C1 completion and receipt/accounting checks. `scripts/test-pickup-release.cjs` adds 15 real-emulator cases for transaction rollback, concurrency, two cycles, reordered events, partial profiles, client accounting denial, signup defaults and cutover locking. Notification calls in the delivery suite are mocked; external push/email delivery is not claimed. The registered Functions/Auth/HTTPS probe remains blocked by the host's Unix-socket permission issue; trigger implementations are invoked directly against real Firestore transactions. Full app/staging acceptance remains required.
+
+**Remaining scope:** Durable notification intents for non-completion transitions (release notifications remain best effort), other hours/event sources, receipt operational/tax review, chapter tools, full role switching, broader audit items and DoorDash-style redesign are not complete. No live website appearance change is claimed.
+
 ### Codex temporary takeover — 2026-10-11
 
 **DONE — implementation commit `38d8d40790091efc46615534d5a3bd9786068df1`. Codex releases all owned files for Claude to resume.** This handoff commit only records results/resume instructions. Independent acceptance and rollout remain pending.

@@ -143,7 +143,11 @@ service cloud.firestore {
       // user cannot later rewrite it to a different address.
       let roleAtCreate = d.get('role', 'member');
       let tokenEmail = request.auth.token.email;
-      return isSelfAssignableRole(roleAtCreate)
+      return d.get('points', 0) == 0
+          && d.get('leaderboard_score', 0) == 0
+          && d.get('pickups_dropped', 0) == 0
+          && d.get('last_drop_at', null) == null
+          && isSelfAssignableRole(roleAtCreate)
           && (!('email' in d)
               || (tokenEmail != null && d.email.lower() == tokenEmail.lower()))
           && (!('roles' in d) || d.roles.hasOnly(['member', 'restaurant', 'partner']))
@@ -281,7 +285,9 @@ service cloud.firestore {
                  || readingMyLinkedAccount();
       allow list: if isExec() || readingMyLinkedAccount();
       allow create: if isSelf(uid) && cleanCreateFields();
-      allow update: if isExec()
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['points', 'leaderboard_score', 'pickups_dropped', 'last_drop_at'])
+        && (isExec()
         || (isSelf(uid) && isFounderToken())
         || (isSelf(uid)
             && !touchesPrivilegedFields()
@@ -292,7 +298,7 @@ service cloud.firestore {
             && isSelfRestaurantSignup()
             && !touchesNestedPrivilegedFields()
             && selfChapterIdOk()
-            && selfRestaurantIdOk());
+            && selfRestaurantIdOk()));
       allow delete: if isAdmin();
     }
 
@@ -521,12 +527,34 @@ service cloud.firestore {
     //   • restaurant_id self-write mis-attributing pickups.
     function pickupRid() { return request.resource.data.restaurant_id; }
     function existingRid() { return resource.data.restaurant_id; }
-    function userRid() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id;
+    function ownsPickupRestaurant(rid) {
+      return isSignedIn() && rid is string
+        && exists(/databases/$(database)/documents/restaurants/$(rid))
+        && get(/databases/$(database)/documents/restaurants/$(rid)).data.user_id == request.auth.uid;
+    }
+    function approvedPickupRestaurant(rid) {
+      return rid is string && exists(/databases/$(database)/documents/restaurants/$(rid))
+        && get(/databases/$(database)/documents/restaurants/$(rid)).data.get('status', null) == 'approved';
     }
     function isRestaurantOwner() {
-      return isSignedIn() && existingRid() != null
-        && (existingRid() == request.auth.uid || existingRid() == userRid());
+      return ownsPickupRestaurant(existingRid());
+    }
+    function pickupVolunteerEligible() {
+      let u = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let rs = u.get('roles', []);
+      let officers = ['executive','admin','super_admin','chapter_president','chapter_pres',
+        'chapter_vp','chapter_treas','chapter_vol_coord','chapter_sec'];
+      let business = u.get('role', 'member') in ['restaurant','partner'] || rs.hasAny(['restaurant','partner']);
+      return isSignedIn() && u.get('disabled', false) == false
+        && u.get('deleted', false) == false && u.get('deleted_at', null) == null
+        && u.get('merged_into', null) == null
+        && !(u.get('member_status', null) in ['disabled','deleted','rejected','suspended'])
+        && ((business && u.get('restaurant_status', null) == 'approved')
+          || (!business && (u.get('member_status', null) == 'approved'
+              || u.get('role', 'member') in officers || rs.hasAny(officers))
+            && u.get('verification_status', null) == 'approved'
+            && u.get('contract_volunteer_signed', false) == true
+            && u.get('driver_setup_complete', false) == true));
     }
     function pChanged() {
       return request.resource.data.diff(resource.data).affectedKeys();
@@ -544,8 +572,10 @@ service cloud.firestore {
       return isSignedIn()
         && oldStatus() == 'available'
         && newStatus() == 'claimed'
+        && pickupVolunteerEligible() && approvedPickupRestaurant(existingRid())
         && resource.data.get('claimed_by', null) == null
         && request.resource.data.claimed_by == request.auth.uid
+        && request.resource.data.claimed_at == request.time
         && pChanged().hasOnly([
              'status','claimed_by','claimed_at','claimant_phone','claimant_name'
            ]);
@@ -564,14 +594,18 @@ service cloud.firestore {
       // timestamp that extends the former-claimant notification
       // window. The callable then checks `now - released_at > 0`
       // AND `<= 30min` to time-box authority.
-      return isClaimant()
+      return !exists(/databases/$(database)/documents/migration_locks/pickup_release_cutover)
+        && isClaimant()
         && oldStatus() == 'claimed'
+        && resource.data.get('verified_by_restaurant_at', null) == null
         && newStatus() == 'available'
         && request.resource.data.get('claimed_by', null) == null
         && request.resource.data.get('released_by', null) == request.auth.uid
         && request.resource.data.get('released_at', null) == request.time
+        && request.resource.data.get('claimant_name', null) == null
+        && request.resource.data.get('claimant_phone', null) == null
         && pChanged().hasOnly([
-             'status','claimed_by','claimed_at',
+             'status','claimed_by','claimed_at','claimant_name','claimant_phone',
              'cancel_reason','cancelled_at','released_by','released_at'
            ]);
     }
@@ -581,8 +615,10 @@ service cloud.firestore {
     // or a weight write through this path.
     function isSelfSetEnroute() {
       return isClaimant()
+        && pickupVolunteerEligible()
         && oldStatus() == 'claimed'
         && newStatus() == 'enroute'
+        && request.resource.data.enroute_at == request.time
         && pChanged().hasOnly([
              'status','enroute_at',
              'fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng'
@@ -592,6 +628,8 @@ service cloud.firestore {
     // Current claimant swaps the destination fridge mid-run.
     function isSelfUpdateFridge() {
       return isClaimant()
+        && oldStatus() == 'enroute' && newStatus() == 'enroute'
+        && request.resource.data.fridge_changed_at == request.time
         && pChanged().hasOnly([
              'fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng','fridge_changed_at'
            ]);
@@ -654,6 +692,12 @@ service cloud.firestore {
     // isolates the write to the restaurant owner.
     function isRestaurantVerify() {
       return isRestaurantOwner()
+        && approvedPickupRestaurant(existingRid())
+        && oldStatus() in ['claimed','enroute'] && newStatus() == oldStatus()
+        && resource.data.get('claimed_by', null) != null
+        && resource.data.get('verified_by_restaurant_at', null) == null
+        && request.resource.data.verified_by_restaurant_at == request.time
+        && request.resource.data.verified_by_restaurant_uid == request.auth.uid
         && pChanged().hasOnly([
              'verified_by_restaurant_at','verified_by_restaurant_uid','verified_by_restaurant_name'
            ]);
@@ -663,9 +707,48 @@ service cloud.firestore {
     // service layer already blocks cancel after enroute; this rule
     // enforces the field set.
     function isRestaurantCancel() {
-      return isRestaurantOwner()
+      return (isRestaurantOwner() || isExec())
+        && oldStatus() in ['available','claimed']
+        && resource.data.get('verified_by_restaurant_at', null) == null
         && newStatus() == 'cancelled'
+        && request.resource.data.cancelled_at == request.time
         && pChanged().hasOnly(['status','cancel_reason','cancelled_at']);
+    }
+
+    function isExecutiveAbandonedRelease() {
+      return isExec() && oldStatus() == 'claimed' && newStatus() == 'available'
+        && resource.data.get('verified_by_restaurant_at', null) == null
+        && request.resource.data.get('claimed_by', null) == null
+        && request.resource.data.get('abandoned_by', null) == request.auth.uid
+        && request.resource.data.get('abandoned_at', null) == request.time
+        && request.resource.data.get('abandoned_prior_claimant', null) == resource.data.get('claimed_by', null)
+        && pChanged().hasOnly(['status','claimed_by','claimed_at','claimant_name','claimant_phone',
+          'abandoned_by','abandoned_at','abandoned_reason','abandoned_prior_claimant']);
+    }
+    function isExecutivePickupMetadataEdit() {
+      return isExec() && newStatus() == oldStatus()
+        && !pChanged().hasAny(['claimed_by','claimed_at','enroute_at','verified_by_restaurant_at',
+          'verified_by_restaurant_uid','verified_by_restaurant_name','released_by','released_at',
+          'handoff_from_uid','handoff_at','abandoned_by','abandoned_at','abandoned_prior_claimant',
+          'actual_weight_lbs','hours_earned','spoiled','spoiled_kind','spoiled_note',
+          'tax_receipt_id','tax_receipt_url','completed_at','completed_at_ts']);
+    }
+    function pickupUpdateAllowed() {
+      let before = oldStatus();
+      let after = newStatus();
+      let changed = pChanged();
+      return before != 'completed' && after != 'completed' && (
+        before != after
+          ? (after == 'claimed' ? (before == 'available' && isAtomicClaim())
+            : after == 'enroute' ? (before == 'claimed' && isSelfSetEnroute())
+            : after == 'cancelled' ? (before in ['available','claimed'] && isRestaurantCancel())
+            : after == 'available' ? (before in ['claimed','enroute']
+              && (changed.hasAny(['abandoned_at']) ? isExecutiveAbandonedRelease()
+                : changed.hasAny(['handoff_at']) ? isSelfHandoff() : isSelfReleaseClaim()))
+            : false)
+          : (changed.hasAny(['verified_by_restaurant_at','verified_by_restaurant_uid','verified_by_restaurant_name'])
+              ? isRestaurantVerify()
+              : changed.hasAny(['fridge_changed_at']) ? isSelfUpdateFridge() : isExecutivePickupMetadataEdit()));
     }
 
     match /pickups/{id} {
@@ -676,26 +759,28 @@ service cloud.firestore {
       // We deliberately don't require role=='restaurant' on the rule
       // — the role string can drift during signup (member ->
       // restaurant migration etc.). The id-match is the real check.
-      allow create: if request.resource.data.status != 'completed' && (isExec() || (
-        isSignedIn() && pickupRid() != null
-        && (pickupRid() == request.auth.uid || pickupRid() == userRid())
-      ));
+      allow create: if request.resource.data.status == 'available'
+        && request.resource.data.get('claimed_by', null) == null
+        && request.resource.data.get('claimed_at', null) == null
+        && request.resource.data.get('enroute_at', null) == null
+        && request.resource.data.get('verified_by_restaurant_at', null) == null
+        && request.resource.data.get('hours_earned', 0) == 0
+        && request.resource.data.get('actual_weight_lbs', null) == null
+        && request.resource.data.get('tax_receipt_id', null) == null
+        && request.resource.data.get('tax_receipt_url', null) == null
+        && request.resource.data.get('spoiled', false) == false
+        && request.resource.data.estimated_weight_lbs is number
+        && request.resource.data.estimated_weight_lbs > 0
+        && approvedPickupRestaurant(pickupRid())
+        && (isExec() || ownsPickupRestaurant(pickupRid()));
 
       // Update: exec OR any of the narrow transition rules above.
       // Everything that doesn't match a transition is denied, which
       // means a direct SDK write with arbitrary fields can no longer
       // forge a completion or steal a claim.
-      allow update: if oldStatus() != 'completed' && newStatus() != 'completed' && (isExec()
-        || isAtomicClaim()
-        || isSelfReleaseClaim()
-        || isSelfSetEnroute()
-        || isSelfUpdateFridge()
-        || isSelfReportSpoiled()
-        || isSelfHandoffEnroute()
-        || isSelfComplete()
-        || isSelfStampReceipt()
-        || isRestaurantVerify()
-        || isRestaurantCancel());
+      // Select one transition branch, including on denials, rather than
+      // exhausting Firestore's 1,000-expression budget across an OR chain.
+      allow update: if pickupUpdateAllowed();
 
       allow delete: if isAdmin();
     }
@@ -802,6 +887,11 @@ service cloud.firestore {
     match /member_activity/{id} {
       allow read: if isSignedIn();
       allow write: if isExec() && !id.matches('pickup_.*');
+    }
+
+    match /pickup_releases/{id} {
+      allow read: if isExec();
+      allow write: if false;
     }
 
     match /pickup_completions/{id} {

@@ -2,6 +2,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const policy = require('./lib/donationPolicy');
+const { pickupEligible: eligible } = require('./lib/pickupEligibility');
 const EXEC_ROLES = new Set(['executive', 'admin', 'super_admin']);
 const roles = (u) => [u?.role, ...(Array.isArray(u?.roles) ? u.roles : [])];
 const isExec = (u) => roles(u).some((r) => EXEC_ROLES.has(r));
@@ -9,17 +10,6 @@ const error = (code, message, reason) => new functions.https.HttpsError(code, me
 const text = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const toMs = (value) => value?.toMillis ? value.toMillis()
   : value?.seconds != null ? value.seconds * 1000 : Date.parse(value);
-
-function eligible(user) {
-  if (!user || user.disabled || user.deleted || user.deleted_at || user.merged_into
-      || ['disabled', 'deleted', 'rejected', 'suspended'].includes(user.member_status)) return false;
-  if (roles(user).some((r) => r === 'restaurant' || r === 'partner')) {
-    return user.restaurant_status === 'approved';
-  }
-  // Executives volunteering normally use the same ID gate as other volunteers.
-  return (user.member_status === 'approved' || isExec(user)) && user.verification_status === 'approved'
-    && user.contract_volunteer_signed === true && user.driver_setup_complete === true;
-}
 
 async function complete(data, context) {
   if (!context.auth) throw error('unauthenticated', 'Sign in required.', 'sign_in');
