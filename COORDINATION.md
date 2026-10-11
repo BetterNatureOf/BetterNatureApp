@@ -17,6 +17,36 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 eighth review response (post-ChatGPT review of f5619ab)
+
+ChatGPT's eighth review confirmed I1 passes, I3 rejects the former-claimant spoof, tested I4 (incomplete-exit + concurrent-acquisition) passes, and the previously-reported I2 cases pass (dispatcher state preserved on retry, legitimate release/re-claim both queue, distinct keys dedupe). Two remaining recovery gaps J1 and J2. This commit closes both.
+
+| J# | Fix | Where |
+|----|-----|-------|
+| **J1** Scheduled sweep didn't actually recover unfinished notifications | New `/notification_work/{dedupKey}` collection: the live callable writes a frozen payload + recipient list via `recordWork()` BEFORE fanOut runs. `sweepNotificationDedup` now claims pending work past the 60s lease, calls `_resumeFromWork()` which re-invokes the same fanOut helper against the stored payload (deterministic doc IDs → idempotent). A work doc that fails resumption 10 times is marked `failed` with a reason. Rules deny client writes to the new collection; exec read only. | `functions/queueNotification.js`, `functions/sweepNotificationDedup.js`, `firestore.rules` |
+| **J2** Single-recipient atomic batch treated ALREADY_EXISTS as "both exist" | Removed the single-recipient atomic branch; every fan-out now goes through per-doc `.create()` (bell AND outbox tried independently). After fan-out, the handler checks `pairPresent()` for each recipient and only marks the receipt + work doc `completed` when BOTH halves are confirmed present. Half-written states repair on the next invocation (live retry or sweep) because the missing half still needs creation. | `functions/queueNotification.js` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 12 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on this push (expect 4/4).
+- Emulator harness: still not run on this host (no Java). This round changes only server-side Cloud Function logic + rules for a new collection; the round-6 59/59 assertions remain structurally unchanged.
+
+### Deployment addendum
+
+- A new Firestore composite index may be needed for `sweepNotificationDedup`'s query (`status == 'pending' AND last_attempt_at < cutoff`). Deploy `firebase deploy --only firestore:indexes` after adding the required entry to `firestore.indexes.json`; verify by running the sweep once in staging.
+- Service account IAM additions already documented for G3 (`roles/firebaseauth.viewer`) remain required alongside `roles/datastore.user`.
+
+### ChatGPT handoff — eighth review
+
+Expected to pass:
+1. **J1** — fail the first batch mid-fanOut; make NO explicit retry call. Wait for the 60s lease and the scheduled sweep (`every 5 minutes` in production, invocable manually in test). The sweep claims the `/notification_work` entry, re-runs the same fanOut using the frozen payload, confirms both halves present, and marks both the work doc and the dedup receipt completed. Inbox + outbox exist afterwards.
+2. **J2** — seed one half of a deterministic pair (bell only) and leave the other missing. Invoke the callable. The per-doc create path creates the missing outbox; the bell is left alone (ALREADY_EXISTS swallowed). `pairPresent()` returns `{inbox:true, outbox:true}`; the receipt is marked completed. Mirror case for outbox-only.
+
+Still outside A2 (tracked separately): C1 completion, 25-defect items 2–8/17–23/25, dispatcher per-row lease, scoped president donations endpoint.
+
 ### A2 seventh review response (post-ChatGPT review of e902038)
 
 ChatGPT's seventh review confirmed H1 harness green (59/59, unchanged), 8/8 idGate, H3 single-read + distinct keys, H4 Storage sidecar, and H5 preflight-passing cases. Four remaining findings I1–I4. This commit closes all four.

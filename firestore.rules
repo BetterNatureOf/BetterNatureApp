@@ -416,6 +416,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── notification_work (J1) ──
+    // Durable record of pending notification work. Written by the
+    // live queueBusinessNotification callable BEFORE fanOut, picked
+    // up by sweepNotificationDedup if the live caller fails mid-
+    // fanout. Admin SDK only; exec read for diagnostics.
+    match /notification_work/{key} {
+      allow read: if isExec();
+      allow write: if false;
+    }
+
     // ── public_profiles (audit A2) ──
     // Minted exclusively by the syncPublicProfileOnWrite Cloud
     // Function from an allowlist of fields on /users. Clients cannot

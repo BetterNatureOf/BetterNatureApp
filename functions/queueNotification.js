@@ -74,6 +74,24 @@ function userIsPres(u) {
 function safeKeyFragment(s) {
   return String(s || '').replace(/[\/\s]/g, '_').slice(0, 400);
 }
+// I2 + J2 — single unified per-doc path for both single and
+// multi-recipient fan-outs. Earlier design had a separate atomic
+// branch for single-recipient intents; a batch create() that
+// rejects ALREADY_EXISTS failed the whole batch and skipped
+// creating the missing half of a partial pair. The per-doc path
+// below creates each side independently (both sides try even if
+// the other is already present), so bell-only / outbox-only
+// states are repaired on the next invocation. Each per-doc
+// create() swallows ALREADY_EXISTS so dispatcher/bell state is
+// never overwritten.
+async function pairPresent(db, base) {
+  if (!base) return { inbox: false, outbox: false };
+  const [inSnap, outSnap] = await Promise.all([
+    db.collection('notifications').doc(`${base}__inapp`).get(),
+    db.collection('notifications_outbox').doc(`${base}__outbox`).get(),
+  ]);
+  return { inbox: inSnap.exists, outbox: outSnap.exists };
+}
 async function fanOutOne(db, row, inAppKind, title, body, url, base) {
   const inboxRef = base
     ? db.collection('notifications').doc(`${base}__inapp`)
@@ -81,8 +99,6 @@ async function fanOutOne(db, row, inAppKind, title, body, url, base) {
   const outRef = base
     ? db.collection('notifications_outbox').doc(`${base}__outbox`)
     : db.collection('notifications_outbox').doc();
-  // I2 — create() each; swallow ALREADY_EXISTS so retries don't
-  // overwrite dispatcher state.
   let inappCreated = false, outboxCreated = false;
   try {
     await inboxRef.create({
@@ -92,7 +108,7 @@ async function fanOutOne(db, row, inAppKind, title, body, url, base) {
     });
     inappCreated = true;
   } catch (e) {
-    if ((e?.code || '') !== 6 /* ALREADY_EXISTS */ && !/ALREADY_EXISTS/i.test(String(e?.message || ''))) throw e;
+    if ((e?.code || '') !== 6 && !/ALREADY_EXISTS/i.test(String(e?.message || ''))) throw e;
   }
   try {
     await outRef.create({
@@ -106,54 +122,25 @@ async function fanOutOne(db, row, inAppKind, title, body, url, base) {
   return { inappCreated, outboxCreated };
 }
 async function fanOut(db, rows, inAppKind, title, body, url, dedupKey) {
-  if (!rows.length) return { queued: 0, inapp: 0 };
+  if (!rows.length) return { queued: 0, inapp: 0, allPairsPresent: true };
   let queued = 0, inapp = 0;
-  // Single-recipient pickup intents: one atomic batch with create()
-  // semantics on both docs so partial first-write failures don't
-  // leave split state.
-  if (rows.length === 1 && dedupKey) {
-    const row = rows[0];
-    const base = `${safeKeyFragment(dedupKey)}__${row.user_id}`;
-    const batch = db.batch();
-    const inboxRef = db.collection('notifications').doc(`${base}__inapp`);
-    const outRef   = db.collection('notifications_outbox').doc(`${base}__outbox`);
-    batch.create(inboxRef, {
-      user_id: row.user_id, kind: inAppKind, title, body,
-      url: url || null, read: false,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    batch.create(outRef, {
-      ...row, status: 'queued', attempts: 0,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    try {
-      await batch.commit();
-      queued += 1; inapp += 1;
-    } catch (e) {
-      if ((e?.code || '') === 6 || /ALREADY_EXISTS/i.test(String(e?.message || ''))) {
-        // Both docs already exist from a prior invocation. Not an
-        // error; previously-delivered state is preserved. Counts
-        // stay at 0 for this call — the caller sees deduped=true
-        // from the receipt layer, or ok with 0/0 if the receipt
-        // layer wasn't engaged (which can only happen for
-        // zero-recipient edge cases).
-      } else {
-        throw e;
-      }
-    }
-    return { queued, inapp };
-  }
-  // Multi-recipient broadcasts: per-recipient create() so a single
-  // existing doc doesn't block the rest. This is at-least-once at
-  // the recipient granularity; receipt-layer dedup prevents whole-
-  // broadcast replay.
+  let allPairsPresent = true;
   for (const row of rows) {
     const base = dedupKey ? `${safeKeyFragment(dedupKey)}__${row.user_id}` : null;
     const r = await fanOutOne(db, row, inAppKind, title, body, url, base);
     if (r.inappCreated)  inapp  += 1;
     if (r.outboxCreated) queued += 1;
+    // J2 — verify BOTH halves of the pair exist (either newly
+    // created or pre-existing from a prior attempt). Only mark
+    // the work receipt complete when every pair is confirmed.
+    if (base) {
+      const presence = r.inappCreated && r.outboxCreated
+        ? { inbox: true, outbox: true }
+        : await pairPresent(db, base);
+      if (!presence.inbox || !presence.outbox) allPairsPresent = false;
+    }
   }
-  return { queued, inapp };
+  return { queued, inapp, allPairsPresent };
 }
 
 async function resolvePartnerUidFromPickup(db, pk) {
@@ -412,6 +399,61 @@ async function markDedupCompleted(ref, counts) {
   }, { merge: true });
 }
 
+// J1 — durable work record. Written BEFORE fanOut so the scheduled
+// recovery worker can resume the operation using the same frozen
+// payload + recipients + dedup key, without having to re-authorize
+// anything. The resumption path uses the same fanOut helper so a
+// crash-mid-fanout is replayed idempotently (deterministic doc IDs
+// + create() swallows ALREADY_EXISTS on anything already written).
+async function recordWork(db, dedupKey, payload) {
+  if (!dedupKey) return null;
+  const ref = db.collection('notification_work').doc(safeKeyFragment(dedupKey));
+  try {
+    await ref.create({
+      key: dedupKey,
+      status: 'pending',
+      attempts: 0,
+      ...payload,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    // ALREADY_EXISTS → a prior invocation already recorded the work.
+    // Bump last_attempt_at + attempts; keep the frozen payload the
+    // first invocation wrote.
+    if ((e?.code || '') === 6 || /ALREADY_EXISTS/i.test(String(e?.message || ''))) {
+      await ref.set({
+        last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
+        attempts: admin.firestore.FieldValue.increment(1),
+      }, { merge: true });
+    } else { throw e; }
+  }
+  return ref;
+}
+async function markWorkCompleted(workRef) {
+  if (!workRef) return;
+  await workRef.set({
+    status: 'completed',
+    completed_at: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+// Exported so sweepNotificationDedup can run the SAME fanOut flow
+// against the stored payload when the live callable fails to
+// finish. Signature receives the work doc's data (payload +
+// recipients) + the dedupKey; returns the same shape as fanOut().
+exports._resumeFromWork = async function _resumeFromWork(db, work) {
+  const rows = (work.recipients || []).map((uid) => ({
+    user_id: uid,
+    kind: work.kind,
+    title: work.title,
+    body: work.body,
+    url: work.url || null,
+    data: work.data || {},
+  }));
+  return fanOut(db, rows, work.kind, work.title, work.body, work.url || null, work.key);
+};
+
 exports.queueBusinessNotification = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
   const caller = context.auth.uid;
@@ -471,16 +513,37 @@ exports.queueBusinessNotification = functions.https.onCall(async (data, context)
   }
 
   const rows = recipients.map((uid) => ({ user_id: uid, kind, title, body, url, data: extra }));
+
+  // J1 — durable work record. Written BEFORE fanOut so if this
+  // callable dies, sweepNotificationDedup can resume using the
+  // same frozen payload + recipient list rather than lose the
+  // notification. Only scopes with a dedup key get a work record;
+  // uncoupled broadcasts stay fire-and-forget per the review's
+  // scope note.
+  const workRef = await recordWork(db, dedupKey, {
+    scope, kind, title, body, url,
+    data: extra,
+    recipients,
+  });
+
   let out;
   try {
     out = await fanOut(db, rows, kind, title, body, url, dedupKey);
   } catch (e) {
-    // H2 — fanOut failed. Leave the reservation in-progress so the
-    // lease expires naturally; next caller takes over. Do NOT mark
-    // completed with a half-written set.
+    // Leave reservation + work record in-progress; sweep will
+    // resume on lease expiry. Do NOT mark completed with a half-
+    // written set.
     throw e;
   }
-  // Only mark completed AFTER every batch commits.
-  await markDedupCompleted(dedupRef, out);
+
+  // J2 — only mark the receipt + work completed when EVERY pair
+  // (bell + outbox) is confirmed present. If a half is missing,
+  // leave the receipt and work in-progress; sweepNotificationDedup
+  // will take over on lease expiry and finish via the same fanOut
+  // (idempotent).
+  if (out.allPairsPresent !== false) {
+    await markDedupCompleted(dedupRef, out);
+    await markWorkCompleted(workRef);
+  }
   return { ok: true, scope, dedup_key: dedupKey, ...out };
 });
