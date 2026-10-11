@@ -12,6 +12,22 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 ## Active
 
+### Codex durable release/handoff notifications — 2026-10-11
+
+**Implementation complete; Codex releases these files for Claude to review/resume.** Start `f928b03`, same isolated local `codex/c1-completion-fixes` branch. No push, merge, deployment or production migration. The updated combined Git bundle includes previous intervals and is the transfer route; the remote Codex branch does not exist.
+
+- New retriable `dispatchPickupTransition` onUpdate trigger derives release/handoff from the persisted event snapshot, validates the actor and changed server timestamp, and freezes recipient/payload before delivery. Browser survival or a second app action is unnecessary.
+- Work and dedup reservation are transactional. Missing partner ownership fails visibly and retries instead of silently dropping the notification. Once created, frozen work retains its original recipient/payload on retry.
+- The trigger uses the existing A2 `to_partner` transition key, shared through a private export. An older client and the trigger converge on the same deterministic pair instead of duplicating it. Existing frozen client work is preserved. This retains the inherited millisecond timestamp key precision; it does not overhaul the wider notification authorization policy.
+- Existing A2 fanout and scheduled recovery repair partial pairs while preserving bell read state and dispatcher sent/channel state. Notification wording describes the recorded event and directs the partner to the current assignment, avoiding an inaccurate availability claim when delivery is delayed.
+- Release/handoff adapters no longer initiate partner notifications client-side; their previous return contracts are retained. Completion recovery is unchanged.
+
+**Deployment prerequisite:** Deploy `dispatchPickupTransition` before shipping the client that removes release/handoff queue calls. Include this trigger in the prior release-accounting cutover sequence: Admin-controlled lock → new rules → both `recordPickupRelease` and `dispatchPickupTransition` → new client → staging verification → unlock. A2 notification recovery function/index and dispatcher readiness remain prerequisites. No such operation ran here.
+
+**Verification:** Focused `scripts/test-pickup-transition.cjs` has 13 real-Firestore cases: no client queue, handoff, concurrent duplicate events, delivered/read-state preservation, frozen work after failure, real scheduled sweep resumption with no caller retry, old-client work, receipt-only repair, missing-partner recovery, transaction rollback, invalid/stale event rejection, separate cycles and half-pair repair. Combined suite passed 185/185 checks (13 + prior 172); Expo web export and JS syntax/diff checks passed. No remote CI result is claimed. Registered trigger/Auth/HTTPS testing remains blocked by host Unix-socket EPERM; this suite invokes the trigger implementation and scheduled function directly against real Firestore. External push/email provider delivery and staging/app acceptance remain unverified.
+
+**Remaining:** Claim/start/partner-confirmation/cancellation/new-pickup initiation still includes client best-effort paths; this interval hardens release/handoff only. Other hours/event sources, receipt operational/tax review, officer tools, role-switching UX and redesign remain separate tasks.
+
 ### Codex delivery lifecycle follow-up — 2026-10-11
 
 **Implementation complete; Codex releases these files for Claude to review/resume.** Starting `f328150`, branch `codex/c1-completion-fixes`. This handoff also includes the previous C1 commits from Claude base `cd81e50`. No remote push, merge, deployment or production migration. The attached combined Git bundle is the transfer route because GitHub write access is unavailable here. Do not fetch a nonexistent remote Codex branch. Inspect the bundle before integrating, especially if Claude has newer commits.

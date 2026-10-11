@@ -558,3 +558,6 @@ exports.queueBusinessNotification = functions.https.onCall(async (data, context)
   }
   return { ok: true, scope, dedup_key: dedupKey, ...out };
 });
+
+// Shared transition key keeps legacy client and server trigger retries in one operation.
+exports._idempotencyKeyForPickup = idempotencyKeyForPickup;

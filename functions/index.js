@@ -91,3 +91,5 @@ exports.sendPushOnNotification = functions.firestore
   });
 
 exports.recordPickupRelease = require('./recordPickupRelease').recordPickupRelease;
+
+exports.dispatchPickupTransition = require('./dispatchPickupTransition').dispatchPickupTransition;

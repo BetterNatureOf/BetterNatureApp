@@ -790,21 +790,7 @@ export async function cancelClaim(pickupId, reason = '') {
     return { pk: data };
   });
   // recordPickupRelease owns accounting atomically and retries server-side.
-  // Tell the restaurant — via enqueueNotification so push + email fire.
-  // Best-effort. Restaurant needs a real ping here so they know their
-  // food is unclaimed and might not get picked up in time.
-  try {
-    if (pk.restaurant_id) {
-      // A2 R-followup #3 — routed through the callable.
-      const { queuePickupToPartner } = await import('./notify');
-      await queuePickupToPartner(pickupId, 'release', {
-        title: 'Pickup released',
-        body: `Your pickup is back on the board — looking for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_released', pickupId },
-      });
-    }
-  } catch (e) { console.warn('cancel-claim notify', e); }
+  // dispatchPickupTransition persists and delivers the partner notification server-side.
   return { ...pk, status: 'available' };
 }
 
@@ -1150,23 +1136,7 @@ export async function handOffPickup(pickupId, reason = '') {
     });
     return data;
   });
-  // Notify the restaurant so they know a different volunteer will
-  // arrive at the fridge (or need to be re-briefed if the first
-  // volunteer never even got there).
-  try {
-    const snap = await getDoc(ref);
-    const pk = snap.exists() ? snap.data() : null;
-    if (pk?.restaurant_id) {
-      // A2 R-followup #3 — claimant → partner via callable.
-      const { queuePickupToPartner } = await import('./notify');
-      await queuePickupToPartner(pickupId, 'handoff', {
-        title: 'Volunteer handoff in progress',
-        body: `${pk.handoff_from_name || 'The volunteer'} needs to hand off your pickup. It's back on the board for another volunteer to claim.${reason ? ' Reason: ' + reason : ''}`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_handoff', pickupId },
-      });
-    }
-  } catch (e) { console.warn('handoff notify', e?.message); }
+  // dispatchPickupTransition owns durable partner notification and recovery.
 }
 
 // #6 from drop-off audit — food went bad in transit or the fridge
