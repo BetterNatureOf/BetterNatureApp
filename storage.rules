@@ -32,6 +32,15 @@ service firebase.storage {
         );
     }
 
+    // H4 — migration write barrier. While a lock doc exists at
+    // /migration_locks/id_docs_rotation in Firestore, the revocation
+    // script owns the id-docs/ prefix; no new upload can land at a
+    // path we're mid-rotating. Owner uploads briefly fail with a
+    // clear error during the migration window.
+    function idDocsLocked() {
+      return firestore.exists(/databases/(default)/documents/migration_locks/id_docs_rotation);
+    }
+
     // ── ID documents ──
     // Path shape (from authFirebase.js → uploadIdImage):
     //   id-docs/{kind}/{uid}-{side}-{timestamp}.jpg
@@ -39,12 +48,14 @@ service firebase.storage {
     // Read: owner only (filename prefix is their uid) OR an exec/
     // admin reviewer. Everyone else — including ordinary signed-in
     // members — is denied.
-    // Write: owner only, same filename-prefix check.
+    // Write: owner only, same filename-prefix check, AND the
+    // migration lock must NOT be held.
     match /id-docs/{kind}/{filename} {
       allow read: if request.auth != null
         && (filename.matches(request.auth.uid + '-.*') || isExecByFirestore());
       allow write: if request.auth != null
         && filename.matches(request.auth.uid + '-.*')
+        && !idDocsLocked()
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }

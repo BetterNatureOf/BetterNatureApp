@@ -17,6 +17,50 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
+### A2 sixth review response (post-ChatGPT review of ac918c9)
+
+ChatGPT's sixth review confirmed G1 + source/config G3 and all 59 harness assertions pass with the fixed external harness copy. Five findings H1–H5 remained. This commit closes all five.
+
+| H# | Fix | Where |
+|----|-----|-------|
+| **H1** Harness positive release fixture uses ISO string | Imports the firebase compat SDK, grabs `firebase.firestore.FieldValue.serverTimestamp()` once, uses that sentinel for the B4 positive release update so `released_at == request.time` is actually satisfied. | `scripts/test-a2-rules.cjs` |
+| **H2** Dedup receipt treated as success too early | Dedup receipt now carries `status: 'in_progress'` + `started_at` lease; completed only after fanOut returns. In-progress unexpired reservation → `{deduped: true, in_progress: true}`. Expired lease → next caller takes over; fanOut writes with DETERMINISTIC `${dedupKey}__${uid}__{inapp|outbox}` doc IDs so overlapping retries converge instead of duplicating. | `functions/queueNotification.js` |
+| **H3** Dedup key picked historical timestamps | Caller MUST pass `transition: 'claim' / 'release' / 'handoff' / 'enroute' / 'verify' / 'complete' / 'cancel' / 'new_pickup'`. Server derives key from that transition's own timestamp (`claimed_at` / `released_at` / `handoff_at` / `enroute_at` / `verified_by_restaurant_at` / `completed_at` / `cancelled_at` / `created_at`). Pickup is read ONCE in the callable so auth + recipients + key see consistent state. Collapsed the two completion partner notifications into ONE so they can't collide on the same key. | `functions/queueNotification.js`, `src/services/notify.js`, `src/services/database.js` (every pickup helper call site updated: claim/release/cancel/verify/enroute/handoff/complete) |
+| **H4** Post-validation Storage race | New `/migration_locks/id_docs_rotation` doc. Storage rules deny writes to `/id-docs/*` while the lock exists (`firestore.exists()` sidecar). The revocation script acquires the lock at startup, releases in a `finally` block. Also adds `ifMetagenerationMatch` precondition on `setMetadata` so a concurrent mutation fails the rotation instead of being lost. | `firestore.rules`, `storage.rules`, `scripts/revoke-id-download-tokens.js` |
+| **H5** Non-canonical paths rotated then deferred | Full-validator preflight in Phase 1 splits references into canonical/non-canonical PER OWNER. Non-canonical referenced paths are flagged in `non_canonical_referenced` output, NOT rotated, and the /users bearer URL stays intact until canonicalized. Non-zero exit (`code 3`) whenever any remain, so cutover scripts can gate on it. | `scripts/revoke-id-download-tokens.js` |
+
+### Local verification
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 20 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- Harness emulator run: still blocked on this host (no Java). ChatGPT's prior external run passed 59/59 at `ac918c9`; this round should pass the UNCHANGED harness because the only prior failure (ISO-string in B4 positive) is now fixed in-place.
+
+### Deployment order addendum (H4 lock sequencing)
+
+Insert between existing step 6 (deploy rules) and step 7 (run revocation):
+
+- **6.5** The migration lock mechanism requires the new rules to be live before the script can trust the Storage write barrier. If rules are not yet deployed, abort — the script now refuses to run when `migration_locks/id_docs_rotation` can't be read or when another lock is already held.
+
+Operator checklist for cutover window:
+1. Announce ID upload downtime window (minutes, usually).
+2. Confirm rules deploy includes `/migration_locks/id_docs_rotation` + storage `idDocsLocked()`.
+3. Run `revoke-id-download-tokens.js --project=… --bucket=…`.
+4. If exit code 3 (non_canonical_referenced non-empty): inspect the output, canonicalize those objects, rerun. Do NOT proceed to cutover acceptance until exit 0.
+5. Lock is released automatically in the `finally{}`; verify via a Firestore read.
+6. Resume ID uploads.
+
+### ChatGPT handoff — sixth review
+
+Expected to pass this round:
+1. **H1** — `firebase emulators:exec … 'node scripts/test-a2-rules.cjs'` exits 0 against the UNCHANGED checked-in harness.
+2. **H2** — simulate a `batch.commit()` failure after the dedup reservation: retry re-runs the fanout (idempotent via deterministic doc IDs) and completes. Concurrent calls see one `in_progress` and one `completed` without duplicating recipients.
+3. **H3** — pickup carrying `released_at` AND `claimed_at` (fresh re-claim); two legitimate messages with distinct `transition` values both queue; replays of either dedupe.
+4. **H4** — attempt a Storage upload to `/id-docs/personal/<uid>-front-<ts>.jpg` while a `/migration_locks/id_docs_rotation` doc exists → denied by Storage rules.
+5. **H5** — a referenced legacy path like `id-docs/<uid>-front-<ts>.jpg` is NOT rotated, is listed in `non_canonical_referenced`, the user's bearer URL stays set, and the script exits 3.
+
+Still outside A2 (tracked separately): C1 completion, 25-defect items 2–8/17–23/25, dispatcher per-row lease, scoped president donations endpoint.
+
 ### A2 fifth review response (post-ChatGPT review of f1b8b54)
 
 ChatGPT's fifth review confirmed the harness passes 57/57 and all seven regression probes pass. Five remaining findings G1–G5. This commit closes all five.

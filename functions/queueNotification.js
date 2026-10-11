@@ -55,19 +55,29 @@ function userIsPres(u) {
   return PRES_ROLES.has(r) || rs.some((x) => PRES_ROLES.has(x));
 }
 
-async function fanOut(db, rows, inAppKind, title, body, url) {
+// H2 — fan out with DETERMINISTIC document IDs derived from the
+// dedup key + the recipient uid, so retries after a partial failure
+// are idempotent. The in-app bell and outbox job IDs are stable per
+// (dedupKey, recipient), making `.set()` a safe re-run.
+//
+// When no dedup key is available (broadcasts), fall back to the
+// prior random-id behavior and accept at-least-once semantics for
+// those paths.
+function safeKeyFragment(s) {
+  return String(s || '').replace(/[\/\s]/g, '_').slice(0, 400);
+}
+async function fanOut(db, rows, inAppKind, title, body, url, dedupKey) {
   if (!rows.length) return { queued: 0, inapp: 0 };
-  // Batched writes: one /notifications doc per recipient (in-app
-  // bell, B6) and one /notifications_outbox doc per recipient
-  // (dispatcher delivery). Each pair goes in its own batch commit
-  // to stay under Firestore's 500-op batch limit for broadcasts.
   const BATCH = 200;
   let queued = 0, inapp = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
     const batch = db.batch();
     for (const row of slice) {
-      const inboxRef = db.collection('notifications').doc();
+      const base = dedupKey ? `${safeKeyFragment(dedupKey)}__${row.user_id}` : null;
+      const inboxRef = base
+        ? db.collection('notifications').doc(`${base}__inapp`)
+        : db.collection('notifications').doc();
       batch.set(inboxRef, {
         user_id: row.user_id,
         kind: inAppKind,
@@ -77,7 +87,9 @@ async function fanOut(db, rows, inAppKind, title, body, url) {
         read: false,
         created_at: admin.firestore.FieldValue.serverTimestamp(),
       });
-      const outRef = db.collection('notifications_outbox').doc();
+      const outRef = base
+        ? db.collection('notifications_outbox').doc(`${base}__outbox`)
+        : db.collection('notifications_outbox').doc();
       batch.set(outRef, {
         ...row,
         status: 'queued',
@@ -124,12 +136,16 @@ function toMillisTx(v) {
   const d = new Date(v); return Number.isFinite(d.getTime()) ? d.getTime() : 0;
 }
 
+// H3 — resolve the pickup ONCE and return both the snapshot and the
+// derived recipients. All downstream work (auth, recipients, dedup
+// key) uses the same `pk` so observations stay consistent across
+// the callable's lifetime.
 async function resolvePickupScope(db, caller, callerUser, data) {
   const pickupId = String(data?.pickup_id || '').trim();
   if (!pickupId) throw new functions.https.HttpsError('invalid-argument', 'pickup_id required');
   const p = await db.doc(`pickups/${pickupId}`).get();
   if (!p.exists) throw new functions.https.HttpsError('not-found', 'pickup not found');
-  const pk = p.data();
+  const pk = { id: p.id, ...p.data() };
 
   const partnerUid = await resolvePartnerUidFromPickup(db, pk);
 
@@ -191,7 +207,7 @@ async function resolvePickupScope(db, caller, callerUser, data) {
     throw new functions.https.HttpsError('invalid-argument', 'Unknown pickup notification intent.');
   }
 
-  return [...recipients];
+  return { pk, recipients: [...recipients] };
 }
 
 async function resolveEventScope(db, caller, callerUser, data) {
@@ -245,41 +261,76 @@ async function resolveBroadcastScope(db, caller, callerUser, data) {
   return q.docs.map((d) => d.id);
 }
 
-// G2 — idempotency key for pickup/event notifications. Keyed by the
-// natural transition timestamp (releasedAt / handoffAt / claim_at /
-// completed_at depending on intent). Keeps the pickup-tied flows
-// one-shot: a retried call lands on the same ledger doc, finds a
-// completed receipt, and returns the earlier result without
-// re-queuing. A new transition on the same pickup produces a
-// different key.
-function idempotencyKeyForPickup(pk, intent) {
-  const parts = [pk.id || '', intent || ''];
-  if (intent === 'to_partner') {
-    const stamp = pk.released_at || pk.handoff_at || pk.completed_at || pk.enroute_at || pk.claimed_at;
-    parts.push(String(stamp && stamp.toMillis ? stamp.toMillis() : stamp || ''));
-  } else if (intent === 'to_claimant') {
-    const stamp = pk.verified_by_restaurant_at || pk.cancelled_at;
-    parts.push(String(stamp && stamp.toMillis ? stamp.toMillis() : stamp || ''));
-  } else if (intent === 'new_pickup_broadcast') {
-    parts.push(String(pk.created_at && pk.created_at.toMillis ? pk.created_at.toMillis() : pk.created_at || 'init'));
-  }
-  return parts.join(':') || null;
+// G2 + H3 — idempotency key for pickup notifications. The caller
+// names which specific transition triggered this notification
+// (`transition: 'claim' | 'release' | 'handoff' | 'enroute' |
+// 'complete' | 'verify' | 'cancel' | 'new_pickup'`). The key uses
+// THAT transition's timestamp only. Earlier implementation picked
+// the first-truthy of released_at/handoff_at/.../claimed_at, which
+// kept a historical breadcrumb on the pickup after a reclaim and
+// silently deduped new legitimate messages.
+const TRANSITION_STAMPS = {
+  claim:      'claimed_at',
+  release:    'released_at',
+  handoff:    'handoff_at',
+  enroute:    'enroute_at',
+  complete:   'completed_at',
+  verify:     'verified_by_restaurant_at',
+  cancel:     'cancelled_at',
+  new_pickup: 'created_at',
+};
+function idempotencyKeyForPickup(pk, intent, transition) {
+  const stampField = TRANSITION_STAMPS[transition];
+  if (!stampField) return null; // unknown transition → no dedup
+  const raw = pk[stampField];
+  const ms = raw && raw.toMillis ? raw.toMillis()
+           : (raw && raw.seconds != null ? raw.seconds * 1000 : raw);
+  if (!ms) return null;
+  return [pk.id || '', intent || '', transition, String(ms)].join(':');
 }
 
-// Reserve-or-return the dedup receipt. Transactionally writes the
-// receipt doc; if it already exists we treat it as a replay.
+// H2 — the dedup doc records a status, not just presence. A replay
+// is only considered "already-done" when the previous attempt
+// committed (`status: 'completed'`). An in-progress reservation
+// held by a crashed caller gets a lease window after which another
+// caller takes over the work (fanOut is idempotent via deterministic
+// doc IDs so overlapping retries converge on the same rows).
+const LEASE_WINDOW_MS = 60 * 1000;
 async function reserveDedup(db, key) {
-  if (!key) return { fresh: true, previous: null };
-  const ref = db.collection('notification_dedup').doc(key.replace(/\//g, '_'));
+  if (!key) return { kind: 'fresh', ref: null };
+  const ref = db.collection('notification_dedup').doc(safeKeyFragment(key));
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    if (snap.exists) return { fresh: false, previous: snap.data() };
+    if (snap.exists) {
+      const d = snap.data() || {};
+      if (d.status === 'completed') return { kind: 'completed', ref, previous: d };
+      // In-progress reservation. If the lease is still live, caller
+      // treats this as "someone else is handling it right now."
+      // Expired leases get taken over.
+      const startedMs =
+        d.started_at && d.started_at.toMillis ? d.started_at.toMillis() :
+        d.started_at && d.started_at.seconds != null ? d.started_at.seconds * 1000 :
+        0;
+      if (startedMs && Date.now() - startedMs < LEASE_WINDOW_MS) {
+        return { kind: 'in_progress', ref, previous: d };
+      }
+    }
     tx.set(ref, {
       key,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    return { fresh: true, previous: null, ref };
+      status: 'in_progress',
+      started_at: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { kind: 'fresh', ref };
   });
+}
+async function markDedupCompleted(ref, counts) {
+  if (!ref) return;
+  await ref.set({
+    status: 'completed',
+    completed_at: admin.firestore.FieldValue.serverTimestamp(),
+    inapp: counts?.inapp || 0,
+    queued: counts?.queued || 0,
+  }, { merge: true });
 }
 
 exports.queueBusinessNotification = functions.https.onCall(async (data, context) => {
@@ -297,36 +348,60 @@ exports.queueBusinessNotification = functions.https.onCall(async (data, context)
   if (!title || !body) throw new functions.https.HttpsError('invalid-argument', 'title + body required');
 
   const db = admin.firestore();
-  let recipients, dedupKey = null, pkForDedup = null;
+  let recipients = [], dedupKey = null, pk = null;
   if (scope === 'pickup') {
-    // Fetch the pickup once more (resolvePickupScope also reads it;
-    // acceptable given infrequent calls per pickup) so the dedup
-    // key uses the authoritative timestamps.
-    const pSnap = await db.doc(`pickups/${String(data?.pickup_id || '')}`).get();
-    pkForDedup = pSnap.exists ? { id: pSnap.id, ...pSnap.data() } : null;
-    recipients = await resolvePickupScope(db, caller, callerUser, data);
-    dedupKey = pkForDedup ? idempotencyKeyForPickup(pkForDedup, String(data?.intent || '')) : null;
+    // H3 — one read of the pickup for both authorization and
+    // dedup-key derivation. The caller MUST specify `transition`
+    // so the key doesn't collide with a stale historical stamp.
+    const transition = String(data?.transition || '');
+    const resolved = await resolvePickupScope(db, caller, callerUser, data);
+    pk = resolved.pk;
+    recipients = resolved.recipients;
+    dedupKey = idempotencyKeyForPickup(pk, String(data?.intent || ''), transition);
+    if (!dedupKey) {
+      throw new functions.https.HttpsError('invalid-argument',
+        'pickup scope requires `transition` matching the authoritative timestamp.');
+    }
   } else if (scope === 'event') {
     recipients = await resolveEventScope(db, caller, callerUser, data);
-    dedupKey = `event:${String(data?.event_id || '')}:${kind}`;
+    const transition = String(data?.transition || 'event_notice');
+    dedupKey = `event:${String(data?.event_id || '')}:${kind}:${transition}`;
   } else if (scope === 'broadcast') {
     recipients = await resolveBroadcastScope(db, caller, callerUser, data);
-    // Broadcasts intentionally not deduped — pres/exec may legitimately
+    // Broadcasts stay uncoupled from dedup — pres/exec may legitimately
     // re-broadcast the same chapter with new content.
   } else {
     throw new functions.https.HttpsError('invalid-argument', 'Unknown scope.');
   }
 
-  // G2 — reserve the idempotency key before fanning out. Replay
-  // returns the previous receipt without re-queueing.
+  // H2 — lease-based dedup. A completed receipt returns immediately
+  // without re-queuing. An unexpired in-progress reservation means
+  // another caller is handling this exact (operation, timestamp)
+  // right now; return a soft deduped answer. Expired reservations
+  // get taken over because the fanOut below is idempotent.
+  let dedupRef = null;
   if (dedupKey) {
     const res = await reserveDedup(db, dedupKey);
-    if (!res.fresh) {
-      return { ok: true, scope, queued: 0, inapp: 0, deduped: true };
+    if (res.kind === 'completed') {
+      return { ok: true, scope, queued: 0, inapp: 0, deduped: true, dedup_key: dedupKey };
     }
+    if (res.kind === 'in_progress') {
+      return { ok: true, scope, queued: 0, inapp: 0, deduped: true, in_progress: true, dedup_key: dedupKey };
+    }
+    dedupRef = res.ref;
   }
 
   const rows = recipients.map((uid) => ({ user_id: uid, kind, title, body, url, data: extra }));
-  const out = await fanOut(db, rows, kind, title, body, url);
+  let out;
+  try {
+    out = await fanOut(db, rows, kind, title, body, url, dedupKey);
+  } catch (e) {
+    // H2 — fanOut failed. Leave the reservation in-progress so the
+    // lease expires naturally; next caller takes over. Do NOT mark
+    // completed with a half-written set.
+    throw e;
+  }
+  // Only mark completed AFTER every batch commits.
+  await markDedupCompleted(dedupRef, out);
   return { ok: true, scope, dedup_key: dedupKey, ...out };
 });

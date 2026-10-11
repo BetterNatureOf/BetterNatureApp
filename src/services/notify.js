@@ -92,25 +92,34 @@ async function callQueue(payload) {
   }
 }
 
+// H3 — scoped pickup helpers now require the caller to name the
+// specific `transition` that produced the notification. The server
+// derives the dedup key from THAT transition's authoritative
+// timestamp, so a release notification cannot collide with a later
+// re-claim notification on the same pickup.
+//
+// Valid transitions: 'new_pickup' | 'claim' | 'release' | 'handoff'
+//                  | 'enroute' | 'verify' | 'complete' | 'cancel'
+
 /** Partner just posted a pickup — fan out to the chapter. */
 export function queuePickupBroadcast(pickupId, { title, body, url, data }) {
   return callQueue({
     scope: 'pickup', pickup_id: pickupId, intent: 'new_pickup_broadcast',
-    kind: 'pickup', title, body, url, data,
+    transition: 'new_pickup', kind: 'pickup', title, body, url, data,
   });
 }
-/** Claimant → partner (claim / enroute / completion). */
-export function queuePickupToPartner(pickupId, { title, body, url, data }) {
+/** Claimant → partner. Caller names the exact transition. */
+export function queuePickupToPartner(pickupId, transition, { title, body, url, data }) {
   return callQueue({
     scope: 'pickup', pickup_id: pickupId, intent: 'to_partner',
-    kind: 'pickup', title, body, url, data,
+    transition, kind: 'pickup', title, body, url, data,
   });
 }
-/** Partner → claimant (verify / cancel / etc.). */
-export function queuePickupToClaimant(pickupId, { title, body, url, data }) {
+/** Partner → claimant. Caller names the exact transition. */
+export function queuePickupToClaimant(pickupId, transition, { title, body, url, data }) {
   return callQueue({
     scope: 'pickup', pickup_id: pickupId, intent: 'to_claimant',
-    kind: 'pickup', title, body, url, data,
+    transition, kind: 'pickup', title, body, url, data,
   });
 }
 /** Scoped broadcast to a chapter (president → own chapter; exec → any). */

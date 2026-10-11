@@ -20,6 +20,15 @@ const {
   assertFails,
 } = require('@firebase/rules-unit-testing');
 
+// H1 — rules-unit-testing 3.0.4 wraps the firebase@10 compat SDK.
+// The serverTimestamp sentinel lives on the compat Firestore
+// namespace. Load it once so release/handoff positive fixtures can
+// stamp request.time without hard-coding an ISO string (which the
+// new G2 rule rejects).
+const firebase = require('firebase/compat/app');
+require('firebase/compat/firestore');
+const SERVER_TS = firebase.firestore.FieldValue.serverTimestamp();
+
 const projectId = 'demo-a2';
 const firestoreRules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
 const storageRules = fs.readFileSync(path.join(__dirname, '..', 'storage.rules'), 'utf8');
@@ -276,9 +285,12 @@ async function main() {
       status: 'claimed', claimed_by: ALICE,
     });
   });
+  // H1 — released_at MUST equal request.time; use the compat
+  // serverTimestamp sentinel. An ISO string was accepted by the
+  // old rule but is denied by G2.
   await assertSucceeds(fs_(alice).doc(`pickups/rp1`).update({
     status: 'available', claimed_by: null, claimed_at: null,
-    released_by: ALICE, released_at: new Date().toISOString(),
+    released_by: ALICE, released_at: SERVER_TS,
     cancel_reason: 'change_of_plans', cancelled_at: new Date().toISOString(),
   }));
   await seedBlock(env, async (db) => {

@@ -138,9 +138,16 @@ async function rotateOne(bucket, path, ledgerRef) {
   if (DRY_RUN) return { status: 'would_rotate' };
   const [meta] = await file.getMetadata();
   const newTok = newToken();
-  await file.setMetadata({
-    metadata: { ...(meta.metadata || {}), [TOKEN_META_KEY]: newTok },
-  });
+  const observedMetageneration = meta.metageneration;
+  // H4 — Storage precondition. If the object's metageneration
+  // changed between our read and this write (another process
+  // mutated metadata — unlikely under the migration lock but
+  // belt-and-suspenders), the write fails and we don't trust the
+  // ledger entry.
+  await file.setMetadata(
+    { metadata: { ...(meta.metadata || {}), [TOKEN_META_KEY]: newTok } },
+    { ifMetagenerationMatch: observedMetageneration },
+  );
   // F5 — record BOTH the Storage generation AND the token we wrote.
   // A later run cross-checks live metadata against these before
   // trusting a ledger entry's `rotated` status.
@@ -188,16 +195,52 @@ async function main() {
 
   console.log(`[A2 revoke] mode=${DRY_RUN ? 'DRY-RUN' : 'WRITE'} project=${PROJECT} bucket=${BUCKET}`);
 
+  // H4 — write-barrier lock. Storage rules deny all id-docs/* uploads
+  // while this Firestore doc exists, so no new upload can replace a
+  // path we're mid-rotating. Removed in the finally{} after Phase 4.
+  const lockRef = db.doc('migration_locks/id_docs_rotation');
+  let lockAcquired = false;
+  if (!DRY_RUN) {
+    const prior = await lockRef.get();
+    if (prior.exists) {
+      console.error('[A2 revoke] another migration lock is already held; abort.');
+      process.exit(2);
+    }
+    await lockRef.set({
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      script: 'revoke-id-download-tokens.js',
+      project: PROJECT, bucket: BUCKET,
+    });
+    lockAcquired = true;
+  }
+  try {
+
   // Phase 1 — scan /users, collect per-user references.
-  const perUserRefs = new Map();  // uid -> {fieldLabel -> path}
+  // H5 preflight — split REFERENCED paths into canonical vs
+  // non-canonical PER OWNER. Canonical paths continue through
+  // Phase 3 rotation + Phase 4 clear. Non-canonical referenced
+  // paths are flagged, NOT rotated, and their /users references
+  // stay intact so reviewers keep whatever access the old bearer
+  // URL still provides until an operator canonicalizes them. The
+  // final exit code is non-zero while any remain.
+  const perUserRefs = new Map();
   const referencedPaths = new Set();
+  const nonCanonicalReferenced = []; // {uid, label, path}
   const usersSnap = await db.collection('users').get();
   for (const d of usersSnap.docs) {
     const refs = collectReferencedPaths(d.data());
-    if (Object.keys(refs).length) {
-      perUserRefs.set(d.id, refs);
-      for (const p of Object.values(refs)) referencedPaths.add(p);
+    if (!Object.keys(refs).length) continue;
+    const canonicalRefs = {};
+    for (const [label, path] of Object.entries(refs)) {
+      const { kind, side } = inferKindAndSide(path);
+      if (side && canonicalPathOk(path, d.id, kind, side)) {
+        canonicalRefs[label] = path;
+        referencedPaths.add(path);
+      } else {
+        nonCanonicalReferenced.push({ uid: d.id, label, path });
+      }
     }
+    if (Object.keys(canonicalRefs).length) perUserRefs.set(d.id, canonicalRefs);
   }
 
   // Phase 2 — Storage prefix inventory for orphans.
@@ -379,29 +422,31 @@ async function main() {
     }
   }
 
-  // G5 — surface the non-canonical paths explicitly so an operator
-  // can decide whether to canonicalize them (copy to a new path
-  // that the signer accepts, then re-rotate) or confirm the
-  // production bucket contains none. The script is deliberately
-  // conservative: it rotated them but did NOT clear the /users
-  // reference, so legacy evidence stays visible under the old URL
-  // the live Phase-4 confirm would also refuse.
-  const nonCanonical = [];
-  for (const p of allPaths) {
-    // "Canonical for its owner" — if the path doesn't carry a
-    // kind segment of personal|driver, treat as non-canonical.
-    if (!/^id-docs\/(personal|driver)\//.test(p)) nonCanonical.push(p);
-  }
-
+  // H5 — the full validator identifies non-canonical references
+  // during Phase 1 (preflight). The output surfaces the EXACT per-
+  // user path triples (uid, label, path) rather than just the prefix
+  // check, and exits non-zero while any remain unresolved. Those
+  // objects were NOT rotated and their /users bearer URL is still
+  // live — the migration is explicitly INCOMPLETE until an operator
+  // canonicalizes or confirms production has none.
   console.log(JSON.stringify({
     project: PROJECT, bucket: BUCKET,
     mode: DRY_RUN ? 'DRY-RUN' : 'WRITE',
     per_object: perObject,
     users: userUpdates,
     orphans_rotated: orphans.length,
-    non_canonical_paths: nonCanonical,
+    non_canonical_referenced: nonCanonicalReferenced,
   }, null, 2));
+  if (nonCanonicalReferenced.length > 0) {
+    console.error(`[A2 revoke] ${nonCanonicalReferenced.length} non-canonical reference(s) unresolved; migration INCOMPLETE.`);
+    process.exit(3);
+  }
   if (perObject.errors > 0 || userUpdates.errors > 0) process.exit(2);
+  } finally {
+    if (lockAcquired) {
+      try { await lockRef.delete(); } catch (e) { console.warn('[A2 revoke] failed to release lock:', e?.message); }
+    }
+  }
 }
 
 main().catch((e) => { console.error('[A2 revoke] failed', e); process.exit(1); });

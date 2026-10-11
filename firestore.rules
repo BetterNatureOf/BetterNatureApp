@@ -396,6 +396,17 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── migration_locks (H4) ──
+    // The revocation script creates `/migration_locks/id_docs_rotation`
+    // at startup and deletes it on completion. While the lock is
+    // present, Storage rules deny writes to /id-docs/*, so no new
+    // upload can land at a path we're mid-rotating. Firestore side:
+    // exec-only read/write, no self-writes from any client.
+    match /migration_locks/{name} {
+      allow read: if isExec();
+      allow write: if false;
+    }
+
     // ── notification_dedup (G2) ──
     // Idempotency ledger written by the queueBusinessNotification
     // Cloud Function. Only the admin SDK writes; clients cannot
