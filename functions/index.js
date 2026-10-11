@@ -33,6 +33,9 @@ exports.syncIdReviewStatus = require('./syncIdReviewStatus').syncIdReviewStatus;
 // A2 I2 — scheduled takeover for stuck in-progress dedup receipts.
 exports.sweepNotificationDedup = require('./sweepNotificationDedup').sweepNotificationDedup;
 
+// C1 — server-authorized idempotent pickup completion.
+exports.completePickupOperation = require('./completePickup').completePickupOperation;
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 exports.sendPushOnNotification = functions.firestore

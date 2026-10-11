@@ -597,21 +597,11 @@ service cloud.firestore {
            ]);
     }
 
-    // Current claimant reports food spoiled/unusable. Lands in
-    // 'completed' with spoiled=true + actual_weight_lbs=0 (so dashboard
-    // reducers that fall back to estimated weight will no longer count
-    // this as rescued — audit C7 is a separate reducer fix on top).
-    function isSelfReportSpoiled() {
-      return isClaimant()
-        && oldStatus() in ['claimed','enroute']
-        && newStatus() == 'completed'
-        && request.resource.data.get('spoiled', false) == true
-        && request.resource.data.get('actual_weight_lbs', 1) == 0
-        && pChanged().hasOnly([
-             'status','spoiled','spoiled_kind','spoiled_note',
-             'completed_at','actual_weight_lbs','hours_earned'
-           ]);
-    }
+    // C1 — spoiled completion also routes through the callable so
+    // a client cannot bypass isSelfComplete by setting spoiled:true
+    // + weight:0 directly. The callable accepts `spoiled: true` and
+    // takes the same atomic path (minus the receipt mint).
+    function isSelfReportSpoiled() { return false; }
 
     // Current claimant hands the run off to another volunteer. The
     // service code allows handoff from `claimed` OR `enroute`; F9
@@ -636,25 +626,18 @@ service cloud.firestore {
     // compiles; delegates to the broader isSelfHandoff.
     function isSelfHandoffEnroute() { return isSelfHandoff(); }
 
-    // Current claimant completes delivery. REQUIRES a positive
-    // actual_weight_lbs so a direct SDK write cannot land status=
-    // completed with weight=0 (which would mint hours + an empty
-    // receipt). The weight check is enforced server-side by the
-    // transaction in completePickup; this rule is the belt-and-
-    // suspenders enforcement at the auth layer.
-    function isSelfComplete() {
-      return isClaimant()
-        && oldStatus() == 'enroute'
-        && newStatus() == 'completed'
-        && request.resource.data.actual_weight_lbs is number
-        && request.resource.data.actual_weight_lbs > 0
-        && pChanged().hasOnly([
-             'status','completed_at','actual_weight_lbs','hours_earned',
-             'dropoff_photo_url',
-             'fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng','fridge_changed_at',
-             'handoff_unverified','handoff_unverified_note','handoff_unverified_at'
-           ]);
-    }
+    // C1 — client-side completion is DISABLED at the rules layer.
+    // The former `isSelfComplete` allowed a direct SDK write to
+    // transition status to 'completed', trusting the client to
+    // apply all guards and to serialize with the member_activity +
+    // totals + receipt writes. The new `completePickupOperation`
+    // Cloud Function callable is now the single authority: it runs
+    // one Firestore transaction over pickup + activity + receipt
+    // + user totals with deterministic doc IDs so retries converge
+    // without double-counting. Admin SDK bypasses rules, so the
+    // callable's writes still land; no client code may write
+    // status='completed' directly anymore.
+    function isSelfComplete() { return false; }
 
     // Claimant stamps the receipt link onto their completed pickup.
     // Separate rule because the status does not change here but the

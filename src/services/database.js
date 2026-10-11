@@ -1190,42 +1190,34 @@ export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', not
   if (useMock() || !isFirebaseConfigured) return;
   if (!pickupId) return;
   const ref = doc(db, 'pickups', pickupId);
-  const now = new Date().toISOString();
-  let pk;
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Pickup not found');
-    const data = snap.data();
-    if (data.status === 'completed' || data.status === 'cancelled') {
-      throw new Error('This pickup is already closed.');
-    }
-    if (data.status !== 'enroute' && data.status !== 'claimed') {
-      throw new Error('Only an in-progress pickup can be marked spoiled.');
-    }
-    tx.update(ref, {
-      status: 'completed',
+  // C1 — spoiled completion is now the same server-authorized
+  // operation as a normal completion, routed through the
+  // completePickupOperation callable with `spoiled: true`. The
+  // callable handles weight=0 + no receipt + spoiled fields on
+  // the pickup inside the same atomic transaction. Rules deny
+  // the direct client write that used to live here.
+  const { getFunctions, httpsCallable } = await import('firebase/functions');
+  const fn = httpsCallable(getFunctions(), 'completePickupOperation');
+  try {
+    await fn({
+      pickup_id: pickupId,
       spoiled: true,
-      spoiled_kind: kind,           // 'food_spoiled' | 'fridge_full' | 'fridge_broken'
+      spoiled_kind: kind,
       spoiled_note: note || null,
-      completed_at: now,
-      actual_weight_lbs: 0,
-      hours_earned: 0,
     });
-    pk = data;
-  });
+  } catch (e) { throw e; }
+  // Read the pickup for notification body context.
+  let pk = null;
+  try {
+    const snap = await getDoc(ref);
+    pk = snap.exists() ? snap.data() : null;
+  } catch {}
   // Restaurant gets a candid explainer — no receipt is coming.
   try {
     if (pk?.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
       const explain = kind === 'fridge_full' ? 'the fridge was full and the volunteer couldn\'t find another in time'
                     : kind === 'fridge_broken' ? 'the drop-off fridge was broken'
                     : 'the food had spoiled in transit';
-      // A2 R-followup #3 — claimant → partner via callable.
-      // Spoiled lands as status:'completed' with weight 0, so the
-      // transition timestamp is pk.completed_at — same as a normal
-      // completion. The receipt branch runs separately and will
-      // see this call's dedup record already completed.
       const { queuePickupToPartner } = await import('./notify');
       await queuePickupToPartner(pickupId, 'complete', {
         title: 'Pickup didn\'t make it',
@@ -1315,339 +1307,95 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     return;
   }
 
-  const pkRef = doc(db, 'pickups', pickupId);
-
-  // If the caller passed a fridgeId override, pre-fetch the fridge
-  // doc so the transaction has name / address / coords to stamp. Done
-  // outside the tx because fridge docs are stable enough that a race
-  // between this read and the completion write is a non-issue.
-  let fridgeOverride = null;
-  if (fridgeId) {
-    try {
-      const fSnap = await getDoc(doc(db, 'fridges', fridgeId));
-      if (fSnap.exists()) {
-        const f = fSnap.data();
-        fridgeOverride = {
-          fridge_id: fridgeId,
-          fridge_name: f.name || '',
-          fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
-          fridge_lat: f.lat ?? null,
-          fridge_lng: f.lng ?? null,
-        };
-      }
-    } catch (e) { console.warn('completePickup fridge lookup', e?.message); }
-  }
-
-  // IDEMPOTENT completion via transaction. Without this, a flaky
-  // connection or fast double-tap can trigger completePickup twice:
-  // two member_activity rows, doubled user stats, doubled org_stats,
-  // and TWO tax receipts to the partner — which destroys partner
-  // trust. The transaction reads first and bails if the doc is
-  // already 'completed', so concurrent calls produce one bump max.
-  const now = new Date().toISOString();
-  let pk;
-  let hoursEarned;
-  let weight;
+  // C1 — delegate to the server-authorized completePickupOperation
+  // callable. The old client-side transaction only guarded the pickup
+  // doc write; member_activity / user totals / org_stats / tax_receipt
+  // committed afterward with random IDs, so a retry or crash left
+  // partial state. The callable now owns the whole write set in one
+  // atomic Firestore transaction with deterministic doc IDs; a retry
+  // sees status='completed' and returns the cached receipt without
+  // double-counting. Rules deny client writes to status='completed'
+  // on /pickups, so the callable is the only path.
+  const { getFunctions, httpsCallable } = await import('firebase/functions');
+  const fn = httpsCallable(getFunctions(), 'completePickupOperation');
+  let res;
   try {
-    pk = await runTransaction(db, async (tx) => {
-      const snap = await tx.get(pkRef);
-      if (!snap.exists()) throw new Error('Pickup not found');
-      const data = snap.data();
-      if (data.status === 'completed') {
-        const err = new Error('ALREADY_COMPLETED');
-        err.code = 'already_completed';
-        throw err;
-      }
-      if (data.status === 'cancelled') throw new Error('That pickup was cancelled.');
-
-      // Gate #2 — status must be 'enroute' (volunteer has actually
-      // hit the road with the food). Skipping this let a volunteer
-      // go claimed → completed directly, bypassing the on-the-way
-      // step the restaurant is waiting on.
-      if (!override && data.status !== 'enroute') {
-        const err = new Error('NOT_ENROUTE');
-        err.code = 'not_enroute';
-        throw err;
-      }
-
-      // Gate #1 — restaurant must have physically confirmed the
-      // handoff via verifyPickupByRestaurant, UNLESS the volunteer
-      // attests via unverifiedNote. Strict blocking stranded
-      // volunteers when a restaurant wasn't watching their phone
-      // during handoff — the trust-preserving escape is an audit
-      // flag (handoff_unverified + note), not a hard refusal.
-      if (!override && !data.verified_by_restaurant_at && !unverifiedNote) {
-        const err = new Error('HANDOFF_NOT_CONFIRMED');
-        err.code = 'handoff_not_confirmed';
-        throw err;
-      }
-
-      // Gate #3 — a real weight is required. Silent fallback to
-      // estimated_weight_lbs meant every partner tax receipt could
-      // be an estimate, not a measurement. Restaurants trust the
-      // receipt number; it has to be real.
-      const parsed = Number(actualWeightLbs);
-      if (!override && (!Number.isFinite(parsed) || parsed <= 0)) {
-        const err = new Error('WEIGHT_REQUIRED');
-        err.code = 'weight_required';
-        throw err;
-      }
-
-      // Gate #8 — soft-deleted volunteer can't complete pickups.
-      // We snapshot their user doc inside the tx so the disabled
-      // check is atomic with the pickup write. Skipping the check
-      // let a disabled account still bump hours + collect a receipt
-      // on a pickup they had claimed before the disable.
-      if (!override && data.claimed_by) {
-        const uSnap = await tx.get(doc(db, 'users', data.claimed_by));
-        if (uSnap.exists() && uSnap.data().disabled === true) {
-          const err = new Error('CLAIMANT_DISABLED');
-          err.code = 'claimant_disabled';
-          throw err;
-        }
-      }
-
-      // #12 from drop-off audit — anchor hours on enroute_at, not
-      // claimed_at. Claim-to-enroute can be the whole afternoon
-      // (volunteer accepts the run and doesn't leave the couch for
-      // hours); only counting from when they actually started driving
-      // is closer to reality. Falls back to claimed_at if enroute_at
-      // is missing (legacy pickups written before setPickupEnroute
-      // stamped the field).
-      const toMs = (v) => v?.toDate ? v.toDate().getTime()
-                       : v ? new Date(v).getTime() : null;
-      const anchorMs = toMs(data.enroute_at) || toMs(data.claimed_at) || Date.now();
-      const elapsedH = (Date.now() - anchorMs) / 3600000;
-      hoursEarned = Math.max(0.25, Math.min(3, +elapsedH.toFixed(2)));
-      weight = override
-        ? (actualWeightLbs || data.estimated_weight_lbs || 0)
-        : parsed;
-      const updates = {
-        status: 'completed',
-        actual_weight_lbs: weight,
-        completed_at: now,
-        hours_earned: hoursEarned,
-      };
-      if (dropoffPhotoUrl) updates.dropoff_photo_url = dropoffPhotoUrl;
-      // Late fridge change (see updatePickupFridge). fridgeOverride
-      // carries the enriched name / address / coords we pre-fetched
-      // outside the tx so the receipt reads correctly.
-      if (fridgeOverride && fridgeOverride.fridge_id !== data.fridge_id) {
-        Object.assign(updates, fridgeOverride, { fridge_changed_at: now });
-      }
-      // Attest-and-continue path when the restaurant never confirmed —
-      // stamp the audit flag so the receipt page + exec review can
-      // surface it. Partner trust preserved via visibility, not by
-      // blocking the volunteer's legitimate completion.
-      if (!data.verified_by_restaurant_at && unverifiedNote) {
-        updates.handoff_unverified = true;
-        updates.handoff_unverified_note = unverifiedNote;
-        updates.handoff_unverified_at = now;
-      }
-      tx.update(pkRef, updates);
-      return data;
-    });
+    const payload = {
+      pickup_id: pickupId,
+      actual_weight_lbs: actualWeightLbs,
+      override: !!override,
+      dropoff_photo_url: dropoffPhotoUrl || null,
+      fridge_id: fridgeId || null,
+      unverified_note: unverifiedNote || null,
+    };
+    res = (await fn(payload)).data || {};
   } catch (e) {
-    if (e?.code === 'already_completed') return; // silent no-op
+    // Idempotent replay: the callable throws cleanly on bad input,
+    // but a transient Functions error should surface so the UI can
+    // retry. If the server has already completed the pickup, the
+    // next client call hits the cached-result path.
     throw e;
   }
-  const meals = Math.round(weight * 1.2);
 
-  if (pk.claimed_by) {
-    const mealBonusForLog = Math.min(50, meals);
-    await addDoc(collection(db, 'member_activity'), {
-      user_id: pk.claimed_by,
-      date: now.split('T')[0],
-      project: 'iris',
-      meals,
-      lbs: weight,
-      hours: hoursEarned,
-      events: 1, // a completed pickup counts as an activity event
-      points: 10 + mealBonusForLog,
-      raised: 0,
-      source_type: 'pickup_complete',
-      source_id: pickupId,
-      created_at: serverTimestamp(),
-    });
+  const weight = Number(res.actual_weight_lbs) || 0;
+  const hoursEarned = Number(res.hours_earned) || 0;
+  const meals = Number(res.meals) || Math.round(weight * 1.2);
+  const spoiledResult = !!res.spoiled;
 
-    try {
-      const userRef = doc(db, 'users', pk.claimed_by);
-      const profile = await getDoc(userRef);
-      if (profile.exists()) {
-        const p = profile.data();
-        // Award 10 leaderboard points per completed pickup, plus
-        // a 1-point-per-meal bonus capped at 50. So a tiny salad
-        // is +10 and a 50lb load of produce is +60 — proportionate
-        // to impact without snowballing into runaway leaders.
-        const mealBonus = Math.min(50, meals);
-        const points = 10 + mealBonus;
-        await updateDoc(userRef, {
-          meals_rescued: (p.meals_rescued || 0) + meals,
-          lbs_rescued:   (p.lbs_rescued   || 0) + weight,
-          hours_logged:  (p.hours_logged  || 0) + hoursEarned,
-          events_attended: (p.events_attended || 0) + 1,
-          leaderboard_score: (p.leaderboard_score || 0) + points,
-          pickups_completed: (p.pickups_completed || 0) + 1,
-        });
-        // Mirror the points into the activity row so the
-        // leaderboard's points view picks them up too.
-      }
-    } catch (e) { console.warn('user stat bump', e); }
+  // Fetch the current pickup snapshot for notification bodies. The
+  // callable has already committed everything; this read is purely
+  // for the restaurant/claimant display names + fridge name.
+  let pk = null;
+  try {
+    const snap = await getDoc(pkRef);
+    pk = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  } catch {}
 
-    // Bump the org-wide live counters that drive the website ticker,
-    // the Welcome screen on the app, and the Exec dashboard.
-    // bumpOrgStats derives meals/co2/water from lbs automatically, so
-    // every completed pickup propagates everywhere those numbers are
-    // read. We also bump events:1 so the 'events run' counter ticks
-    // forward per rescue.
-    try {
-      await bumpOrgStats({ lbs: weight, hours: hoursEarned, events: 1 });
-    } catch (e) { console.warn('org stats bump (pickup)', e); }
-
-    // Volunteer celebration — via enqueueNotification so push + email
-    // fire alongside the in-app row. This is often the moment they
-    // decide whether to do a second pickup that day.
+  // Volunteer celebration (self recipient, no cross-user auth).
+  if (pk?.claimed_by && !spoiledResult && !res.cached) {
     try {
       const { enqueueNotification } = await import('./notify');
       await enqueueNotification({
         recipients: [pk.claimed_by],
         kind: 'pickup',
         title: 'Pickup complete!',
-        body: `You rescued ~${meals} meals from ${pk.restaurant_name}. Amazing work!`,
+        body: `You rescued ~${meals} meals from ${pk.restaurant_name || 'the restaurant'}. Amazing work!`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
         data: { type: 'pickup_complete', pickupId },
       });
     } catch (e) { console.warn('volunteer complete notify', e); }
-
-    // Mirror the win to the restaurant so they see real-time proof
-    // their surplus made it to a fridge. Best-effort — never blocks
-    // completion. Single enqueueNotification call: the earlier code
-    // wrote BOTH a raw addDoc AND an enqueueNotification, producing
-    // two duplicate rows in the restaurant's inbox for every rescue.
-    // H3 — the "surplus delivered" and "tax receipt ready" partner
-    // notifications used to fire separately but share the completion
-    // transition, so they collided on the dedup key. Collapsed into
-    // ONE notification minted below after the receipt is issued (or
-    // immediately when no receipt is produced because of a spoiled
-    // / override completion).
-    const delivered = { fired: false, pk };
-
-    // Mint the restaurant's tax receipt and surface the link to them
-    // through every channel: app bell, push, email. Never blocks
-    // completion if any one channel fails.
-    try {
-      const { issueReceiptForPickup, receiptUrl } = await import('./taxReceipts');
-      // A2 — volunteer name comes from /public_profiles (we're the
-      // claimant so a self-read on /users would also work, but the
-      // public mirror is cheaper and keeps the pattern uniform).
-      let volunteerName = '';
-      try {
-        const { fetchPublicProfile } = await import('./publicProfiles');
-        const vp = await fetchPublicProfile(pk.claimed_by);
-        volunteerName = vp?.display_name || '';
-      } catch {}
-      // Resolve the restaurant email from the public /restaurants doc.
-      // A2 note: the fallback that previously read /users/<owner> for
-      // email is removed — a volunteer completing a run cannot read
-      // the partner's private profile under the new rules. If the
-      // /restaurants doc has no email, the receipt still issues but
-      // the email channel on dispatch quietly no-ops; the exec can
-      // backfill the restaurant's contact email through Manage
-      // Restaurants and re-send.
-      let restaurantEmail = '';
-      let restaurantUserUid = pk.restaurant_user_id || null;
-      if (pk.restaurant_id) {
-        try {
-          const rSnap = await getDoc(doc(db, 'restaurants', pk.restaurant_id));
-          if (rSnap.exists()) {
-            const r = rSnap.data();
-            restaurantEmail = r.email || r.contact_email || '';
-            restaurantUserUid = restaurantUserUid || r.user_id || null;
-          }
-        } catch {}
-      }
-
-      const receipt = await issueReceiptForPickup({
-        pickupId,
-        restaurantId: pk.restaurant_id || null,
-        restaurantName: pk.restaurant_name || '',
-        restaurantEmail,
-        weightLbs: weight,
-        mealsEquivalent: meals,
-        pickedUpAt: now,
-        volunteerName,
-        chapterName: pk.chapter_name || '',
-        // Drop-off audit follow-up — carry the proof photo + final
-        // fridge choice into the receipt doc so receipt.html can
-        // render them. pk is the pre-write snapshot; the URL and
-        // fridge override came in via the completePickup args, and
-        // the fridge fallback reads the pickup's own record.
-        dropoffPhotoUrl: dropoffPhotoUrl
-          || (fridgeOverride ? null : pk.dropoff_photo_url) || null,
-        fridgeName: (fridgeOverride && fridgeOverride.fridge_name)
-          || pk.fridge_name || null,
-        fridgeAddress: (fridgeOverride && fridgeOverride.fridge_address)
-          || pk.fridge_address || null,
-      });
-
-      // Stamp the receipt id back onto the pickup doc so the
-      // restaurant dashboard can deep-link without a join.
-      if (receipt?.id) {
-        try {
-          await updateDoc(doc(db, 'pickups', pickupId), {
-            tax_receipt_id: receipt.id,
-            tax_receipt_url: receiptUrl(receipt.id),
-            delivered_visible_to_restaurant: true,
-          });
-        } catch {}
-      }
-
-      // H3 — ONE partner notification per completion transition.
-      // Includes receipt link + delivered summary in a single
-      // outbound message, so both pieces reach the restaurant
-      // without colliding on the dedup key.
-      if (pk.restaurant_id && !delivered.fired) {
-        try {
-          const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-          const title = receipt?.id
-            ? `Delivered — tax receipt #${receipt.receipt_no || '0001'} ready`
-            : 'Your surplus made it';
-          const body = receipt?.id
-            ? `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Open the receipt to print or save as PDF.`
-            : `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs).`;
-          const url = receipt?.id
-            ? receiptUrl(receipt.id)
-            : `https://app.betternatureofficial.org/#/pickups/${pickupId}`;
-          const { queuePickupToPartner } = await import('./notify');
-          await queuePickupToPartner(pickupId, 'complete', {
-            title, body, url,
-            data: {
-              type: receipt?.id ? 'tax_receipt' : 'pickup_delivered_restaurant',
-              pickupId, meals, lbs: weight,
-              receiptId: receipt?.id || null,
-            },
-          });
-          delivered.fired = true;
-        } catch (e) { console.warn('restaurant delivered notify', e); }
-      }
-    } catch (e) { console.warn('tax receipt issue failed', e); }
-
-    // Fallback — the receipt issuance failed OR there was no
-    // restaurant_user_uid. Still send the delivered notification.
-    if (pk.restaurant_id && !delivered.fired) {
-      try {
-        const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-        const { queuePickupToPartner } = await import('./notify');
-        await queuePickupToPartner(pickupId, 'complete', {
-          title: 'Your surplus made it',
-          body: `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs).`,
-          url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-          data: { type: 'pickup_delivered_restaurant', pickupId, meals, lbs: weight },
-        });
-        delivered.fired = true;
-      } catch (e) { console.warn('restaurant delivered notify fallback', e); }
-    }
   }
+
+  // Partner notification (collapsed delivered+receipt). Only fires
+  // when the callable actually did fresh work (res.cached === false)
+  // AND the operation was a successful delivery (not spoiled). The
+  // queueBusinessNotification callable is J1-recoverable, so a
+  // transient failure here is retried by the scheduled sweep.
+  if (!res.cached && !spoiledResult && pk?.restaurant_id) {
+    try {
+      const { queuePickupToPartner } = await import('./notify');
+      const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
+      const title = res.receipt_id
+        ? `Delivered — tax receipt ready`
+        : 'Your surplus made it';
+      const body = res.receipt_id
+        ? `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Open the receipt to print or save as PDF.`
+        : `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs).`;
+      const url = res.receipt_id
+        ? `https://betternatureofficial.org/receipt.html?id=${encodeURIComponent(res.receipt_id)}`
+        : `https://app.betternatureofficial.org/#/pickups/${pickupId}`;
+      await queuePickupToPartner(pickupId, 'complete', {
+        title, body, url,
+        data: {
+          type: res.receipt_id ? 'tax_receipt' : 'pickup_delivered_restaurant',
+          pickupId, meals, lbs: weight,
+          receiptId: res.receipt_id || null,
+        },
+      });
+    } catch (e) { console.warn('partner delivered notify', e); }
+  }
+
+  return res;
 }
 
 // ── Restaurants ──

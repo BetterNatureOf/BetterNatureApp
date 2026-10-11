@@ -14,6 +14,7 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 | Task | Owner | Branch | Files | Starting commit | Status |
 |------|-------|--------|-------|-----------------|--------|
+| **C1** — server-authorized idempotent pickup completion | Claude | `claude/c1-idempotent-completion` | `functions/completePickup.js` (new); `functions/index.js`; `firestore.rules`; `src/services/database.js`; `scripts/test-c1-complete.cjs` (new) | `900970e` (A2 reviewed tip) | implementation drafted, pre-review. Depends on PR #2 (A2) merge. |
 | Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
 | A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
 
@@ -535,6 +536,52 @@ Covers from `BetterNature-Audit-and-Claude-Handoff.md`:
 - **B1–B6** — onboarding unification.
 - **C1** — authoritative completion command (Cloud Function + repair ledger).
 - Everything else in the audit's §C-§F.
+
+### C1 scope (first iteration)
+
+**Goal:** no retry or concurrent request can double-count a pickup, hours, meals/pounds, or receipt records; a completed pickup never ends up with a missing required record.
+
+**New Cloud Function:** `completePickupOperation` HTTPS callable (`functions/completePickup.js`). One Firestore transaction covers:
+- `pickups/{id}` → `status: 'completed'`, `actual_weight_lbs`, `hours_earned`, `completed_at`
+- `member_activity/pickup_{pickupId}` — DETERMINISTIC id, created only on first completion
+- `tax_receipts/rcpt_{pickupId}` — DETERMINISTIC id, skipped on spoiled
+- `users/{claimant}` — totals bumped via `FieldValue.increment()` only on first completion
+
+**Idempotency fast-path:** a transaction read of `pickups/{id}.status === 'completed'` AND the sentinel activity + receipt docs returns `{ cached: true, ... }` without rewriting anything.
+
+**Authorization:**
+- Default: caller must be `pk.claimed_by` (the current claimant).
+- Exec (`role` or `roles[]` in `['executive', 'admin', 'super_admin']`) bypasses the claimed/enroute/weight gates with `override: true`.
+- Every completion appends to `/audit_events` (append-only) with actor_uid, actor_role, override flag, cached flag.
+
+**Spoiled variant:** `data.spoiled: true` lands pickup `completed` with `weight: 0`, no receipt, `spoiled` + `spoiled_kind` + `spoiled_note` fields on the pickup.
+
+**Rules change (`firestore.rules`):**
+- `isSelfComplete()` returns `false` — client-direct writes of `status: 'completed'` to `/pickups` are denied.
+- `isSelfReportSpoiled()` returns `false` — same for the spoiled path.
+- Admin SDK (callable) bypasses rules, so the server callable remains the only writer.
+
+**Client migration (`src/services/database.js`):**
+- `completePickup()` thinned from ~370 lines to a callable invocation + post-completion notifications. Notifications flow through the J1-recoverable `queueBusinessNotification` path.
+- `reportPickupSpoiled()` same migration.
+
+**Notifications:** fire AFTER the transaction commits; `queueBusinessNotification` is already J1-recoverable so delivery is separate from the atomic completion record (per the review's explicit scope note).
+
+**Tests (`scripts/test-c1-complete.cjs`):** 7 cases, all PASS locally:
+1. Happy path — writes all deterministic docs; user totals bumped.
+2. Idempotent replay — second call returns `cached: true`; no additional activity/receipt writes; user totals NOT double-bumped.
+3. Unauthorized caller → `permission-denied`.
+4. Missing `actual_weight_lbs` → `invalid-argument`.
+5. Wrong status (not enroute) → `failed-precondition`.
+6. Spoiled → weight 0, no receipt doc, pickup `spoiled: true`.
+7. Exec override bypasses the enroute gate.
+
+The mock uses a minimal in-process Firestore shim (no Admin SDK transaction retry semantics); the Functions emulator pass is deferred to the staging run but the invariants the callable depends on (deterministic IDs + first-write guards + `FieldValue.increment()` for totals) are covered.
+
+### C1 remaining before merge-readiness
+- Firebase Functions emulator run for the completion callable (needs Java + emulator setup).
+- `completePickup` and `reportPickupSpoiled` end-to-end on an emulator-backed app build.
+- A2 PR #2 merge is a prerequisite (C1 is based on the reviewed A2 tip `900970e`).
 
 ## Done
 
