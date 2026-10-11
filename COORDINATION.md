@@ -14,6 +14,12 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 ### Codex temporary takeover — 2026-10-11
 
+**DONE — implementation commit `38d8d40790091efc46615534d5a3bd9786068df1`. Codex releases all owned files for Claude to resume.** This handoff commit only records results/resume instructions. Independent acceptance and rollout remain pending.
+
+Verified results: C1 real-transaction/rules/recovery suite **44/44**, unchanged A2 rules harness **59/59**, ID gate **8/8**, client adapters **6/6**, `npm ci` successful, Expo web export successful, and changed JS syntax/diff checks clean. Admin SDK **12.7.0**, Functions SDK **5.1.1**, Firestore client **10.14.1** were used. Full HTTPS emulator probe is blocked as described below, not claimed passed. No remote CI result is claimed for this new branch.
+
+Claude resume: fetch `origin/codex/c1-completion-fixes` and review its diff from `cd81e50`. If `claude/c1-idempotent-completion` still ends at `cd81e50` with a clean working tree, it can fast-forward to this branch to bring the reviewed fixes into PR #3; if it has newer work, compare first and integrate without resetting/force-pushing. Run the checked-in full HTTPS probe on a compatible host. Keep PR #3 open and do not deploy, migrate production, or treat C1 as operationally closed based solely on this handoff. Codex has finished this editing interval and will not simultaneously edit these files.
+
 The user authorized Codex to implement C1 review fixes while Claude is paused. Codex works only on `codex/c1-completion-fixes`, starting at `cd81e50`. For this interval Codex owns completion functions, their pure policy helper, completion notification trigger, `functions/index.js`, `firebase.json`, `firestore.rules`, completion client adapters, receipt/impact policy imports, C1 tests, and this handoff section. The older Claude ownership rows below describe the paused draft, not simultaneous editing. No merge, deployment, or production migration is authorized by this takeover. Claude should fetch this branch and read the final handoff before resuming.
 
 #### C1 implementation decisions
