@@ -537,7 +537,45 @@ Covers from `BetterNature-Audit-and-Claude-Handoff.md`:
 - **C1** — authoritative completion command (Cloud Function + repair ledger).
 - Everything else in the audit's §C-§F.
 
-### C1 scope (first iteration)
+### C1 second iteration (post-ChatGPT review of cd81e50 — R1–R8)
+
+ChatGPT's PR #3 review flagged 8 findings. This iteration rewrites C1 as one coherent completion state machine addressing all of them.
+
+| R# | Fix | Where |
+|----|-----|-------|
+| **R1** override exec-only + required reason | Callable rejects `override: true` unless the caller is exec and `override_reason` is non-empty. The reason is stored on the completion sentinel. | `functions/completePickup.js` |
+| **R2** authorize before cached return | Sentinel-exists branch now first checks `caller === claimant_uid` OR `caller === actor_uid` OR exec. Unrelated signed-in users get `permission-denied` even on a replay. | `functions/completePickup.js` |
+| **R3** single outcome-independent sentinel | New `/pickup_completions/{pickupId}` doc is the ONLY idempotency marker. Spoiled and unclaimed exec_override replays return cached correctly because the sentinel doesn't depend on optional activity/receipt docs. | `functions/completePickup.js` + `firestore.rules` |
+| **R4** client bypasses closed | `/pickups` update rule gains `isExecNonCompletionUpdate()` — exec can admin-correct metadata but CANNOT direct-write `status: 'completed'`. `/pickups` create rejects `status: 'completed'` seeding. `/tax_receipts` client create denied entirely. New `/pickup_completions` + `/receipt_counters` admin-SDK only. | `firestore.rules` |
+| **R5** org counters inside the tx with full field set | `org_stats/global` bumped INSIDE the atomic transaction with `lbs / meals / co2 / water / hours / events`. `users` totals include `leaderboard_score` and `pickups_completed`. | `functions/completePickup.js` |
+| **R6** receipt schema + numbering + attribution | Receipt doc carries `receipt_no` (via transactional counter at `/receipt_counters/{restaurant_id}`), `org` identity, `pickup_id`, `restaurant_id`. Pickup stamped with `tax_receipt_id` + `tax_receipt_url`. Volunteer attribution uses the CLAIMANT, not the exec actor. Exec override with a positive weight also mints a receipt attributed to the claimant. | `functions/completePickup.js` |
+| **R7** client `pkRef` fix + notification intent in-tx | Client declares `pickupRef` locally for the volunteer self-notify read. Partner notification work (and dedup lease) now written INSIDE the completion transaction, so A2's J1 sweep delivers at-least-once even if the client never returns. | `src/services/database.js`, `functions/completePickup.js` |
+| **R8** MVCC-faithful test harness | New in-process Firestore mock stages writes, rolls back on exception, retries on OCC conflict. 14 cases cover R1–R7 regressions plus happy/idempotent/rollback/concurrent-single-winner. | `scripts/test-c1-complete.cjs` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on all touched JS files ✓
+- `node scripts/test-c1-complete.cjs` → **14/14 pass** ✓
+  1. happy path
+  2. idempotent replay (totals not double-bumped)
+  3. R1 — override denied for non-exec
+  4. R1 — exec override requires reason
+  5. R2 — cached read denied for unrelated user
+  6. R3 — spoiled replay returns cached
+  7. R3 — exec override unclaimed replay cached
+  8. R5 — org_stats bumped in tx with all derived fields
+  9. R6 — receipt has receipt_no + org identity + pickup stamp
+  10. R6 — receipt counter yields distinct sequential numbers
+  11. R6 — override attributes claimant on receipt, actor on sentinel
+  12. R7 — notification work persisted inside tx
+  13. R8 — exception rolls back staged writes
+  14. R8 — concurrent completions produce single winner
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on push.
+- Firebase Functions emulator + staging run remain the authoritative pre-deploy gate (not run on this host).
+
+### C1 first iteration (initial draft)
 
 **Goal:** no retry or concurrent request can double-count a pickup, hours, meals/pounds, or receipt records; a completed pickup never ends up with a missing required record.
 

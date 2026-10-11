@@ -1337,21 +1337,31 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     throw e;
   }
 
+  // C1-R7 — partner notification intent is now persisted by the
+  // server callable INSIDE the completion transaction (writes to
+  // /notification_work and /notification_dedup), so A2's J1 sweep
+  // delivers at-least-once without the client needing to do a
+  // second round-trip. A client crash immediately after the
+  // callable's response can no longer lose the partner notice.
+  //
+  // The ONLY notification we still fire here is the volunteer's
+  // own in-app celebration, which is a self-recipient write and
+  // not operationally critical (the pickup record itself is the
+  // persistent proof of their rescue). We still check res.cached
+  // so replays don't double-ring the bell.
   const weight = Number(res.actual_weight_lbs) || 0;
-  const hoursEarned = Number(res.hours_earned) || 0;
   const meals = Number(res.meals) || Math.round(weight * 1.2);
   const spoiledResult = !!res.spoiled;
 
-  // Fetch the current pickup snapshot for notification bodies. The
-  // callable has already committed everything; this read is purely
-  // for the restaurant/claimant display names + fridge name.
+  // R7 fix — the earlier draft referenced an undeclared `pkRef`.
+  // We re-declare it locally for the single volunteer-notify read.
+  const pickupRef = doc(db, 'pickups', pickupId);
   let pk = null;
   try {
-    const snap = await getDoc(pkRef);
+    const snap = await getDoc(pickupRef);
     pk = snap.exists() ? { id: snap.id, ...snap.data() } : null;
-  } catch {}
+  } catch (e) { console.warn('completePickup post-read', e?.message); }
 
-  // Volunteer celebration (self recipient, no cross-user auth).
   if (pk?.claimed_by && !spoiledResult && !res.cached) {
     try {
       const { enqueueNotification } = await import('./notify');
@@ -1364,35 +1374,6 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
         data: { type: 'pickup_complete', pickupId },
       });
     } catch (e) { console.warn('volunteer complete notify', e); }
-  }
-
-  // Partner notification (collapsed delivered+receipt). Only fires
-  // when the callable actually did fresh work (res.cached === false)
-  // AND the operation was a successful delivery (not spoiled). The
-  // queueBusinessNotification callable is J1-recoverable, so a
-  // transient failure here is retried by the scheduled sweep.
-  if (!res.cached && !spoiledResult && pk?.restaurant_id) {
-    try {
-      const { queuePickupToPartner } = await import('./notify');
-      const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-      const title = res.receipt_id
-        ? `Delivered — tax receipt ready`
-        : 'Your surplus made it';
-      const body = res.receipt_id
-        ? `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Open the receipt to print or save as PDF.`
-        : `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs).`;
-      const url = res.receipt_id
-        ? `https://betternatureofficial.org/receipt.html?id=${encodeURIComponent(res.receipt_id)}`
-        : `https://app.betternatureofficial.org/#/pickups/${pickupId}`;
-      await queuePickupToPartner(pickupId, 'complete', {
-        title, body, url,
-        data: {
-          type: res.receipt_id ? 'tax_receipt' : 'pickup_delivered_restaurant',
-          pickupId, meals, lbs: weight,
-          receiptId: res.receipt_id || null,
-        },
-      });
-    } catch (e) { console.warn('partner delivered notify', e); }
   }
 
   return res;

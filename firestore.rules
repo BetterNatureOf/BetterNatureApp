@@ -407,6 +407,29 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── pickup_completions (C1) ──
+    // Immutable sentinel written by completePickupOperation. One
+    // doc per pickup; its presence is the only authoritative
+    // "this pickup is done" signal. Exec read for audit review;
+    // owner (claimant/actor) read for cached replay. Admin SDK
+    // only writes.
+    match /pickup_completions/{id} {
+      allow read: if isExec()
+                  || (isSignedIn() && (
+                       resource.data.get('claimant_uid', '') == request.auth.uid
+                       || resource.data.get('actor_uid', '') == request.auth.uid
+                     ));
+      allow write: if false;
+    }
+
+    // ── receipt_counters (C1) ──
+    // Transactional monotonic counter per restaurant for receipt
+    // numbering. Admin SDK only.
+    match /receipt_counters/{restaurantId} {
+      allow read: if isExec();
+      allow write: if false;
+    }
+
     // ── notification_dedup (G2) ──
     // Idempotency ledger written by the queueBusinessNotification
     // Cloud Function. Only the admin SDK writes; clients cannot
@@ -659,6 +682,15 @@ service cloud.firestore {
            ]);
     }
 
+    // C1-R4 — exec client write that does NOT transition to
+    // completed. Lets admins fix names/addresses/metadata without
+    // reopening a client path to status='completed'. The server
+    // callable (admin SDK) is the only writer that may land
+    // status='completed'.
+    function isExecNonCompletionUpdate() {
+      return isExec() && newStatus() != 'completed';
+    }
+
     // Restaurant cancels before any claim OR before enroute. The
     // service layer already blocks cancel after enroute; this rule
     // enforces the field set.
@@ -676,16 +708,30 @@ service cloud.firestore {
       // We deliberately don't require role=='restaurant' on the rule
       // — the role string can drift during signup (member ->
       // restaurant migration etc.). The id-match is the real check.
-      allow create: if isExec() || (
-        isSignedIn() && pickupRid() != null
-        && (pickupRid() == request.auth.uid || pickupRid() == userRid())
-      );
+      // C1-R4 — exec/claimant cannot pre-seed status='completed';
+      // the completePickupOperation callable (admin SDK) is the
+      // only path to that terminal state.
+      allow create: if (
+          request.resource.data.get('status', 'available') != 'completed'
+        ) && (
+          isExec() || (
+            isSignedIn() && pickupRid() != null
+            && (pickupRid() == request.auth.uid || pickupRid() == userRid())
+          )
+        );
 
       // Update: exec OR any of the narrow transition rules above.
-      // Everything that doesn't match a transition is denied, which
-      // means a direct SDK write with arbitrary fields can no longer
-      // forge a completion or steal a claim.
-      allow update: if isExec()
+      // C1-R4 — exec is NOT allowed to direct-write
+      // status='completed' from a client. The only path to
+      // 'completed' is the `completePickupOperation` callable,
+      // which runs the full atomic transaction (pickup +
+      // completion sentinel + activity + totals + receipt +
+      // notification intent). Admin SDK bypasses rules, so the
+      // callable's writes still land; exec clients only lose the
+      // ability to leave the pickup in an inconsistent state.
+      // `isExecNonCompletionUpdate()` lets exec touch everything
+      // else (admin corrections to names/addresses/metadata).
+      allow update: if isExecNonCompletionUpdate()
         || isAtomicClaim()
         || isSelfReleaseClaim()
         || isSelfSetEnroute()
@@ -875,19 +921,19 @@ service cloud.firestore {
     match /tax_receipts/{id} {
       allow get: if true;
       allow list: if isExec();
-      // Receipts must be tied to a real /pickups/{id} that the
-      // CURRENT signed-in user actually delivered (claimed_by ==
-      // auth.uid) and that's in 'completed' status. Without this
-      // anyone signed in could mint a forged receipt for any
-      // restaurant via the JS SDK. Execs can mint anything (manual
-      // backfills, paper receipts). Nobody edits or deletes — the
-      // collection is immutable audit history.
-      allow create: if isExec()
-        || (isSignedIn()
-            && request.resource.data.pickup_id is string
-            && exists(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id))
-            && get(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id)).data.claimed_by == request.auth.uid
-            && get(/databases/$(database)/documents/pickups/$(request.resource.data.pickup_id)).data.status == 'completed');
+      // C1-R4 — receipt creation moves to admin SDK only. The
+      // completePickupOperation callable writes the deterministic
+      // `rcpt_{pickupId}` receipt inside the completion
+      // transaction, with server-generated receipt_no via a
+      // transactional counter. Allowing a client-side `isExec()`
+      // escape here would reopen the "exec seeds an arbitrary
+      // receipt with any weight / donor" path the review flagged;
+      // manual/backfill receipts must flow through a dedicated
+      // audited server callable (not shipped in this PR — the
+      // migration script in A2's revocation path already supplies
+      // one for legacy evidence; a manual-receipt-mint callable
+      // is tracked as follow-up).
+      allow create: if false;
       allow update, delete: if false;
     }
 
