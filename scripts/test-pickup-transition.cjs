@@ -1,6 +1,9 @@
 // Real A2 work/fanout/recovery on demo Firestore; trigger entry called directly.
 const assert=require('node:assert/strict'),fs=require('node:fs');
-const admin=require('firebase-admin');
+// Resolve firebase-admin from functions/package.json so this
+// test and the function module share one SDK instance.
+const functionsRequire = require('node:module').createRequire(require.resolve('../functions/dispatchPickupTransition'));
+const admin = functionsRequire('firebase-admin');
 const {initializeTestEnvironment}=require('@firebase/rules-unit-testing');
 const projectId=process.env.GCLOUD_PROJECT||'demo-a2';
 if(!projectId.startsWith('demo-')||!process.env.FIRESTORE_EMULATOR_HOST)throw Error('Demo emulator required');

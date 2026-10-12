@@ -1,7 +1,10 @@
 // Actual Auth -> HTTPS callable -> Firestore -> completion trigger -> A2 fanout.
 // firebase emulators:exec --only auth,functions,firestore --project demo-c1 'node scripts/test-c1-callable.cjs'
 const assert = require('node:assert/strict');
-const admin = require('firebase-admin');
+// Resolve firebase-admin from functions/package.json so this
+// test and the deployed callable share one SDK instance.
+const functionsRequire = require('node:module').createRequire(require.resolve('../functions/completePickup'));
+const admin = functionsRequire('firebase-admin');
 const { initializeApp, deleteApp } = require('firebase/app');
 const { getAuth, connectAuthEmulator, signInAnonymously } = require('firebase/auth');
 const { getFunctions, connectFunctionsEmulator, httpsCallable } = require('firebase/functions');

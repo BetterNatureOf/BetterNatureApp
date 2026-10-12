@@ -3,7 +3,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const parser = require('@babel/parser');
-const admin = require('firebase-admin');
+// Resolve firebase-admin from functions/package.json so this
+// test and the function module share one SDK instance. See
+// test-c1-complete.cjs for the same pattern.
+const functionsRequire = require('node:module').createRequire(require.resolve('../functions/lib/pickupEligibility'));
+const admin = functionsRequire('firebase-admin');
 const F = require('firebase/firestore');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
 const eligibility = require('../functions/lib/pickupEligibility');

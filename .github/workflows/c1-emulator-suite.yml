@@ -61,18 +61,23 @@ jobs:
       - name: Install app dependencies
         run: npm ci --no-audit --no-fund
 
-      # Deliberately do NOT run `npm install --prefix functions`
-      # here. Doing so creates a SECOND copy of firebase-admin at
-      # `functions/node_modules/firebase-admin`; when a test
-      # script imports a function module, Node resolves its
-      # `require('firebase-admin')` to that second copy, so the
-      # test's `admin.firestore.FieldValue.serverTimestamp()`
-      # sentinel is produced by one admin instance and consumed
-      # by a different one — Firestore then throws
-      # "Couldn't serialize object of type ServerTimestampTransform".
-      # The root `npm ci` already installs firebase-admin as a
-      # devDependency; both the test and the function require()
-      # resolve to the same hoisted copy.
+      # Install the Cloud Functions deps (firebase-admin,
+      # firebase-functions). Earlier CI runs that dropped this
+      # step failed with "Cannot find module 'firebase-functions'"
+      # because the root package.json does not declare it.
+      #
+      # Caveat on dual firebase-admin instances: when both root
+      # and functions/ install firebase-admin, a test's
+      # `require('firebase-admin')` can resolve to a different
+      # instance than the function module's, and
+      # `FieldValue.serverTimestamp()` sentinels then cross
+      # instance boundaries and fail. The test scripts under
+      # scripts/*.cjs use `createRequire(require.resolve('../functions/...'))`
+      # to resolve firebase-admin against functions/package.json,
+      # pinning both sides to the same SDK instance. See
+      # test-c1-complete.cjs for the canonical pattern.
+      - name: Install Functions dependencies
+        run: npm --prefix functions install --no-audit --no-fund
 
       # firebase-tools 14.27.0 is the last line Codex's handoff
       # confirmed compatible with Java 17. Pin so CI can't drift

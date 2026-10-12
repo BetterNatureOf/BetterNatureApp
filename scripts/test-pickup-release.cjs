@@ -1,6 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const admin = require('firebase-admin');
+// Resolve firebase-admin from functions/package.json so this
+// test and the function module share one SDK instance.
+const functionsRequire = require('node:module').createRequire(require.resolve('../functions/recordPickupRelease'));
+const admin = functionsRequire('firebase-admin');
 const F = require('firebase/firestore');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
 const projectId = process.env.GCLOUD_PROJECT || 'demo-a2';
