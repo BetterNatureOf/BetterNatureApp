@@ -35,6 +35,7 @@ exports.sweepNotificationDedup = require('./sweepNotificationDedup').sweepNotifi
 
 // C1 — server-authorized idempotent pickup completion.
 exports.completePickupOperation = require('./completePickup').completePickupOperation;
+exports.dispatchPickupCompletion = require('./dispatchPickupCompletion').dispatchPickupCompletion;
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -88,3 +89,7 @@ exports.sendPushOnNotification = functions.firestore
     }
     return null;
   });
+
+exports.recordPickupRelease = require('./recordPickupRelease').recordPickupRelease;
+
+exports.dispatchPickupTransition = require('./dispatchPickupTransition').dispatchPickupTransition;

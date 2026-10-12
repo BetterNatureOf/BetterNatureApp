@@ -15,9 +15,8 @@
 // These are the canonical numbers — any presentation layer that
 // converts pounds into other units (impact.js, receipts, hero
 // tiles) must import from here so we never drift.
-export const MEALS_PER_LB = 1.2;
-export const CO2_LB_PER_LB = 3.8;
-export const WATER_GAL_PER_LB = 175;
+import donationPolicy from '../../functions/lib/donationPolicy';
+export const { MEALS_PER_LB, CO2_LB_PER_LB, WATER_GAL_PER_LB } = donationPolicy;
 
 import {
   doc,

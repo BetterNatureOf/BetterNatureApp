@@ -9,82 +9,25 @@
 // of the donated food — the charity acknowledges only the description and
 // quantity. So this receipt deliberately leaves dollar value blank.
 import {
-  doc, addDoc, getDoc, getDocs, collection, query, where,
-  orderBy, limit, serverTimestamp,
+  doc, getDoc, getDocs, collection, query, where,
+  orderBy, limit,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 
-// BetterNature's nonprofit identity. EIN gets filled in once the IRS
-// determination letter lands — until then the receipt page renders
-// "(EIN pending)" but is otherwise valid.
-export const ORG_INFO = {
-  name: 'BetterNature',
-  legalName: 'BetterNature Inc.',
-  ein: '99-4028399',
-  address: '',
-  email: 'info@betternatureofficial.org',
-  website: 'betternatureofficial.org',
-};
+import donationPolicy from '../../functions/lib/donationPolicy';
+export const ORG_INFO = donationPolicy.ORG_INFO;
 
-function pad(n, len = 4) { return String(n).padStart(len, '0'); }
 function fmtDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// Mints a receipt doc for a completed pickup. Idempotent-ish: callers
-// shouldn't re-issue, but if they do we just create a second numbered
-// receipt — Firestore-ordered, never overwriting history.
-export async function issueReceiptForPickup({
-  pickupId, restaurantId, restaurantName, restaurantEmail,
-  weightLbs, mealsEquivalent, pickedUpAt, volunteerName, chapterName,
-  // Optional — carried from the pickup at completion time so the
-  // receipt page can render "delivered to X fridge" + a proof photo
-  // when present. Both are best-effort; the receipt still ships if
-  // either is missing.
-  dropoffPhotoUrl = null, fridgeName = null, fridgeAddress = null,
-}) {
-  if (!isFirebaseConfigured) return null;
-
-  // Sequence number is just the count of receipts for this restaurant + 1.
-  // Cheap, monotonic, and human-readable on the printed receipt.
-  let receiptNo = 1;
-  if (restaurantId) {
-    try {
-      const snap = await getDocs(query(
-        collection(db, 'tax_receipts'),
-        where('restaurant_id', '==', restaurantId),
-      ));
-      receiptNo = snap.size + 1;
-    } catch (e) { /* fall through with receiptNo=1 */ }
-  }
-
-  const data = {
-    pickup_id: pickupId || null,
-    restaurant_id: restaurantId || null,
-    restaurant_name: restaurantName || '',
-    restaurant_email: restaurantEmail || '',
-    weight_lbs: Number(weightLbs) || 0,
-    meals_equivalent: Number(mealsEquivalent) || 0,
-    picked_up_at: pickedUpAt || new Date().toISOString(),
-    volunteer_name: volunteerName || '',
-    chapter_name: chapterName || '',
-    receipt_no: pad(receiptNo),
-    issued_at: serverTimestamp(),
-    issued_at_iso: new Date().toISOString(),
-    org: ORG_INFO,
-    // Goods/services flag — IRS-required language for in-kind acks.
-    no_goods_or_services: true,
-    // Optional drop-off proof + destination fridge — receipt.html
-    // renders these when present, hides gracefully when null.
-    dropoff_photo_url: dropoffPhotoUrl || null,
-    fridge_name: fridgeName || null,
-    fridge_address: fridgeAddress || null,
-  };
-
-  const ref = await addDoc(collection(db, 'tax_receipts'), data);
-  return { id: ref.id, ...data };
+// Compatibility read for callers of the old issuance helper. Completion owns
+// issuance; caller-provided donor/weight fields can never create a receipt.
+export async function issueReceiptForPickup({ pickupId }) {
+  if (!isFirebaseConfigured || !pickupId) return null;
+  return getReceipt(`rcpt_${pickupId}`);
 }
 
 export function receiptUrl(receiptId) {

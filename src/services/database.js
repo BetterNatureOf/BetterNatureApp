@@ -18,7 +18,8 @@ import {
   runTransaction,
   arrayUnion,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../config/firebase';
+import { auth, db, isFirebaseConfigured } from '../config/firebase';
+import pickupEligibility from '../../functions/lib/pickupEligibility';
 import { bumpOrgStats } from './orgStats';
 import {
   mockChapters,
@@ -494,6 +495,7 @@ export async function createPickup(pickup) {
   const enriched = {
     status: 'available',
     ...pickup,
+    estimated_weight_lbs: w,
     restaurant_address: address,
     restaurant_lat: restLat ?? null,
     restaurant_lng: restLng ?? null,
@@ -655,38 +657,42 @@ export async function claimPickup(pickupId, userId) {
     return pk ? { ...pk, status: 'claimed', claimed_by: userId } : null;
   }
   const ref = doc(db, 'pickups', pickupId);
-  const claimedAt = new Date().toISOString();
+  if (!auth?.currentUser || auth.currentUser.uid !== userId) {
+    throw new Error('Sign in as the volunteer claiming this pickup.');
+  }
+  const claimedAt = serverTimestamp();
   // ATOMIC claim — without this, two volunteers tapping "Claim" at
   // the same moment both succeed; both drive to the restaurant; the
   // restaurant fields two confused volunteers. A Firestore
   // transaction reads + writes in one round-trip, so the second
   // claimant lands in the `pk.status !== 'available'` branch and
   // gets a friendly error instead of stomping the first volunteer.
-  // Snapshot the volunteer's contact so the restaurant can call
-  // them if they don't show up. Reads from the user doc outside
-  // the transaction because get() inside a transaction on a
-  // different doc requires read+write pairs and complicates
-  // things — the volunteer's phone/name is a snapshot, not a
-  // race-sensitive value.
+  // Read eligibility and the contact snapshot inside the same transaction.
+  // Rules independently enforce eligibility and the server claim timestamp.
   let claimantPhone = '';
   let claimantName = '';
-  try {
-    const uSnap = await getDoc(doc(db, 'users', userId));
-    if (uSnap.exists()) {
-      const u = uSnap.data();
-      claimantPhone = u.phone || '';
-      claimantName = u.name || u.full_name || '';
-    }
-  } catch {}
   const pk = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    const uSnap = await tx.get(doc(db, 'users', userId));
+    if (!uSnap.exists() || !pickupEligibility.pickupEligible(uSnap.data())) {
+      throw new Error('An approved account, ID, volunteer agreement, and driver setup are required to claim.');
+    }
+    const u = uSnap.data();
+    claimantPhone = u.phone || '';
+    claimantName = u.name || u.full_name || '';
+    if (['claimed', 'enroute'].includes(data.status) && data.claimed_by === userId) {
+      return { id: snap.id, ...data, cached: true };
+    }
     if (data.status === 'claimed' && data.claimed_by && data.claimed_by !== userId) {
       throw new Error('Another volunteer just claimed this pickup. Try a different one.');
     }
     if (data.status === 'completed') throw new Error('That pickup has already been delivered.');
     if (data.status === 'cancelled') throw new Error('That pickup was cancelled by the restaurant.');
+    if (data.status !== 'available' || data.claimed_by) {
+      throw new Error('This pickup is no longer available. Refresh and choose another one.');
+    }
     tx.update(ref, {
       status: 'claimed',
       claimed_by: userId,
@@ -700,6 +706,8 @@ export async function claimPickup(pickupId, userId) {
       claimant_phone: claimantPhone, claimant_name: claimantName,
     };
   });
+
+  if (pk.cached) return pk; // A repeated tap neither resets the clock nor queues duplicate notices.
 
   // Smart reminder: confirmation push + email so the volunteer has
   // the pickup details in their inbox. Pre-arrival scheduled reminders
@@ -752,19 +760,23 @@ export async function cancelClaim(pickupId, reason = '') {
   }
   const ref = doc(db, 'pickups', pickupId);
   // Atomic release — refuses to revert anything past 'claimed' and
-  // returns the previous claimant id + restaurant id so downstream
-  // penalty / notification target the right users.
-  const { releasedBy, pk } = await runTransaction(db, async (tx) => {
+  // returns the pickup for the downstream partner notification.
+  const { pk } = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
     if (data.status !== 'claimed') {
       throw new Error('You can only release a pickup before you’ve hit the road.');
     }
+    if (data.verified_by_restaurant_at) {
+      throw new Error('The restaurant confirmed handoff. Use volunteer handoff to transfer the food safely.');
+    }
     tx.update(ref, {
       status: 'available',
       claimed_by: null,
       claimed_at: null,
+      claimant_name: null,
+      claimant_phone: null,
       cancel_reason: reason || null,
       cancelled_at: new Date().toISOString(),
       // B4 + F9 + G2 — authorized breadcrumb that is TIME-BOXED,
@@ -775,58 +787,10 @@ export async function cancelClaim(pickupId, reason = '') {
       released_by: data.claimed_by || null,
       released_at: serverTimestamp(),
     });
-    return { releasedBy: data.claimed_by || null, pk: data };
+    return { pk: data };
   });
-  // Reliability penalty — dropping a claimed pickup costs the
-  // volunteer 5 leaderboard points and bumps a `pickups_dropped`
-  // counter so chapters can see who keeps abandoning runs. We use
-  // a delta so concurrent score updates from event check-ins don't
-  // race with this one.
-  if (releasedBy) {
-    try {
-      const uRef = doc(db, 'users', releasedBy);
-      const uSnap = await getDoc(uRef);
-      if (uSnap.exists()) {
-        const u = uSnap.data();
-        await updateDoc(uRef, {
-          leaderboard_score: Math.max(0, (u.leaderboard_score || 0) - 5),
-          pickups_dropped:   (u.pickups_dropped || 0) + 1,
-          last_drop_at:      serverTimestamp(),
-        });
-      }
-      // Audit row for transparency (the volunteer can see this
-      // when we surface a 'dropped runs' tab on the profile).
-      await addDoc(collection(db, 'member_activity'), {
-        user_id:     releasedBy,
-        date:        new Date().toISOString().split('T')[0],
-        project:     'iris',
-        meals:       0,
-        hours:       0,
-        events:      0,
-        points:      -5,
-        raised:      0,
-        source_type: 'pickup_dropped',
-        source_id:   pickupId,
-        notes:       reason || null,
-        created_at:  serverTimestamp(),
-      });
-    } catch (e) { console.warn('drop penalty failed', e); }
-  }
-  // Tell the restaurant — via enqueueNotification so push + email fire.
-  // Best-effort. Restaurant needs a real ping here so they know their
-  // food is unclaimed and might not get picked up in time.
-  try {
-    if (pk.restaurant_id) {
-      // A2 R-followup #3 — routed through the callable.
-      const { queuePickupToPartner } = await import('./notify');
-      await queuePickupToPartner(pickupId, 'release', {
-        title: 'Pickup released',
-        body: `Your pickup is back on the board — looking for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_released', pickupId },
-      });
-    }
-  } catch (e) { console.warn('cancel-claim notify', e); }
+  // recordPickupRelease owns accounting atomically and retries server-side.
+  // dispatchPickupTransition persists and delivers the partner notification server-side.
   return { ...pk, status: 'available' };
 }
 
@@ -850,13 +814,13 @@ export async function cancelPickup(pickupId, reason = '') {
     const data = snap.data();
     if (data.status === 'completed') throw new Error('That pickup is already delivered.');
     if (data.status === 'cancelled') return data; // idempotent
-    if (data.status === 'enroute') {
+    if (data.status === 'enroute' || data.verified_by_restaurant_at || !['available', 'claimed'].includes(data.status)) {
       throw new Error('A volunteer already picked up the food. Call them on the contact in the app — don\'t cancel here.');
     }
     tx.update(ref, {
       status: 'cancelled',
       cancel_reason: reason || null,
-      cancelled_at: new Date().toISOString(),
+      cancelled_at: serverTimestamp(),
     });
     return data;
   });
@@ -889,6 +853,9 @@ export async function cancelPickup(pickupId, reason = '') {
 // the volunteer arrives.
 export async function verifyPickupByRestaurant(pickupId, verifierUid) {
   if (useMock()) return;
+  if (!auth?.currentUser || auth.currentUser.uid !== verifierUid) {
+    throw new Error('Sign in as the food partner confirming this pickup.');
+  }
   const ref = doc(db, 'pickups', pickupId);
   // Guard: only verifiable when a volunteer has actually claimed
   // and not yet delivered. Stops accidental re-verifies on a
@@ -898,8 +865,12 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
-    if (!['claimed', 'enroute'].includes(data.status)) {
+    if (!['claimed', 'enroute'].includes(data.status) || !data.claimed_by) {
       throw new Error('This pickup can only be confirmed while a volunteer is on the way.');
+    }
+    const restaurant = await tx.get(doc(db, 'restaurants', data.restaurant_id));
+    if (!restaurant.exists() || restaurant.data().user_id !== verifierUid) {
+      throw new Error('Only the owner of this food partner can confirm handoff.');
     }
     if (data.verified_by_restaurant_at) {
       // Already verified — silent no-op so a double-tap doesn't
@@ -944,7 +915,7 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
   const ref = doc(db, 'pickups', pickupId);
   const updates = {
     status: 'enroute',
-    enroute_at: new Date().toISOString(),
+    enroute_at: serverTimestamp(),
   };
   if (fridgeId) {
     try {
@@ -968,6 +939,9 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    if (data.claimed_by !== auth?.currentUser?.uid) {
+      throw new Error('Only the current volunteer can start this pickup.');
+    }
     if (data.status === 'enroute') return { id: snap.id, ...data }; // idempotent
     if (data.status !== 'claimed') {
       throw new Error('This pickup isn\'t in a claimed state — nothing to mark en route.');
@@ -1069,7 +1043,8 @@ export async function releaseAbandonedPickup(pickupId, { reason = 'no_show_timeo
       claimed_at: null,
       claimant_name: null,
       claimant_phone: null,
-      abandoned_at: new Date().toISOString(),
+      abandoned_at: serverTimestamp(),
+      abandoned_by: auth?.currentUser?.uid || null,
       abandoned_reason: reason,
       abandoned_prior_claimant: prevClaimant,
     });
@@ -1161,23 +1136,7 @@ export async function handOffPickup(pickupId, reason = '') {
     });
     return data;
   });
-  // Notify the restaurant so they know a different volunteer will
-  // arrive at the fridge (or need to be re-briefed if the first
-  // volunteer never even got there).
-  try {
-    const snap = await getDoc(ref);
-    const pk = snap.exists() ? snap.data() : null;
-    if (pk?.restaurant_id) {
-      // A2 R-followup #3 — claimant → partner via callable.
-      const { queuePickupToPartner } = await import('./notify');
-      await queuePickupToPartner(pickupId, 'handoff', {
-        title: 'Volunteer handoff in progress',
-        body: `${pk.handoff_from_name || 'The volunteer'} needs to hand off your pickup. It's back on the board for another volunteer to claim.${reason ? ' Reason: ' + reason : ''}`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_handoff', pickupId },
-      });
-    }
-  } catch (e) { console.warn('handoff notify', e?.message); }
+  // dispatchPickupTransition owns durable partner notification and recovery.
 }
 
 // #6 from drop-off audit — food went bad in transit or the fridge
@@ -1186,46 +1145,24 @@ export async function handOffPickup(pickupId, reason = '') {
 // mint a tax receipt (the IRS doesn't recognize spoiled donations,
 // and receipts for undelivered food would destroy partner trust).
 // spoiled === true is the flag downstream stat/receipt code reads.
+// Server error reasons preserve the screen's existing recovery prompts.
+// Notification work is server-owned; no post-completion client queue is needed.
+async function invokePickupCompletion(payload) {
+  const { getFunctions, httpsCallable } = await import('firebase/functions');
+  try {
+    return (await httpsCallable(getFunctions(), 'completePickupOperation')(payload)).data;
+  } catch (error) {
+    if (error?.details?.reason) error.code = error.details.reason;
+    throw error;
+  }
+}
+
 export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', note = '' } = {}) {
   if (useMock() || !isFirebaseConfigured) return;
   if (!pickupId) return;
-  const ref = doc(db, 'pickups', pickupId);
-  // C1 — spoiled completion is now the same server-authorized
-  // operation as a normal completion, routed through the
-  // completePickupOperation callable with `spoiled: true`. The
-  // callable handles weight=0 + no receipt + spoiled fields on
-  // the pickup inside the same atomic transaction. Rules deny
-  // the direct client write that used to live here.
-  const { getFunctions, httpsCallable } = await import('firebase/functions');
-  const fn = httpsCallable(getFunctions(), 'completePickupOperation');
-  try {
-    await fn({
-      pickup_id: pickupId,
-      spoiled: true,
-      spoiled_kind: kind,
-      spoiled_note: note || null,
-    });
-  } catch (e) { throw e; }
-  // Read the pickup for notification body context.
-  let pk = null;
-  try {
-    const snap = await getDoc(ref);
-    pk = snap.exists() ? snap.data() : null;
-  } catch {}
-  // Restaurant gets a candid explainer — no receipt is coming.
-  try {
-    if (pk?.restaurant_id) {
-      const explain = kind === 'fridge_full' ? 'the fridge was full and the volunteer couldn\'t find another in time'
-                    : kind === 'fridge_broken' ? 'the drop-off fridge was broken'
-                    : 'the food had spoiled in transit';
-      const { queuePickupToPartner } = await import('./notify');
-      await queuePickupToPartner(pickupId, 'complete', {
-        title: 'Pickup didn\'t make it',
-        body: `Your donation couldn't be delivered — ${explain}. No tax receipt will be issued for this run.${note ? ' Note from volunteer: ' + note : ''}`,
-        data: { type: 'pickup_spoiled', pickupId, kind },
-      });
-    }
-  } catch (e) { console.warn('spoiled notify', e?.message); }
+  return invokePickupCompletion({
+    pickup_id: pickupId, spoiled: true, spoiled_kind: kind, spoiled_note: note || null,
+  });
 }
 
 // #9 from drop-off audit — allow the fridge choice to change between
@@ -1255,7 +1192,7 @@ export async function updatePickupFridge(pickupId, fridgeId) {
       fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
       fridge_lat: f.lat ?? null,
       fridge_lng: f.lng ?? null,
-      fridge_changed_at: new Date().toISOString(),
+      fridge_changed_at: serverTimestamp(),
     });
   });
 }
@@ -1273,7 +1210,7 @@ export async function updatePickupFridge(pickupId, fridgeId) {
 // but stamp handoff_unverified: true + handoff_unverified_note on the
 // pickup so the receipt page + exec review can see it happened. Trust
 // preserved via audit trail, not blocking.
-export async function completePickup(pickupId, actualWeightLbs, { override = false, dropoffPhotoUrl = null, fridgeId = null, unverifiedNote = null } = {}) {
+export async function completePickup(pickupId, actualWeightLbs, { override = false, overrideReason = null, dropoffPhotoUrl = null, fridgeId = null, unverifiedNote = null } = {}) {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     if (pk) {
@@ -1307,76 +1244,15 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     return;
   }
 
-  // C1 — delegate to the server-authorized completePickupOperation
-  // callable. The old client-side transaction only guarded the pickup
-  // doc write; member_activity / user totals / org_stats / tax_receipt
-  // committed afterward with random IDs, so a retry or crash left
-  // partial state. The callable now owns the whole write set in one
-  // atomic Firestore transaction with deterministic doc IDs; a retry
-  // sees status='completed' and returns the cached receipt without
-  // double-counting. Rules deny client writes to status='completed'
-  // on /pickups, so the callable is the only path.
-  const { getFunctions, httpsCallable } = await import('firebase/functions');
-  const fn = httpsCallable(getFunctions(), 'completePickupOperation');
-  let res;
-  try {
-    const payload = {
-      pickup_id: pickupId,
-      actual_weight_lbs: actualWeightLbs,
-      override: !!override,
-      dropoff_photo_url: dropoffPhotoUrl || null,
-      fridge_id: fridgeId || null,
-      unverified_note: unverifiedNote || null,
-    };
-    res = (await fn(payload)).data || {};
-  } catch (e) {
-    // Idempotent replay: the callable throws cleanly on bad input,
-    // but a transient Functions error should surface so the UI can
-    // retry. If the server has already completed the pickup, the
-    // next client call hits the cached-result path.
-    throw e;
-  }
-
-  // C1-R7 — partner notification intent is now persisted by the
-  // server callable INSIDE the completion transaction (writes to
-  // /notification_work and /notification_dedup), so A2's J1 sweep
-  // delivers at-least-once without the client needing to do a
-  // second round-trip. A client crash immediately after the
-  // callable's response can no longer lose the partner notice.
-  //
-  // The ONLY notification we still fire here is the volunteer's
-  // own in-app celebration, which is a self-recipient write and
-  // not operationally critical (the pickup record itself is the
-  // persistent proof of their rescue). We still check res.cached
-  // so replays don't double-ring the bell.
-  const weight = Number(res.actual_weight_lbs) || 0;
-  const meals = Number(res.meals) || Math.round(weight * 1.2);
-  const spoiledResult = !!res.spoiled;
-
-  // R7 fix — the earlier draft referenced an undeclared `pkRef`.
-  // We re-declare it locally for the single volunteer-notify read.
-  const pickupRef = doc(db, 'pickups', pickupId);
-  let pk = null;
-  try {
-    const snap = await getDoc(pickupRef);
-    pk = snap.exists() ? { id: snap.id, ...snap.data() } : null;
-  } catch (e) { console.warn('completePickup post-read', e?.message); }
-
-  if (pk?.claimed_by && !spoiledResult && !res.cached) {
-    try {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
-        title: 'Pickup complete!',
-        body: `You rescued ~${meals} meals from ${pk.restaurant_name || 'the restaurant'}. Amazing work!`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_complete', pickupId },
-      });
-    } catch (e) { console.warn('volunteer complete notify', e); }
-  }
-
-  return res;
+  return invokePickupCompletion({
+    pickup_id: pickupId,
+    actual_weight_lbs: actualWeightLbs,
+    override: !!override,
+    override_reason: overrideReason || null,
+    dropoff_photo_url: dropoffPhotoUrl || null,
+    fridge_id: fridgeId || null,
+    unverified_note: unverifiedNote || null,
+  });
 }
 
 // ── Restaurants ──
