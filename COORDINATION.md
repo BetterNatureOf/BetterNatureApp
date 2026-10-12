@@ -12,6 +12,119 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 ## Active
 
+### CI green — commit `0895319` (PR merge `cdc1d62`) — 2026-10-12
+
+ChatGPT independently verified GitHub Actions run [`38262575516`](https://github.com/BetterNatureOf/BetterNatureApp/actions/runs/38262575516) on tip commit `0895319` of `claude/c1-idempotent-completion` (CI tested PR merge commit `cdc1d62`):
+
+- **Firestore + Storage suite (demo-a2)**: all 185 checks green (delivery 40, release 15, transition 13, A2 rules 59, C1 real-transaction/recovery 44, ID gate 8, client adapters 6).
+- **Auth + Functions + Firestore registered suite (demo-c1)**: `scripts/test-c1-callable.cjs` passes — HTTPS callable, cached replay, and registered completion-trigger fanout to both bell + outbox docs.
+- ChatGPT's local 185-check rerun on the same tip also passed.
+
+**Root cause of the earlier CI failure** (runs on `63ff285`, `432abcb`, `a2fe0ea`): `admin.firestore.FieldValue.serverTimestamp()` returned `undefined` inside the Functions emulator runtime even though firebase-admin v12.7.0 exposes the namespace in a direct Node load. Fixed on `0895319` by:
+
+1. Importing `FieldValue` (and `Timestamp` where used) from the modular subpath `require('firebase-admin/firestore')` across all 10 functions files that previously accessed the namespace.
+2. Pinning `functions/package.json` to exact `firebase-admin: 12.7.0` + `firebase-functions: 5.1.1` to prevent install-time drift.
+
+Also pre-landed on `a2fe0ea`: the `scripts/test-{pickup-release,pickup-transition,delivery-flow,c1-callable}.cjs` scripts resolve `firebase-admin` via `createRequire(require.resolve('../functions/<anchor>'))` so the test and the function module share one SDK instance.
+
+**Remaining gates before C1 is operationally complete** (none performed on this host or in production):
+
+- **App-level staging acceptance** — now in flight; see "Staging acceptance preparation" below.
+- **A2 PR #2 merge** — still a prerequisite.
+- **Release cutover sequence** — see the next section; must land in the exact order listed.
+
+### Staging acceptance preparation — 2026-10-12
+
+**Status: BLOCKED on staging environment provisioning. No staging run has been attempted; production is explicitly excluded.**
+
+**What this repo exposes today (audited on `0895319`):**
+
+- `.firebaserc` declares a single project: `default = "better-nature-app"` (production). No `staging` / `dev` alias, no `targets` map.
+- `firebase.json` declares one source tree for rules, indexes, functions, storage. No per-project overrides.
+- `app.json → expo.extra.firebase` hard-codes production: `projectId: "better-nature-app"`, `authDomain: "better-nature-app.firebaseapp.com"`, `storageBucket: "better-nature-app.firebasestorage.app"`, `appId: "1:102288708316:web:d15cda309e77d14b921a19"`.
+- `.env.example` carries only OneSignal production id (`f21e4ed4-1498-41ad-b8fb-20962763a6dd`); says "Firebase config is in app.json → expo.extra.firebase; no env needed." i.e. the client has no env-driven way to point at a non-prod Firebase.
+- `scripts/` holds operations scripts (`backfill-public-profiles.js`, `revoke-id-download-tokens.js`, `drain-legacy-outbox.js`, `seed-*`) and the 185-check test suite. None are wired to a staging project.
+- No `firebase use staging`, `firebaserc.staging.json`, `app.staging.json`, `.env.staging*`, or GitHub secret named `*_STAGING*` was found by grep over tracked files.
+
+**What's missing before staging acceptance can run** (all require the user; Claude will not provision):
+
+1. **A separate Firebase project** — e.g. `better-nature-staging` — created under the `betternatureofficial` org in GCP. Must have its own Firestore, Auth, Storage, Functions enabled on Blaze (functions require it).
+2. **`.firebaserc` alias** `staging` → new project id. Keeps `default` on production so a bare `firebase deploy` can't accidentally target staging and vice-versa.
+3. **Staging client config** — either `app.staging.json` + an Expo profile that swaps `extra.firebase` to the staging Web app's `apiKey/authDomain/projectId/storageBucket/appId`, or `EXPO_PUBLIC_FIREBASE_*` env vars set in a `.env.staging` consumed by the fallback branch in `src/config/firebase.js`.
+4. **Staging secrets**, set via `firebase functions:config:set --project staging` (or Secret Manager for Gen2) — at minimum:
+   - `RESEND_API_KEY` (staging key)
+   - A staging service account for the dispatcher's Identity Toolkit `accounts:lookup` call (Dispatcher must have `roles/firebaseauth.viewer` on the staging project).
+   - OneSignal staging app id — new OneSignal app, its id placed in `EXPO_PUBLIC_ONESIGNAL_APP_ID` for the staging client build.
+5. **Deployed on staging, in the canonical cutover order** (same as production will later follow — see "Release cutover order"): rules → indexes → functions → client build pointing at staging. `recordPickupRelease`, `dispatchPickupTransition`, `completePickupOperation`, `syncPublicProfile*`, `syncIdReviewStatus`, `queueBusinessNotification`, `sweepNotificationDedup`, and the ID-review callables must all be deployed.
+6. **Firestore composite indexes** from `firestore.indexes.json` built out (notification_work index is the one C1 added; `firebase deploy --only firestore:indexes --project staging`).
+7. **Seed data** on staging:
+   - 1 staging restaurant (owner uid known, `restaurants/{rid}.user_id` set).
+   - 1 approved volunteer (role `member`, `member_status: approved`, `verification_status: approved`, `contract_volunteer_signed: true`, `driver_setup_complete: true`).
+   - 1 second volunteer (for handoff + competing-claim scenarios).
+   - 1 executive (role `executive`, email_verified) — exercises the admin volunteering path and exec override.
+   - 1 chapter president (role `chapter_president` or `chapter_pres`, correct `chapter_id`) — exercises president-triggered volunteering + broadcast.
+   - Chapters doc the restaurants + volunteers reference.
+8. **A staging-pointing client build** actually installed on a device + available on web — the native build re-reads config at launch, so the previously-built prod binary cannot be reused.
+
+**Acceptance checklist (to execute once the environment above exists):**
+
+Each row is a scenario; "verify" lists the server-authoritative artifacts to inspect. Treat a pass as (a) client observable + (b) all listed Firestore / Storage / Auth state present with the expected invariants, and no unexpected `audit_events` or `migration_locks` writes.
+
+Partner / restaurant onboarding
+- [ ] S1: Partner signup finalizes with authoritative restaurant linkage (`/users/{uid}.restaurant_id` matches `/restaurants/{rid}.user_id` and the signup token). Verify: `/users/{uid}`, `/restaurants/{rid}`, no spurious `audit_events`.
+- [ ] S2: Partner posts a new pickup; required fields enforced client + rules. Verify: `/pickups/{id}` status `available`, server stamps `created_at`, chapter + restaurant id present.
+- [ ] S3: `new_pickup_broadcast` fans out to chapter volunteers via `queueBusinessNotification` (partner caller). Verify: per recipient, matching `/notifications/{key}__{uid}__inapp` + `/notifications_outbox/{key}__{uid}__outbox` with `read:false`, `status:queued`; partner is NOT a recipient; dedup receipt in `/notification_dedup/{key}` is `completed`.
+
+Volunteer claim + competing claims
+- [ ] S4: Volunteer A claims an available pickup. Verify: `/pickups/{id}.claimed_by == A`, status `claimed`, `claimed_at` server-stamped.
+- [ ] S5: Volunteer B's simultaneous claim loses the race cleanly. Verify: `/pickups/{id}.claimed_by` unchanged; B gets a `failed-precondition` and never sees the pickup as claimed by them.
+- [ ] S6: Rules deny a non-approved volunteer from claiming (missing `member_status: approved` or `verification_status: approved` or `contract_volunteer_signed` or `driver_setup_complete`).
+
+Partner confirmation + trip start
+- [ ] S7: Partner marks `verified_by_restaurant_at`. Verify: server-stamped; rules reject any client timestamp substitute.
+- [ ] S8: Volunteer transitions to `enroute`. Verify: `enroute_at` server-stamped, status transition logged.
+
+Release path (first dropped the run)
+- [ ] S9: Volunteer A releases a claimed pickup. Verify: `/pickups/{id}` status `available`, `claimed_by: null`, `released_by: A`, `released_at` server-stamped; `recordPickupRelease` writes `/pickup_releases/{sha}` with the correct point debit (−min(5, points), floored at 0), `/member_activity/pickup_release_{sha}`, `/audit_events/pickup_release_{sha}`.
+- [ ] S10: `dispatchPickupTransition` fires → partner receives a release notification. Verify: `/notification_work/{key}` `status:completed`, both `/notifications` + `/notifications_outbox` present with partner as recipient.
+- [ ] S11: Replay — re-fire the same release event; totals must NOT double, ledger must have a single row.
+
+Handoff path
+- [ ] S12: Volunteer A hands off to B. Verify: `/pickups/{id}.handoff_from_uid == A`, `handoff_at` server-stamped, `claimed_by` becomes B. Partner is notified via `dispatchPickupTransition` with `handoff` key.
+- [ ] S13: Replay — same key is NOT re-delivered.
+
+Completion — happy path
+- [ ] S14: Volunteer completes via `completePickupOperation` with actual lbs. Verify: `/pickup_completions/{id}` sentinel created with `notification_keys`; `/pickups/{id}` status `completed`, server `completed_at_ts`, actual_weight_lbs, hours, meals, receipt_url; `/tax_receipts/rcpt_{id}` with `receipt_no: BN-{id}`, server `issued_at`; `/member_activity/pickup_{id}`; `/users/{claimant}` deltas correct (meals_rescued, lbs_rescued, hours_logged, events_attended, points, leaderboard_score, pickups_completed); `/org_stats/global` totals updated; `/audit_events/pickup_{id}` with `action: pickup_complete`.
+- [ ] S15: Dispatcher fans out BOTH notifications (volunteer "pickup complete" + partner "donation receipt ready"). Verify: `/notification_work/completion:{id}:{volunteer|partner}` `status:completed`; both bells + both outbox rows present.
+- [ ] S16: Idempotent replay — calling the callable again returns `cached:true` with the ORIGINAL weight (not the new one from the retry argument). Verify: no second ledger row, no second receipt, no second notification pair.
+
+Completion — spoiled food
+- [ ] S17: Volunteer reports spoiled. Verify: `/pickups/{id}.spoiled: true`, no `/tax_receipts` row created, no `/member_activity` for weight/meals; partner gets a "pickup reported spoiled" notification (not a receipt notification); no `delivered_visible_to_restaurant`.
+
+Completion — executive override
+- [ ] S18: Exec completes with `override:true` + required `override_reason`. Verify: `/audit_events/pickup_{id}.override:true`, reason recorded; claimant deltas still attributed to the original claimant uid (not the exec); replay returns cached.
+- [ ] S19: Exec override without a reason is rejected (`permission-denied`, `override_forbidden`).
+
+Admin / officer volunteering
+- [ ] S20: An executive-roled user signs up as a volunteer and completes a pickup (role includes `executive` but claim-time eligibility still enforced). Verify: completion still writes to that uid's `/users/*` deltas; audit event records the actor uid.
+- [ ] S21: A chapter president claims + completes a pickup in their own chapter. Verify: same as S20; president role doesn't alter accounting.
+
+Notifications & receipts end-to-end
+- [ ] S22: Partner opens the receipt URL from the notification → renders the receipt page with correct lbs, meals, dates, `receipt_no: BN-{id}`, chapter name.
+- [ ] S23: In-app bell shows `read:false` until the user opens the notification; after read, replay/sweep must preserve `read:true` (I2 invariant).
+- [ ] S24: Scheduled `sweepNotificationDedup` recovers a work row whose lease expired. Simulate: break the dispatcher mid-run (e.g. revoke dispatcher IAM temporarily, then restore). Verify: within one sweep interval the pending work completes without double-delivery.
+
+Rules + lock safety nets (should NOT block the acceptance when properly handled)
+- [ ] S25: With `/migration_locks/pickup_release_cutover` present, client release is denied; with it absent, release is accepted. Confirms the release cutover gate works on staging.
+- [ ] S26: Non-partner, non-exec, non-current/ex-claimant cannot call `queueBusinessNotification` for a pickup. Confirm `permission-denied`.
+
+Negative security spot checks
+- [ ] S27: Direct client write to `/tax_receipts/*` is denied (server-only path, R4 invariant).
+- [ ] S28: Direct client write to `/pickup_completions/*` is denied.
+- [ ] S29: Direct client set of `points`, `leaderboard_score`, `pickups_dropped`, `last_drop_at`, `meals_rescued`, `lbs_rescued`, `hours_logged`, `events_attended`, `pickups_completed` on `/users/{self}` is denied (totals are server-owned).
+
+**Reporting:** record actual results for each row (PASS / FAIL / BLOCKED) + the staging run commit, the deployed function versions, and the time window; append to this file. Do NOT merge PR #2 / PR #3, deploy to production, run production migrations, or unlock production until every acceptance row is PASS and the review loop signs off.
+
 ### Independent verification of merged commit `23ba279` — 2026-10-12
 
 ChatGPT independently verified the merged tip of `claude/c1-idempotent-completion` at `23ba279`:
