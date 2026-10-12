@@ -1,0 +1,122 @@
+# GitHub Actions — C1 / A2 emulator suite.
+#
+# Why this exists:
+# - Codex's host hit a Unix-socket EPERM running the registered
+#   Auth/Functions/HTTPS suite.
+# - The reviewer host (where I merged 23ba279) has no Java and no
+#   sudo to accept the Xcode license, so emulator runs can't start.
+# - CI gives us an independent, reproducible result against the
+#   exact PR tip.
+#
+# Scope:
+# - Node 20, Temurin JDK 17.
+# - Demo-only project ids (`demo-a2`, `demo-c1`); no production
+#   credentials or deployment steps.
+# - Runs the full 185-check Firestore/Storage suite and the
+#   registered Auth/Functions/HTTPS suite.
+# - Uploads emulator debug logs on every run (success OR failure)
+#   so a failure in CI can be investigated without a rerun.
+#
+# This workflow intentionally lives on `claude/c1-idempotent-completion`
+# only; the broader `main` + A2 branch workflows are unchanged.
+
+name: C1 emulator suite
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [claude/c1-idempotent-completion]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c1-emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator-suite:
+    name: Emulator suite (Firestore+Storage, Auth+Functions+Firestore)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Temurin JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install app dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions install --no-audit --no-fund
+
+      # firebase-tools 14.27.0 is the last line Codex's handoff
+      # confirmed compatible with Java 17. Pin so CI can't drift
+      # into a release that requires a newer JDK.
+      - name: Install firebase-tools (14.27.0)
+        run: npm install -g firebase-tools@14.27.0
+
+      - name: Firebase + Java sanity
+        run: |
+          java -version
+          firebase --version
+          node --version
+
+      - name: Firestore + Storage suite (demo-a2)
+        env:
+          CI: 'true'
+        run: |
+          firebase emulators:exec \
+            --only firestore,storage \
+            --project demo-a2 \
+            'node scripts/test-pickup-transition.cjs \
+              && node scripts/test-pickup-release.cjs \
+              && node scripts/test-delivery-flow.cjs \
+              && node scripts/test-a2-rules.cjs \
+              && node scripts/test-c1-complete.cjs \
+              && node scripts/test-idgate.cjs \
+              && node scripts/test-c1-client.cjs'
+
+      - name: Auth + Functions + Firestore registered suite (demo-c1)
+        env:
+          CI: 'true'
+        run: |
+          firebase emulators:exec \
+            --only auth,functions,firestore \
+            --project demo-c1 \
+            'node scripts/test-c1-callable.cjs'
+
+      # Collect emulator debug + exec logs regardless of outcome.
+      # firebase-tools writes `firebase-debug.log`,
+      # `firestore-debug.log`, `database-debug.log`, and the
+      # exec stdout/stderr to the working directory by default.
+      - name: Upload emulator logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-logs-${{ github.run_id }}
+          path: |
+            firebase-debug.log
+            firestore-debug.log
+            database-debug.log
+            auth-debug.log
+            storage-debug.log
+            functions-debug.log
+            ui-debug.log
+            emulator-logs/
+          if-no-files-found: ignore
+          retention-days: 14
