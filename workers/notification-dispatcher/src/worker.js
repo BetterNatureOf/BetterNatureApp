@@ -1,13 +1,36 @@
 // Notification dispatcher — runs on a Cloudflare Worker cron
 // every minute. Pulls all `notifications_outbox` docs where
-// status == 'queued', fans out via the right channel (OneSignal
-// for push, Resend for email), flips status to 'sent' or 'failed'.
+// status == 'queued', resolves the recipient server-side with the
+// service account, fans out to push + email, and flips status to
+// 'sent', 'failed' or 'rejected'.
+//
+// A2 refactor: outbox docs carry only { user_id, kind, title, body,
+// url, data } — recipient contact details are NOT in the row. The
+// dispatcher resolves /users/{user_id} to get email, push token and
+// the per-kind preference flags before fanning out. This lets us
+// lock /users reads to self/exec/pres in Firestore rules without
+// starving the notification pipeline.
+//
+// R10 — the legacy-compat branch that honoured client-supplied
+// channel/player_id/email directly has been REMOVED. It was an open
+// authenticated-but-untrusted mail path (any signed-in user could
+// queue an email to an arbitrary address). Any pre-A2 queued rows
+// still carrying those fields are now flagged `rejected` with the
+// reason `legacy_format_dropped`. Run scripts/drain-legacy-outbox.js
+// once at deploy time to transition them safely.
 //
 // Required env (set in `wrangler secret put`):
 //   FIRESTORE_PROJECT_ID      e.g. "better-nature-app"
-//   GOOGLE_SERVICE_ACCOUNT    JSON blob of a service account with
-//                             roles/datastore.user (used to mint
-//                             access tokens for Firestore REST)
+//   GOOGLE_SERVICE_ACCOUNT    JSON blob of a service account with:
+//                               roles/datastore.user           (Firestore REST)
+//                               roles/firebaseauth.viewer      (projects.accounts.lookup
+//                                                               — required by G3 to
+//                                                               confirm emailVerified
+//                                                               before delivering email)
+//                             The identitytoolkit.users.get permission is covered by
+//                             roles/firebaseauth.viewer. See docs:
+//                               https://cloud.google.com/identity-platform/docs/reference/rest/v1/projects.accounts/lookup
+//                               https://cloud.google.com/firebase/docs/projects/iam/roles-predefined-product
 //   ONESIGNAL_APP_ID
 //   ONESIGNAL_REST_API_KEY
 //   RESEND_API_KEY            (or BREVO_API_KEY — see below)
@@ -26,7 +49,17 @@ async function getAccessToken(env) {
   const header = { alg: 'RS256', typ: 'JWT' };
   const claim = {
     iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/datastore',
+    // F8 + G3 — scopes:
+    //   datastore          Firestore REST
+    //   identitytoolkit    projects.accounts:lookup (the documented
+    //                      scope for the Identity Toolkit endpoint
+    //                      we call to confirm emailVerified)
+    // The service account also needs IAM: roles/datastore.user AND
+    // roles/firebaseauth.viewer (or equivalent). An earlier version
+    // tried `auth/firebase` — not the documented scope for
+    // identitytoolkit — which this review flagged as the deployed-
+    // IAM gap.
+    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/identitytoolkit',
     aud: 'https://oauth2.googleapis.com/token',
     iat: now, exp: now + 3600,
   };
@@ -188,21 +221,231 @@ function parseFrom(raw) {
   return m ? { name: m[1], email: m[2] } : { email: raw };
 }
 
+// Preference key for a given kind.
+//
+// R11 — this map MUST match src/config/notifications.js
+// prefKeyForKind(). Both sides have been consolidated to the same
+// explicit kind list; adding a kind requires editing both files.
+// Unknown kinds default to notif_general on both sides.
+function prefKeyForKind(kind) {
+  if (kind === 'pickup' || kind === 'pickup_alert' || kind === 'pickup_reminder') return 'notif_pickup';
+  if (kind === 'volunteer' || kind === 'event') return 'notif_volunteer';
+  return 'notif_general';
+}
+
+// Recipient lookup outcome: distinguishes "no such user" (terminal)
+// from a transient lookup outage (retry) so we never mark a job as
+// sent when we couldn't actually learn whether it was deliverable.
+async function fetchRecipient(env, token, uid) {
+  if (!uid) return { kind: 'missing' };
+  const url = `${FS_BASE(env.FIRESTORE_PROJECT_ID)}/users/${uid}`;
+  try {
+    const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    if (r.status === 404) return { kind: 'missing' };
+    if (!r.ok) return { kind: 'transient', code: r.status };
+    const body = await r.json();
+    return { kind: 'ok', data: unwrapFields(body.fields || {}) };
+  } catch (e) {
+    return { kind: 'transient', code: 0, message: e?.message || 'network' };
+  }
+}
+
+// F8 — resolve the authoritative Firebase Auth record for the
+// recipient. The Auth record's email + emailVerified fields are
+// the trust boundary for the delivery address. A /users.email that
+// was seeded at signup from an unverified token stays unverified
+// until the user clicks the verify link; we must not deliver until
+// Auth confirms. Identity Toolkit REST exposes this at
+// projects/<id>/accounts:lookup.
+async function fetchAuthRecord(env, token, uid) {
+  if (!uid) return { kind: 'missing' };
+  const url = `https://identitytoolkit.googleapis.com/v1/projects/${env.FIRESTORE_PROJECT_ID}/accounts:lookup`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ localId: [uid] }),
+    });
+    if (!r.ok) {
+      // 400 "USER_NOT_FOUND" is terminal; other codes retry.
+      if (r.status === 400) return { kind: 'missing' };
+      return { kind: 'transient', code: r.status };
+    }
+    const body = await r.json();
+    const u = (body.users || [])[0];
+    if (!u) return { kind: 'missing' };
+    return {
+      kind: 'ok',
+      email: u.email || null,
+      emailVerified: u.emailVerified === true,
+      disabled: u.disabled === true,
+    };
+  } catch (e) {
+    return { kind: 'transient', code: 0, message: e?.message || 'auth_lookup_error' };
+  }
+}
+
+function resolveChannels(user, kind, authRecord) {
+  if (!user) return { push: false, email: false };
+  const prefKey = prefKeyForKind(kind);
+  const wantsKind = user[prefKey] !== false; // default true
+
+  // Email delivery requires:
+  //  (1) kind preference not off,
+  //  (2) email consent not revoked,
+  //  (3) Auth record reports emailVerified: true,
+  //  (4) /users.email matches the Auth email (defense in depth —
+  //      stale /users.email never selects a different address).
+  const authEmail = authRecord?.email || null;
+  const emailMatches =
+    authRecord?.kind === 'ok' &&
+    authEmail &&
+    user.email &&
+    String(user.email).toLowerCase() === String(authEmail).toLowerCase();
+  const emailOk =
+    wantsKind &&
+    user.email_consent !== false &&
+    authRecord?.emailVerified === true &&
+    emailMatches;
+
+  return {
+    push:  wantsKind && user.push_enabled === true && !!user.onesignal_player_id,
+    email: !!emailOk,
+    player_id: user.onesignal_player_id || null,
+    // Always use the Auth email as the delivery destination — never
+    // the /users row, which can be stale or (historically) seeded
+    // from an unverified token.
+    email_addr: emailOk ? authEmail : null,
+    name: user.name || '',
+  };
+}
+
+const MAX_ATTEMPTS = 5;
+
 // ---- Worker entry points ----
 async function tick(env) {
   const token = await getAccessToken(env);
   const queued = await listQueued(env, token);
   for (const doc of queued) {
     try {
-      if (doc.fields.channel === 'push')  await sendPush(env, doc);
-      if (doc.fields.channel === 'email') await sendEmail(env, doc);
-      await patchStatus(env, token, doc.name, 'sent');
+      // R10 — the pre-A2 legacy format is no longer honoured. Any
+      // queued row carrying client-supplied channel/player_id/email
+      // was writable by any signed-in user and is dropped as
+      // `rejected` here. A one-shot drain script handles backlog.
+      if (doc.fields.channel || doc.fields.player_id || doc.fields.email) {
+        await patchStatus(env, token, doc.name, 'rejected', 'legacy_format_dropped');
+        continue;
+      }
+
+      const look = await fetchRecipient(env, token, doc.fields.user_id);
+      if (look.kind === 'transient') {
+        const attempts = (doc.fields.attempts || 0) + 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          await patchStatus(env, token, doc.name, 'failed',
+            `recipient_lookup_${look.code || look.message || 'error'}`);
+        } else {
+          await bumpAttempts(env, token, doc.name, attempts);
+        }
+        continue;
+      }
+      if (look.kind === 'missing') {
+        await patchStatus(env, token, doc.name, 'rejected', 'recipient_missing');
+        continue;
+      }
+
+      // F8 — resolve the authoritative Auth record alongside the
+      // profile. A transient lookup failure retries; a missing
+      // record is terminal.
+      const authLook = await fetchAuthRecord(env, token, doc.fields.user_id);
+      if (authLook.kind === 'transient') {
+        const attempts = (doc.fields.attempts || 0) + 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          await patchStatus(env, token, doc.name, 'failed',
+            `auth_lookup_${authLook.code || authLook.message || 'error'}`);
+        } else {
+          await bumpAttempts(env, token, doc.name, attempts);
+        }
+        continue;
+      }
+      if (authLook.kind === 'missing' || authLook.disabled) {
+        await patchStatus(env, token, doc.name, 'rejected',
+          authLook.disabled ? 'recipient_disabled' : 'recipient_missing');
+        continue;
+      }
+
+      const ch = resolveChannels(look.data, doc.fields.kind, authLook);
+
+      // Track per-channel completion so a partial failure doesn't
+      // silently discard the un-sent half.
+      const already = doc.fields.channels_done || {};
+      let push_done = already.push === true;
+      let email_done = already.email === true;
+      let push_err = null, email_err = null;
+
+      if (ch.push && !push_done) {
+        try {
+          await sendPush(env, { fields: { ...doc.fields, player_id: ch.player_id } });
+          push_done = true;
+        } catch (e) { push_err = e?.message || 'push_error'; }
+      }
+      if (ch.email && !email_done) {
+        try {
+          await sendEmail(env, { fields: { ...doc.fields, email: ch.email_addr, name: ch.name } });
+          email_done = true;
+        } catch (e) { email_err = e?.message || 'email_error'; }
+      }
+
+      const stillOutstanding = (ch.push && !push_done) || (ch.email && !email_done);
+      const hasAnyChannel = ch.push || ch.email;
+
+      if (stillOutstanding) {
+        const attempts = (doc.fields.attempts || 0) + 1;
+        if (attempts >= MAX_ATTEMPTS) {
+          await patchStatus(env, token, doc.name, 'failed',
+            [push_err && `push:${push_err}`, email_err && `email:${email_err}`].filter(Boolean).join(' | '));
+        } else {
+          await bumpAttempts(env, token, doc.name, attempts, { push: push_done, email: email_done });
+        }
+        continue;
+      }
+
+      // All eligible channels completed OR the user has no eligible
+      // channel (push off AND email off). In-app bell is already
+      // dropped by the client. Terminal state 'sent' is accurate in
+      // both cases — the row has nothing left to do.
+      await patchStatus(env, token, doc.name, hasAnyChannel ? 'sent' : 'no_channels', null);
     } catch (e) {
       console.warn('dispatch failed', doc.name, e);
       await patchStatus(env, token, doc.name, 'failed', e?.message);
     }
   }
   return { processed: queued.length };
+}
+
+async function bumpAttempts(env, token, name, attempts, channelsDone) {
+  const fields = {
+    attempts: { integerValue: String(attempts) },
+    last_attempt_at: { timestampValue: new Date().toISOString() },
+  };
+  const masks = ['attempts', 'last_attempt_at'];
+  if (channelsDone) {
+    fields.channels_done = {
+      mapValue: {
+        fields: {
+          push: { booleanValue: !!channelsDone.push },
+          email: { booleanValue: !!channelsDone.email },
+        },
+      },
+    };
+    masks.push('channels_done');
+  }
+  const url = `https://firestore.googleapis.com/v1/${name}?` +
+    masks.map((m) => `updateMask.fieldPaths=${m}`).join('&');
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  });
 }
 
 export default {

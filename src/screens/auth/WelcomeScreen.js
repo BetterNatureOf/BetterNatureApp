@@ -9,7 +9,7 @@ import Logo from '../../components/ui/Logo';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { getOrgStats } from '../../services/orgStats';
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
-import { fetchAllMembers, fetchChapters } from '../../services/database';
+import { fetchChapters } from '../../services/database';
 import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
@@ -22,8 +22,13 @@ export default function WelcomeScreen({ navigation }) {
     let alive = true;
     function refresh() {
       if (!alive) return;
-      getOrgStats().then((s) => alive && setStats(s)).catch(() => {});
-      fetchAllMembers().then((m) => alive && setVolunteers(m.length)).catch(() => {});
+      // A2 — org_stats carries the public volunteer count directly;
+      // this screen is anonymous and can no longer enumerate /users.
+      getOrgStats().then((s) => {
+        if (!alive) return;
+        setStats(s);
+        setVolunteers(s?.volunteers || 0);
+      }).catch(() => {});
       fetchChapters().then((c) => alive && setChapters(c.length)).catch(() => {});
     }
     refresh();

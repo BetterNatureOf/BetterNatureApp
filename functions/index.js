@@ -15,6 +15,28 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp();
+const { FieldValue } = require('firebase-admin/firestore');
+
+// A2 — mirror /users → /public_profiles with a strict allowlist.
+// Only writer to the public collection. See syncPublicProfile.js
+// for the allowlist and rationale.
+exports.syncPublicProfileOnWrite = require('./syncPublicProfile').syncPublicProfileOnWrite;
+
+// A2 R4 — short-lived signed URL for ID evidence. See idViewer.js.
+exports.getIdViewUrl = require('./idViewer').getIdViewUrl;
+
+// A2 R-followup #3 — authorized cross-user notification queue.
+exports.queueBusinessNotification = require('./queueNotification').queueBusinessNotification;
+
+// A2 ID workflow — mirror id_reviews.status → users.verification_status.
+exports.syncIdReviewStatus = require('./syncIdReviewStatus').syncIdReviewStatus;
+
+// A2 I2 — scheduled takeover for stuck in-progress dedup receipts.
+exports.sweepNotificationDedup = require('./sweepNotificationDedup').sweepNotificationDedup;
+
+// C1 — server-authorized idempotent pickup completion.
+exports.completePickupOperation = require('./completePickup').completePickupOperation;
+exports.dispatchPickupCompletion = require('./dispatchPickupCompletion').dispatchPickupCompletion;
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -60,7 +82,7 @@ exports.sendPushOnNotification = functions.firestore
       });
       if (stale.length) {
         await admin.firestore().doc(`users/${n.user_id}`).update({
-          push_tokens: admin.firestore.FieldValue.arrayRemove(...stale),
+          push_tokens: FieldValue.arrayRemove(...stale),
         });
       }
     } catch (e) {
@@ -68,3 +90,7 @@ exports.sendPushOnNotification = functions.firestore
     }
     return null;
   });
+
+exports.recordPickupRelease = require('./recordPickupRelease').recordPickupRelease;
+
+exports.dispatchPickupTransition = require('./dispatchPickupTransition').dispatchPickupTransition;

@@ -1,49 +1,22 @@
-// Unified notification dispatcher. Single function the rest of the
-// app calls: enqueueNotification({ recipients, kind, title, body,
-// url, data }). Writes one doc to `notifications_outbox` per
-// recipient + channel. The Cloudflare Worker
-// (workers/notification-dispatcher/) reads from the outbox and
-// fans out to OneSignal (push) and Resend (email).
+// Unified notification dispatcher — client-side half.
 //
-// Modular contract for the future React Native client: this file
-// is platform-agnostic; native imports it unchanged and gets the
-// same per-user routing without any extra plumbing.
-import { collection, addDoc, doc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+// A2 R-followup #3: /notifications_outbox client writes are now
+// locked to self-recipient only (confirmations, bell drops). Every
+// cross-user notification routes through the
+// `queueBusinessNotification` Cloud Function callable, which
+// validates the operation server-side and writes outbox rows with
+// admin SDK. The callable also derives recipients from the actual
+// pickup/event state rather than trusting the caller's list.
+//
+// In-app notifications still fire directly from the client via
+// /notifications create (recipient reading their own doc is
+// authorized by rules). The dispatcher resolves push_token + email
+// server-side and sends.
+import { collection, addDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, isFirebaseConfigured } from '../config/firebase';
-import { prefKeyForKind } from '../config/notifications';
+import useAuthStore from '../store/authStore';
 
-// Pulls a user doc once, then decides which channels are eligible
-// for the given notification kind based on the user's preferences.
-async function resolveChannels(uid, kind) {
-  if (!uid) return { push: false, email: false, profile: null };
-  const snap = await getDoc(doc(db, 'users', uid));
-  if (!snap.exists()) return { push: false, email: false, profile: null };
-  const p = snap.data();
-  const prefKey = prefKeyForKind(kind);
-  const wantsKind = p[prefKey] !== false; // default true
-  return {
-    push:  wantsKind && p.push_enabled === true && !!p.onesignal_player_id,
-    email: wantsKind && p.email_consent !== false && !!p.email,
-    profile: p,
-  };
-}
-
-// Drop one outbox doc per channel per recipient. Worker picks them up
-// in batches and flips status to 'sent' / 'failed'.
-async function dropOutbox({ uid, channel, payload }) {
-  await addDoc(collection(db, 'notifications_outbox'), {
-    user_id: uid,
-    channel,                      // 'push' | 'email' | 'inapp'
-    status: 'queued',
-    attempts: 0,
-    ...payload,
-    created_at: serverTimestamp(),
-  });
-}
-
-// In-app notification (the bell). Always written so a user who
-// has push + email turned off still sees the message next time
-// they open the app.
 async function dropInApp({ uid, kind, title, body, url }) {
   await addDoc(collection(db, 'notifications'), {
     user_id: uid,
@@ -56,86 +29,148 @@ async function dropInApp({ uid, kind, title, body, url }) {
   });
 }
 
+async function dropSelfOutbox({ uid, kind, title, body, url, data }) {
+  await addDoc(collection(db, 'notifications_outbox'), {
+    user_id: uid,
+    kind,
+    title,
+    body,
+    url: url || null,
+    data: data || {},
+    status: 'queued',
+    attempts: 0,
+    created_at: serverTimestamp(),
+  });
+}
+
+function currentUid() {
+  try { return useAuthStore.getState?.()?.user?.id || null; } catch { return null; }
+}
+
 /**
- * The one public API every other service calls.
- *
- * @param {Object} opts
- * @param {string[]} opts.recipients      — uids
- * @param {string}   opts.kind            — 'pickup' | 'volunteer' | 'general' | 'broadcast' | 'welcome'
- * @param {string}   opts.title
- * @param {string}   opts.body
- * @param {string=}  opts.url             — deep link / web URL
- * @param {Object=}  opts.data            — payload merged into push data
- * @param {boolean=} opts.skipInApp       — for SMS-replacement broadcasts where caller wrote their own inapp row
+ * Legacy direct API. Still supported for SELF notifications only
+ * (confirmations the user queues for themselves). For cross-user
+ * flows prefer the scoped helpers below.
  */
 export async function enqueueNotification(opts) {
   const { recipients = [], kind = 'general', title, body, url, data = {}, skipInApp } = opts;
   if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
   if (!title || !body) return { ok: false, reason: 'missing_content' };
 
-  let push = 0, email = 0, inapp = 0, skipped = 0;
-
+  const me = currentUid();
+  let inapp = 0, outbox = 0, deferred = 0;
   for (const uid of recipients) {
-    try {
-      if (!skipInApp) {
-        await dropInApp({ uid, kind, title, body, url });
-        inapp += 1;
-      }
-      const ch = await resolveChannels(uid, kind);
-      if (ch.push) {
-        await dropOutbox({
-          uid, channel: 'push',
-          payload: {
-            kind, title, body, url: url || null,
-            data,
-            target: 'onesignal',
-            player_id: ch.profile.onesignal_player_id,
-          },
-        });
-        push += 1;
-      }
-      if (ch.email) {
-        await dropOutbox({
-          uid, channel: 'email',
-          payload: {
-            kind, title, body, url: url || null,
-            email: ch.profile.email,
-            name: ch.profile.name || '',
-          },
-        });
-        email += 1;
-      }
-      if (!ch.push && !ch.email && !skipInApp) skipped += 1;
-    } catch (e) {
-      console.warn('enqueueNotification per-user failure', uid, e);
+    if (!uid) continue;
+    if (!skipInApp) {
+      try { await dropInApp({ uid, kind, title, body, url }); inapp += 1; } catch (e) { console.warn('inapp', e); }
+    }
+    if (uid === me) {
+      try { await dropSelfOutbox({ uid, kind, title, body, url, data }); outbox += 1; }
+      catch (e) { console.warn('self outbox', e); }
+    } else {
+      // Direct client write is denied by rules for a non-self
+      // recipient. Caller should migrate to one of the scoped helpers
+      // below. Count as deferred so callers can observe + fix.
+      deferred += 1;
     }
   }
-  return { ok: true, push, email, inapp, skipped, total: recipients.length };
+  return { ok: true, inapp, outbox, deferred, total: recipients.length };
 }
 
-// Convenience: pull every uid matching a target audience and queue.
-//   audience:
-//     'bn'          → role !== 'restaurant'
-//     'restaurants' → role === 'restaurant'  (uses linked user_id when present)
-//     'all'         → both
-//     'chapter:<id>' → members of that chapter (role !== 'restaurant')
-export async function enqueueAudienceNotification(opts) {
-  const { audience, ...rest } = opts;
+// Scoped helpers — route through the Cloud Function callable so the
+// server validates operation + resolves recipients.
+
+async function callQueue(payload) {
   if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
+  try {
+    const fn = httpsCallable(getFunctions(), 'queueBusinessNotification');
+    const res = await fn(payload);
+    // I2 — surface deduped / in_progress so callers can tell apart
+    // "already delivered" from "someone else's lease is live right
+    // now". A production retry path would wait LEASE_WINDOW_MS and
+    // call again; most of our call sites currently fire-and-forget,
+    // so the scheduled sweep (sweepNotificationDedup) is the
+    // ultimate fallback that marks stale receipts expired.
+    const d = res?.data || {};
+    return {
+      ok: true,
+      queued: d.queued || 0,
+      inapp: d.inapp || 0,
+      deduped: !!d.deduped,
+      in_progress: !!d.in_progress,
+      dedup_key: d.dedup_key || null,
+    };
+  } catch (e) {
+    console.warn('queueBusinessNotification failed', e);
+    return { ok: false, reason: e?.code || e?.message || 'queue_failed' };
+  }
+}
 
-  const usersSnap = await getDocs(collection(db, 'users'));
-  const users = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const recipients = users
-    .filter((u) => !u.deleted_at)
-    .filter((u) => {
-      if (audience === 'bn')          return (u.role || 'member') !== 'restaurant';
-      if (audience === 'restaurants') return (u.role || 'member') === 'restaurant';
-      if (audience === 'all')         return true;
-      if (audience?.startsWith?.('chapter:'))
-        return u.chapter_id === audience.slice('chapter:'.length) && (u.role || 'member') !== 'restaurant';
-      return false;
-    })
-    .map((u) => u.id);
+// H3 — scoped pickup helpers now require the caller to name the
+// specific `transition` that produced the notification. The server
+// derives the dedup key from THAT transition's authoritative
+// timestamp, so a release notification cannot collide with a later
+// re-claim notification on the same pickup.
+//
+// Valid transitions: 'new_pickup' | 'claim' | 'release' | 'handoff'
+//                  | 'enroute' | 'verify' | 'complete' | 'cancel'
 
-  return enqueueNotification({ recipients, ...rest });
+/** Partner just posted a pickup — fan out to the chapter. */
+export function queuePickupBroadcast(pickupId, { title, body, url, data }) {
+  return callQueue({
+    scope: 'pickup', pickup_id: pickupId, intent: 'new_pickup_broadcast',
+    transition: 'new_pickup', kind: 'pickup', title, body, url, data,
+  });
+}
+/** Claimant → partner. Caller names the exact transition. */
+export function queuePickupToPartner(pickupId, transition, { title, body, url, data }) {
+  return callQueue({
+    scope: 'pickup', pickup_id: pickupId, intent: 'to_partner',
+    transition, kind: 'pickup', title, body, url, data,
+  });
+}
+/** Partner → claimant. Caller names the exact transition. */
+export function queuePickupToClaimant(pickupId, transition, { title, body, url, data }) {
+  return callQueue({
+    scope: 'pickup', pickup_id: pickupId, intent: 'to_claimant',
+    transition, kind: 'pickup', title, body, url, data,
+  });
+}
+/** Scoped broadcast to a chapter (president → own chapter; exec → any). */
+export function queueChapterBroadcast(chapterId, { kind = 'broadcast', title, body, url, data }) {
+  return callQueue({
+    scope: 'broadcast', chapter_id: chapterId, kind, title, body, url, data,
+  });
+}
+/** Event-chapter broadcast (pres of event's chapter or exec). */
+export function queueEventBroadcast(eventId, { kind = 'volunteer', title, body, url, data }) {
+  return callQueue({
+    scope: 'event', event_id: eventId, kind, title, body, url, data,
+  });
+}
+
+/**
+ * Audience helper — maps legacy `audience` strings to the callable's
+ * explicit scopes.
+ *   'chapter:<id>' → scoped chapter broadcast (pres or exec)
+ *   'bn'           → global_bn   (all non-partner profiles, exec only)
+ *   'restaurants'  → global_restaurants (partner profiles, exec only)
+ *   'all'          → global_all  (everyone, exec only)
+ *
+ * B5 — the previous implementation routed non-chapter audiences to
+ * `chapter_id: '*'` which the callable then queried literally and
+ * matched zero recipients. Explicit audience_scope resolves this.
+ */
+export async function enqueueAudienceNotification(opts) {
+  const { audience, kind = 'broadcast', title, body, url, data } = opts;
+  if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
+  if (typeof audience === 'string' && audience.startsWith('chapter:')) {
+    return queueChapterBroadcast(audience.slice('chapter:'.length), { kind, title, body, url, data });
+  }
+  const audience_scope =
+    audience === 'bn'          ? 'global_bn' :
+    audience === 'restaurants' ? 'global_restaurants' :
+    audience === 'all'         ? 'global_all' : null;
+  if (!audience_scope) return { ok: false, reason: 'unknown_audience' };
+  return callQueue({ scope: 'broadcast', audience_scope, kind, title, body, url, data });
 }

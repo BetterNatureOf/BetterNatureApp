@@ -1,0 +1,860 @@
+# Coordination — Claude × ChatGPT
+
+Shared ledger for parallel work on BetterNatureApp. Each party updates its own rows; neither edits the other's rows. Before starting a task, add a row claiming the files; before touching a file, check no active row owns it.
+
+## Rules of engagement
+
+- Claude works on branch `claude/vigilant-nash` (and sub-branches cut off main as needed).
+- ChatGPT works on its own branch(es), e.g. `gpt/*`.
+- Never both edit the same file at the same time. If a file is contested, the second-mover claims it after the first-mover's PR merges (or they re-sync).
+- Starting commit = SHA of `main` (or branch) at the moment work began. Always record it so hand-offs can replay the diff.
+- When finishing a task, move the row from **Active** to **Done**, add final commit SHA and test results, and clear the files from the "owned files" list.
+
+## Active
+
+### CI green — commit `0895319` (PR merge `cdc1d62`) — 2026-10-12
+
+ChatGPT independently verified GitHub Actions run [`38262575516`](https://github.com/BetterNatureOf/BetterNatureApp/actions/runs/38262575516) on tip commit `0895319` of `claude/c1-idempotent-completion` (CI tested PR merge commit `cdc1d62`):
+
+- **Firestore + Storage suite (demo-a2)**: all 185 checks green (delivery 40, release 15, transition 13, A2 rules 59, C1 real-transaction/recovery 44, ID gate 8, client adapters 6).
+- **Auth + Functions + Firestore registered suite (demo-c1)**: `scripts/test-c1-callable.cjs` passes — HTTPS callable, cached replay, and registered completion-trigger fanout to both bell + outbox docs.
+- ChatGPT's local 185-check rerun on the same tip also passed.
+
+**Root cause of the earlier CI failure** (runs on `63ff285`, `432abcb`, `a2fe0ea`): `admin.firestore.FieldValue.serverTimestamp()` returned `undefined` inside the Functions emulator runtime even though firebase-admin v12.7.0 exposes the namespace in a direct Node load. Fixed on `0895319` by:
+
+1. Importing `FieldValue` (and `Timestamp` where used) from the modular subpath `require('firebase-admin/firestore')` across all 10 functions files that previously accessed the namespace.
+2. Pinning `functions/package.json` to exact `firebase-admin: 12.7.0` + `firebase-functions: 5.1.1` to prevent install-time drift.
+
+Also pre-landed on `a2fe0ea`: the `scripts/test-{pickup-release,pickup-transition,delivery-flow,c1-callable}.cjs` scripts resolve `firebase-admin` via `createRequire(require.resolve('../functions/<anchor>'))` so the test and the function module share one SDK instance.
+
+**Remaining gates before C1 is operationally complete** (none performed on this host or in production):
+
+- **App-level staging acceptance** — now in flight; see "Staging acceptance preparation" below.
+- **A2 PR #2 merge** — still a prerequisite.
+- **Release cutover sequence** — see the next section; must land in the exact order listed.
+
+### Staging acceptance preparation — 2026-10-12
+
+**Status: BLOCKED on staging environment provisioning. No staging run has been attempted; production is explicitly excluded.**
+
+**What this repo exposes today (audited on `0895319`):**
+
+- `.firebaserc` declares a single project: `default = "better-nature-app"` (production). No `staging` / `dev` alias, no `targets` map.
+- `firebase.json` declares one source tree for rules, indexes, functions, storage. No per-project overrides.
+- `app.json → expo.extra.firebase` hard-codes production: `projectId: "better-nature-app"`, `authDomain: "better-nature-app.firebaseapp.com"`, `storageBucket: "better-nature-app.firebasestorage.app"`, `appId: "1:102288708316:web:d15cda309e77d14b921a19"`.
+- `.env.example` carries only OneSignal production id (`f21e4ed4-1498-41ad-b8fb-20962763a6dd`); says "Firebase config is in app.json → expo.extra.firebase; no env needed." i.e. the client has no env-driven way to point at a non-prod Firebase.
+- `scripts/` holds operations scripts (`backfill-public-profiles.js`, `revoke-id-download-tokens.js`, `drain-legacy-outbox.js`, `seed-*`) and the 185-check test suite. None are wired to a staging project.
+- No `firebase use staging`, `firebaserc.staging.json`, `app.staging.json`, `.env.staging*`, or GitHub secret named `*_STAGING*` was found by grep over tracked files.
+
+**What's missing before staging acceptance can run** (all require the user; Claude will not provision):
+
+1. **A separate Firebase project** — e.g. `better-nature-staging` — created under the `betternatureofficial` org in GCP. Must have its own Firestore, Auth, Storage, Functions enabled on Blaze (functions require it).
+2. **`.firebaserc` alias** `staging` → new project id. Keeps `default` on production so a bare `firebase deploy` can't accidentally target staging and vice-versa.
+3. **Staging client config** — either `app.staging.json` + an Expo profile that swaps `extra.firebase` to the staging Web app's `apiKey/authDomain/projectId/storageBucket/appId`, or `EXPO_PUBLIC_FIREBASE_*` env vars set in a `.env.staging` consumed by the fallback branch in `src/config/firebase.js`.
+4. **Staging secrets**, set via `firebase functions:config:set --project staging` (or Secret Manager for Gen2) — at minimum:
+   - `RESEND_API_KEY` (staging key)
+   - A staging service account for the dispatcher's Identity Toolkit `accounts:lookup` call (Dispatcher must have `roles/firebaseauth.viewer` on the staging project).
+   - OneSignal staging app id — new OneSignal app, its id placed in `EXPO_PUBLIC_ONESIGNAL_APP_ID` for the staging client build.
+5. **Deployed on staging, in the canonical cutover order** (same as production will later follow — see "Release cutover order"): rules → indexes → functions → client build pointing at staging. `recordPickupRelease`, `dispatchPickupTransition`, `completePickupOperation`, `syncPublicProfile*`, `syncIdReviewStatus`, `queueBusinessNotification`, `sweepNotificationDedup`, and the ID-review callables must all be deployed.
+6. **Firestore composite indexes** from `firestore.indexes.json` built out (notification_work index is the one C1 added; `firebase deploy --only firestore:indexes --project staging`).
+7. **Seed data** on staging:
+   - 1 staging restaurant (owner uid known, `restaurants/{rid}.user_id` set).
+   - 1 approved volunteer (role `member`, `member_status: approved`, `verification_status: approved`, `contract_volunteer_signed: true`, `driver_setup_complete: true`).
+   - 1 second volunteer (for handoff + competing-claim scenarios).
+   - 1 executive (role `executive`, email_verified) — exercises the admin volunteering path and exec override.
+   - 1 chapter president (role `chapter_president` or `chapter_pres`, correct `chapter_id`) — exercises president-triggered volunteering + broadcast.
+   - Chapters doc the restaurants + volunteers reference.
+8. **A staging-pointing client build** actually installed on a device + available on web — the native build re-reads config at launch, so the previously-built prod binary cannot be reused.
+
+**Acceptance checklist (to execute once the environment above exists):**
+
+Each row is a scenario; "verify" lists the server-authoritative artifacts to inspect. Treat a pass as (a) client observable + (b) all listed Firestore / Storage / Auth state present with the expected invariants, and no unexpected `audit_events` or `migration_locks` writes.
+
+Partner / restaurant onboarding
+- [ ] S1: Partner signup finalizes with authoritative restaurant linkage (`/users/{uid}.restaurant_id` matches `/restaurants/{rid}.user_id` and the signup token). Verify: `/users/{uid}`, `/restaurants/{rid}`, no spurious `audit_events`.
+- [ ] S2: Partner posts a new pickup; required fields enforced client + rules. Verify: `/pickups/{id}` status `available`, server stamps `created_at`, chapter + restaurant id present.
+- [ ] S3: `new_pickup_broadcast` fans out to chapter volunteers via `queueBusinessNotification` (partner caller). Verify: per recipient, matching `/notifications/{key}__{uid}__inapp` + `/notifications_outbox/{key}__{uid}__outbox` with `read:false`, `status:queued`; partner is NOT a recipient; dedup receipt in `/notification_dedup/{key}` is `completed`.
+
+Volunteer claim + competing claims
+- [ ] S4: Volunteer A claims an available pickup. Verify: `/pickups/{id}.claimed_by == A`, status `claimed`, `claimed_at` server-stamped.
+- [ ] S5: Volunteer B's simultaneous claim loses the race cleanly. Verify: `/pickups/{id}.claimed_by` unchanged; B gets a `failed-precondition` and never sees the pickup as claimed by them.
+- [ ] S6: Rules deny a non-approved volunteer from claiming (missing `member_status: approved` or `verification_status: approved` or `contract_volunteer_signed` or `driver_setup_complete`).
+
+Partner confirmation + trip start
+- [ ] S7: Partner marks `verified_by_restaurant_at`. Verify: server-stamped; rules reject any client timestamp substitute.
+- [ ] S8: Volunteer transitions to `enroute`. Verify: `enroute_at` server-stamped, status transition logged.
+
+Release path (first dropped the run)
+- [ ] S9: Volunteer A releases a claimed pickup. Verify: `/pickups/{id}` status `available`, `claimed_by: null`, `released_by: A`, `released_at` server-stamped; `recordPickupRelease` writes `/pickup_releases/{sha}` with the correct point debit (−min(5, points), floored at 0), `/member_activity/pickup_release_{sha}`, `/audit_events/pickup_release_{sha}`.
+- [ ] S10: `dispatchPickupTransition` fires → partner receives a release notification. Verify: `/notification_work/{key}` `status:completed`, both `/notifications` + `/notifications_outbox` present with partner as recipient.
+- [ ] S11: Replay — re-fire the same release event; totals must NOT double, ledger must have a single row.
+
+Handoff path
+- [ ] S12: Volunteer A hands off to B. Verify: `/pickups/{id}.handoff_from_uid == A`, `handoff_at` server-stamped, `claimed_by` becomes B. Partner is notified via `dispatchPickupTransition` with `handoff` key.
+- [ ] S13: Replay — same key is NOT re-delivered.
+
+Completion — happy path
+- [ ] S14: Volunteer completes via `completePickupOperation` with actual lbs. Verify: `/pickup_completions/{id}` sentinel created with `notification_keys`; `/pickups/{id}` status `completed`, server `completed_at_ts`, actual_weight_lbs, hours, meals, receipt_url; `/tax_receipts/rcpt_{id}` with `receipt_no: BN-{id}`, server `issued_at`; `/member_activity/pickup_{id}`; `/users/{claimant}` deltas correct (meals_rescued, lbs_rescued, hours_logged, events_attended, points, leaderboard_score, pickups_completed); `/org_stats/global` totals updated; `/audit_events/pickup_{id}` with `action: pickup_complete`.
+- [ ] S15: Dispatcher fans out BOTH notifications (volunteer "pickup complete" + partner "donation receipt ready"). Verify: `/notification_work/completion:{id}:{volunteer|partner}` `status:completed`; both bells + both outbox rows present.
+- [ ] S16: Idempotent replay — calling the callable again returns `cached:true` with the ORIGINAL weight (not the new one from the retry argument). Verify: no second ledger row, no second receipt, no second notification pair.
+
+Completion — spoiled food
+- [ ] S17: Volunteer reports spoiled. Verify: `/pickups/{id}.spoiled: true`, no `/tax_receipts` row created, no `/member_activity` for weight/meals; partner gets a "pickup reported spoiled" notification (not a receipt notification); no `delivered_visible_to_restaurant`.
+
+Completion — executive override
+- [ ] S18: Exec completes with `override:true` + required `override_reason`. Verify: `/audit_events/pickup_{id}.override:true`, reason recorded; claimant deltas still attributed to the original claimant uid (not the exec); replay returns cached.
+- [ ] S19: Exec override without a reason is rejected (`permission-denied`, `override_forbidden`).
+
+Admin / officer volunteering
+- [ ] S20: An executive-roled user signs up as a volunteer and completes a pickup (role includes `executive` but claim-time eligibility still enforced). Verify: completion still writes to that uid's `/users/*` deltas; audit event records the actor uid.
+- [ ] S21: A chapter president claims + completes a pickup in their own chapter. Verify: same as S20; president role doesn't alter accounting.
+
+Notifications & receipts end-to-end
+- [ ] S22: Partner opens the receipt URL from the notification → renders the receipt page with correct lbs, meals, dates, `receipt_no: BN-{id}`, chapter name.
+- [ ] S23: In-app bell shows `read:false` until the user opens the notification; after read, replay/sweep must preserve `read:true` (I2 invariant).
+- [ ] S24: Scheduled `sweepNotificationDedup` recovers a work row whose lease expired. Simulate: break the dispatcher mid-run (e.g. revoke dispatcher IAM temporarily, then restore). Verify: within one sweep interval the pending work completes without double-delivery.
+
+Rules + lock safety nets (should NOT block the acceptance when properly handled)
+- [ ] S25: With `/migration_locks/pickup_release_cutover` present, client release is denied; with it absent, release is accepted. Confirms the release cutover gate works on staging.
+- [ ] S26: Non-partner, non-exec, non-current/ex-claimant cannot call `queueBusinessNotification` for a pickup. Confirm `permission-denied`.
+
+Negative security spot checks
+- [ ] S27: Direct client write to `/tax_receipts/*` is denied (server-only path, R4 invariant).
+- [ ] S28: Direct client write to `/pickup_completions/*` is denied.
+- [ ] S29: Direct client set of `points`, `leaderboard_score`, `pickups_dropped`, `last_drop_at`, `meals_rescued`, `lbs_rescued`, `hours_logged`, `events_attended`, `pickups_completed` on `/users/{self}` is denied (totals are server-owned).
+
+**Reporting:** record actual results for each row (PASS / FAIL / BLOCKED) + the staging run commit, the deployed function versions, and the time window; append to this file. Do NOT merge PR #2 / PR #3, deploy to production, run production migrations, or unlock production until every acceptance row is PASS and the review loop signs off.
+
+### Independent verification of merged commit `23ba279` — 2026-10-12
+
+ChatGPT independently verified the merged tip of `claude/c1-idempotent-completion` at `23ba279`:
+
+- All 185 Codex regression checks pass (delivery 40, release 15, transition 13, A2 rules 59, C1 real-transaction/recovery 44, ID gate 8, client adapters 6).
+- Clean dependency install (`npm ci` at the repo root + `npm install --prefix functions`) passes without `--legacy-peer-deps`.
+- Expo web export passes.
+- The code matches the reviewed Codex version at `355db27`; only `COORDINATION.md` differs between my merged tip and theirs (this entry resolves that drift).
+
+**Remaining gates before C1 is operationally complete** (none performed on this host or in production):
+
+- Full registered **Firebase Functions / Auth / HTTPS** emulator run — tracked as a dedicated staging task. The host used for review and merge is Java-less; Codex's host hit a Unix-socket EPERM on the registered run and used a direct-trigger adapter instead. A compatible host must execute `firebase emulators:exec --only auth,functions,firestore --project demo-c1 'node scripts/test-c1-callable.cjs'` and the full combined suite.
+- **App-level staging acceptance** — end-to-end claim → enroute → handoff → verify → complete → receipt → partner notification against a real staging Firebase project with the deployed functions + rules.
+- **A2 PR #2 merge** — still a prerequisite.
+- **Release cutover sequence** — see the next section; must land in the exact order listed.
+
+### Release cutover order (canonical) — 2026-10-12
+
+The release-accounting cutover supersedes the earlier draft orderings. During the authorized rollout window, run these steps **in order**; do not skip or reorder:
+
+1. **Create the admin-controlled lock** at `/migration_locks/pickup_release_cutover`. Firestore rules deny client-initiated releases while the lock exists, so no client can land a release during the deploy gap.
+2. **Deploy the new rules** (`firebase deploy --only firestore:rules`). The rules reject the old client-side penalty writes and require the server timestamps the triggers write.
+3. **Deploy the two triggers**: `recordPickupRelease` and `dispatchPickupTransition` (`firebase deploy --only functions:recordPickupRelease,functions:dispatchPickupTransition`). Both must be live before any client release can occur under the new rules.
+4. **Ship the updated client bundle** (web + app build) that removes the client-side penalty queue and release-notification initiation. Old clients that are still live cannot write under the new rules; the trigger handles the authoritative accounting.
+5. **Verify in staging**: trigger a release from the updated client, observe the `/pickup_releases` ledger row, confirm user points/score/drop totals and the partner notification lands via A2's J1 recovery path. Confirm old clients fail cleanly under the new rules (expected during the overlap).
+6. **Delete the lock** at `/migration_locks/pickup_release_cutover` to resume releases under the new accounting.
+
+**Do NOT**:
+- Enable the trigger against rules that still permit old client penalty writes (would double-charge old clients).
+- Ship the updated client before the triggers (would silently drop releases).
+- Delete the lock before staging verification completes.
+
+The lock is also independently required for the ID-token rotation migration (`/migration_locks/id_docs_rotation`); the two locks share a collection but are per-operation and do NOT share a window.
+
+### Historical / superseded (my earlier C1 drafts) — 2026-10-12
+
+The following items from my earlier C1 iterations are **historical only**; Codex's merged work supersedes them. Keeping the entries intact for traceability; do not implement from them.
+
+- **`receipt_counters` collection + transactional sequential receipt numbering** — superseded by Codex's deterministic `BN-{pickupId}` numbering. The collection is NOT in the current rules; implementation detail retained in prior commits for diff archaeology only.
+- **`isExecNonCompletionUpdate()` rule helper** — superseded by Codex's `pickupUpdateAllowed()` dispatcher, which also fits within Firestore's 1,000-expression budget that an OR chain could exceed.
+- **In-process MVCC mock harness** (`scripts/test-c1-complete.cjs` as it stood at `0c6481b`) — superseded by the real-Firestore-emulator version that now requires `FIRESTORE_EMULATOR_HOST`. The earlier mock-only approach is what the earlier review correctly flagged as not proving transaction semantics.
+- **Earlier "C1 scope (first iteration)" and "C1 second iteration (R1–R8)" sections below** — the problem statements and findings they address remain valid, but the implementations they describe have been replaced by the merged Codex version. Treat these sections as a design journal, not a current spec.
+
+### Codex durable release/handoff notifications — 2026-10-11
+
+**Implementation complete; Codex releases these files for Claude to review/resume.** Start `f928b03`, same isolated local `codex/c1-completion-fixes` branch. No push, merge, deployment or production migration. The updated combined Git bundle includes previous intervals and is the transfer route; the remote Codex branch does not exist.
+
+- New retriable `dispatchPickupTransition` onUpdate trigger derives release/handoff from the persisted event snapshot, validates the actor and changed server timestamp, and freezes recipient/payload before delivery. Browser survival or a second app action is unnecessary.
+- Work and dedup reservation are transactional. Missing partner ownership fails visibly and retries instead of silently dropping the notification. Once created, frozen work retains its original recipient/payload on retry.
+- The trigger uses the existing A2 `to_partner` transition key, shared through a private export. An older client and the trigger converge on the same deterministic pair instead of duplicating it. Existing frozen client work is preserved. This retains the inherited millisecond timestamp key precision; it does not overhaul the wider notification authorization policy.
+- Existing A2 fanout and scheduled recovery repair partial pairs while preserving bell read state and dispatcher sent/channel state. Notification wording describes the recorded event and directs the partner to the current assignment, avoiding an inaccurate availability claim when delivery is delayed.
+- Release/handoff adapters no longer initiate partner notifications client-side; their previous return contracts are retained. Completion recovery is unchanged.
+
+**Deployment prerequisite:** Deploy `dispatchPickupTransition` before shipping the client that removes release/handoff queue calls. Include this trigger in the prior release-accounting cutover sequence: Admin-controlled lock → new rules → both `recordPickupRelease` and `dispatchPickupTransition` → new client → staging verification → unlock. A2 notification recovery function/index and dispatcher readiness remain prerequisites. No such operation ran here.
+
+**Verification:** Focused `scripts/test-pickup-transition.cjs` has 13 real-Firestore cases: no client queue, handoff, concurrent duplicate events, delivered/read-state preservation, frozen work after failure, real scheduled sweep resumption with no caller retry, old-client work, receipt-only repair, missing-partner recovery, transaction rollback, invalid/stale event rejection, separate cycles and half-pair repair. Combined suite passed 185/185 checks (13 + prior 172); Expo web export and JS syntax/diff checks passed. No remote CI result is claimed. Registered trigger/Auth/HTTPS testing remains blocked by host Unix-socket EPERM; this suite invokes the trigger implementation and scheduled function directly against real Firestore. External push/email provider delivery and staging/app acceptance remain unverified.
+
+**Remaining:** Claim/start/partner-confirmation/cancellation/new-pickup initiation still includes client best-effort paths; this interval hardens release/handoff only. Other hours/event sources, receipt operational/tax review, officer tools, role-switching UX and redesign remain separate tasks.
+
+### Codex delivery lifecycle follow-up — 2026-10-11
+
+**Implementation complete; Codex releases these files for Claude to review/resume.** Starting `f328150`, branch `codex/c1-completion-fixes`. This handoff also includes the previous C1 commits from Claude base `cd81e50`. No remote push, merge, deployment or production migration. The attached combined Git bundle is the transfer route because GitHub write access is unavailable here. Do not fetch a nonexistent remote Codex branch. Inspect the bundle before integrating, especially if Claude has newer commits.
+
+- Actual restaurant document ownership controls pickup posting and confirmation. Approved partner status is required; a forged profile restaurant pointer does not grant ownership.
+- Shared server/client eligibility and matching rules let approved administrators and chapter officers volunteer while requiring their own approved ID, agreement and driver setup. Pending business approval cannot borrow the default approved member status.
+- Atomic claim checks current identity and eligibility, refuses competing owners, and treats self-replays as cached without restarting clocks. Rules require server timestamps for claim/start/release/confirmation/handoff-related transitions. Transition routing avoids the Firestore expression-budget failure seen during invalid-write probes.
+- Confirmation is for the current assigned pickup, by its actual partner owner, once. Collected food cannot be released/cancelled as an ordinary uncollected run. Handoff preserves partner confirmation, lets the next volunteer claim/start, and completion credits that final volunteer. Fridge changes require an in-progress trip; executive abandoned release is narrow and audited by its actor fields.
+- `recordPickupRelease` is a new retriable onUpdate trigger. Each distinct self-release has a deterministic `/pickup_releases` ledger, activity and audit row, committed with user points/score/drop totals in one transaction. Duplicate/reordered events cannot double-debit or regress the last-drop timestamp. Missing/deleted/merged profiles are recorded without recreation. Low scores floor at zero; activity records the actual deduction. The client-side best-effort penalty has been removed.
+- Points, leaderboard score, drop count and last-drop time are server-owned across all client roles; signup can seed only zero/null values. This closes these accounting fields, not the whole broader A7 audit.
+
+**Release-accounting cutover requirement:** In the authorized rollout window, an administrator must create `/migration_locks/pickup_release_cutover`, deploy the new rules (release denied while the lock exists), deploy `recordPickupRelease` and the new client, verify readiness, then delete the lock to resume releases. Do not enable the trigger against rules permitting old client penalty writes: that could double-charge old clients. The lock prevents unaccounted releases during the rules-to-trigger deployment gap. Stage and test this sequence; no such operation ran here. Existing A2/C1 rollout requirements still apply.
+
+**Verified result:** 172/172 combined checks passed (delivery 40, release 15, unchanged A2 59, C1 44, ID gate 8, client adapters 6); Expo web export passed; diff checks clean. No remote CI result claimed.
+
+**Checks:** `scripts/test-delivery-flow.cjs` exercises 40 cases using the actual extracted client service functions, real Firestore SDK transactions and rules. It includes a partner-confirmed handoff ending in C1 completion and receipt/accounting checks. `scripts/test-pickup-release.cjs` adds 15 real-emulator cases for transaction rollback, concurrency, two cycles, reordered events, partial profiles, client accounting denial, signup defaults and cutover locking. Notification calls in the delivery suite are mocked; external push/email delivery is not claimed. The registered Functions/Auth/HTTPS probe remains blocked by the host's Unix-socket permission issue; trigger implementations are invoked directly against real Firestore transactions. Full app/staging acceptance remains required.
+
+**Remaining scope:** Durable notification intents for non-completion transitions (release notifications remain best effort), other hours/event sources, receipt operational/tax review, chapter tools, full role switching, broader audit items and DoorDash-style redesign are not complete. No live website appearance change is claimed.
+
+### Codex temporary takeover — 2026-10-11
+
+**DONE — implementation commit `38d8d40790091efc46615534d5a3bd9786068df1`. Codex releases all owned files for Claude to resume.** This handoff commit only records results/resume instructions. Independent acceptance and rollout remain pending.
+
+Verified results: C1 real-transaction/rules/recovery suite **44/44**, unchanged A2 rules harness **59/59**, ID gate **8/8**, client adapters **6/6**, `npm ci` successful, Expo web export successful, and changed JS syntax/diff checks clean. Admin SDK **12.7.0**, Functions SDK **5.1.1**, Firestore client **10.14.1** were used. Full HTTPS emulator probe is blocked as described below, not claimed passed. No remote CI result is claimed for this new branch.
+
+Claude resume: fetch `origin/codex/c1-completion-fixes` and review its diff from `cd81e50`. If `claude/c1-idempotent-completion` still ends at `cd81e50` with a clean working tree, it can fast-forward to this branch to bring the reviewed fixes into PR #3; if it has newer work, compare first and integrate without resetting/force-pushing. Run the checked-in full HTTPS probe on a compatible host. Keep PR #3 open and do not deploy, migrate production, or treat C1 as operationally closed based solely on this handoff. Codex has finished this editing interval and will not simultaneously edit these files.
+
+**Transfer correction:** remote push did NOT succeed. Git HTTPS has no username/write credentials; the connected GitHub integration also rejected branch creation with 403 `Resource not accessible by integration`. No remote Codex branch was created. Use the attached `BetterNature-C1-Claude-Handoff.zip` instead: verify/import its incremental Git bundle from the existing `cd81e50` ancestry, then review this branch locally. The package README supplies non-destructive commands. Claude can push using its own authorized GitHub credentials after review. The local implementation and handoff commits remain intact.
+
+The user authorized Codex to implement C1 review fixes while Claude is paused. Codex works only on `codex/c1-completion-fixes`, starting at `cd81e50`. For this interval Codex owns completion functions, their pure policy helper, completion notification trigger, `functions/index.js`, `firebase.json`, `firestore.rules`, completion client adapters, receipt/impact policy imports, C1 tests, and this handoff section. The older Claude ownership rows below describe the paused draft, not simultaneous editing. No merge, deployment, or production migration is authorized by this takeover. Claude should fetch this branch and read the final handoff before resuming.
+
+#### C1 implementation decisions
+
+- One transaction now owns pickup status, immutable `/pickup_completions/{id}`, member activity, canonical user counters, organization totals, receipt, audit, and frozen A2 notification work. Receipt/activity existence is not the completion sentinel. Legacy or partial completed records fail with `legacy_completion` for explicit reconciliation.
+- Live caller authorization is read inside the transaction before fresh or cached results. Normal delivery requires the actual claimant, approved member status (executive membership bypass matches the app), approved personal ID, volunteer agreement, and driver setup. Disabled, deleted/soft-deleted, merged, or unapproved accounts fail. Business accounts require approved `restaurant_status`, not their default approved member status. Administrators can volunteer normally with their own approved evidence.
+- An override requires a current executive/admin role and `override_reason`. Positive actual weight remains required for delivered food. Actor and claimant are recorded separately. Unclaimed staff deliveries have zero invented volunteer hours. Spoiled reports produce zero hours, points, events, rescue weight/meals, and no donation receipt.
+- Receipts have configured organization identity, authoritative donor/claimant names, a unique immutable `BN-<pickup id>` number, and atomic pickup receipt links. Numbering is deliberately unique rather than per-restaurant sequential. Partner receipt lists are scoped to the owning restaurant. The unused client issuance helper now only reads the server-issued receipt. Manual/backfill issuance is server-only and requires a separate audited operation; this patch does not add a manual issuance UI or reconcile legacy pickups.
+- `dispatchPickupCompletion` is a new retriable Firestore onCreate trigger for immediate fanout of frozen completion work. It reuses A2's `_resumeFromWork`; A2's scheduled sweep remains the fallback. Browser survival/retry is unnecessary. Existing deterministic bell/outbox creation preserves read/sent state and repairs half-pairs.
+- Client adapters return the server result and map `HttpsError.details.reason` to the screen's existing handoff/weight/state recovery codes. They no longer attempt post-completion notification writes or reference an undefined `pkRef`.
+- Rules prohibit direct client completed creates/transitions even for executives, receipt issuance, and pre-seeding reserved completion activity/audit documents. Unrelated executive administration of unfinished pickups/event activity remains allowed. Completed pickup fields are frozen to clients.
+
+#### Verification and remaining rollout conditions
+
+Use `npm ci` at the repo root and `npm install --prefix functions` to install the declared app and function dependencies. Tests load the function's Admin SDK instance so separate root/function SDK installations do not create separate uninitialized default apps.
+
+```bash
+firebase emulators:exec --only firestore,storage --project demo-a2 'node scripts/test-a2-rules.cjs && node scripts/test-c1-complete.cjs && node scripts/test-idgate.cjs && node scripts/test-c1-client.cjs'
+firebase emulators:exec --only auth,functions,firestore --project demo-c1 'node scripts/test-c1-callable.cjs'
+```
+
+The first command uses one project throughout; A2's harness hardcodes `demo-a2`, including its cross-service Storage/Firestore checks. `test-c1-complete` selects `GCLOUD_PROJECT` and refuses non-emulator/non-demo execution. It exercises actual Admin SDK transactions, injected rollback at eight required writes, concurrency, all outcomes, authorization, schema, real rules, half-pair recovery, and read/sent state preservation. Initial transaction reads use `tx.getAll` to begin one read set reliably under concurrent calls.
+
+The full Auth/HTTPS/registered-trigger probe is checked in but **not passed on this host**: Firebase Tools loads every function definition, then its worker cannot listen/connect on `/tmp/fire_emu_*.sock` (`EPERM`). No approval escalation or production substitute was attempted. The callable and trigger implementations themselves are exercised against the Firestore emulator by the transaction/recovery suite. Production Functions target Node 20; this host's emulator uses Node 24. Repeat the full probe on a host supporting the requested runtime and Unix sockets, then do app-level/staging acceptance before declaring C1 closed.
+
+No merge, deployment, real donation, real notification delivery, or production migration ran. A2 staging IAM/index/ID-migration prerequisites still apply. Roll out `completePickupOperation` and `dispatchPickupCompletion` with A2's notification recovery functions/index ready, then the client and C1 rules in an authorized coordinated window. The broader delivery-state audit, dispatcher leases, president donation scope, officer tools, and redesign remain separate work.
+
+| Task | Owner | Branch | Files | Starting commit | Status |
+|------|-------|--------|-------|-----------------|--------|
+| **C1** — server-authorized idempotent pickup completion | Claude | `claude/c1-idempotent-completion` | `functions/completePickup.js` (new); `functions/index.js`; `firestore.rules`; `src/services/database.js`; `scripts/test-c1-complete.cjs` (new) | `900970e` (A2 reviewed tip) | implementation drafted, pre-review. Depends on PR #2 (A2) merge. |
+| Phase 1a — rules-only authorization hardening (audit A1, A3, A4, A5, A6, A7-partial) | Claude | claude/vigilant-nash | firestore.rules | 4962e86 | committed `ba1ff86`, pre-review |
+| A2 — profile + ID disclosure lockdown (public_profiles mirror, locked `/users` reads, locked ID storage) | Claude | claude/a2-public-profiles | firestore.rules, storage.rules, functions/*, src/services/{publicProfiles,notify,referrals,database}.js, src/screens/{auth/WelcomeScreen,projects/IrisScreen}.js, workers/notification-dispatcher/src/worker.js, website/firebase-auth.js, scripts/{backfill-public-profiles,test-a2-rules}.* | 54cd9a5 | drafted, pre-review |
+
+### A2 ninth review response (post-ChatGPT review of 166ff94)
+
+ChatGPT's ninth review confirmed J1/J2 probes pass. Two consistency gaps remained in the same work pipeline + the planned index needed to be a checked-in artifact. This commit closes all three.
+
+| K# | Fix | Where |
+|----|-----|-------|
+| **K1** Reservation and work creation were separate commits (crash window between them) | New `reserveLeaseAndWork(db, dedupKey, livePayload)` runs ONE Firestore transaction that reads both docs and writes both atomically: the `/notification_dedup` lease marker AND the `/notification_work` frozen payload+recipients commit together, or neither does. Return shape distinguishes `fresh` / `completed` / `in_progress` / `resumable`. | `functions/queueNotification.js` |
+| **K2** Live retry executed its own payload against the stored dedup key | When the atomic reserve sees existing work (expired lease takeover), the handler now runs the FROZEN payload + FROZEN recipients from the stored work doc, not the invocation's own inputs. Live retries and the scheduled sweep execute the SAME operation under the same key. Completion is validated against the frozen pair list via `pairPresent()`. | `functions/queueNotification.js` |
+| **Index** Required composite index missing from the manifest | `firestore.indexes.json` now carries a `notification_work` COLLECTION index on `(status ASC, last_attempt_at ASC)` so `sweepNotificationDedup`'s query can serve at scale. `firebase deploy --only firestore:indexes` picks it up. | `firestore.indexes.json` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 12 touched JS files ✓
+- `python3` JSON parse of `firestore.indexes.json` → ok ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on this push (expect 4/4).
+- Emulator harness: still blocked on this host (no Java). This round touches only server-side Cloud Function logic + an index manifest; the round-7 59/59 harness assertions remain structurally unchanged.
+
+### Deployment addendum (now concrete, not a future note)
+
+- `firebase deploy --only firestore:indexes` MUST run before enabling `sweepNotificationDedup` at scale. Verify index built in staging via the Firebase console.
+- G3's `roles/firebaseauth.viewer` IAM remains required.
+
+### ChatGPT handoff — ninth review
+
+Expected to pass:
+1. **K1** — simulate a crash between the two historical commits by injecting a failure into the second step: the atomic transaction now guarantees either both the lease and the work doc commit together, or neither. No orphan-reservation / no-work scenario is reachable through the new path.
+2. **K2** — first invocation reserves work with payload A + recipients A, bell A committed, outbox A fails. Expire lease. Second invocation calls with payload B + recipients B. The atomic reserve sees stored work (resumable), the handler executes payload/recipients A (not B), and completion is checked against frozen pair A. Outbox A gets created, bell A left intact; the invocation's own B inputs are discarded. Mirror check for an exec-changed recipient list — the sweep still finishes the original authorized operation.
+3. **Index** present in `firestore.indexes.json`; staging deploy serves the sweep's query without failure.
+
+Still outside A2 (tracked separately): C1 completion, 25-defect items 2–8/17–23/25, dispatcher per-row lease, scoped president donations endpoint.
+
+### A2 eighth review response (post-ChatGPT review of f5619ab)
+
+ChatGPT's eighth review confirmed I1 passes, I3 rejects the former-claimant spoof, tested I4 (incomplete-exit + concurrent-acquisition) passes, and the previously-reported I2 cases pass (dispatcher state preserved on retry, legitimate release/re-claim both queue, distinct keys dedupe). Two remaining recovery gaps J1 and J2. This commit closes both.
+
+| J# | Fix | Where |
+|----|-----|-------|
+| **J1** Scheduled sweep didn't actually recover unfinished notifications | New `/notification_work/{dedupKey}` collection: the live callable writes a frozen payload + recipient list via `recordWork()` BEFORE fanOut runs. `sweepNotificationDedup` now claims pending work past the 60s lease, calls `_resumeFromWork()` which re-invokes the same fanOut helper against the stored payload (deterministic doc IDs → idempotent). A work doc that fails resumption 10 times is marked `failed` with a reason. Rules deny client writes to the new collection; exec read only. | `functions/queueNotification.js`, `functions/sweepNotificationDedup.js`, `firestore.rules` |
+| **J2** Single-recipient atomic batch treated ALREADY_EXISTS as "both exist" | Removed the single-recipient atomic branch; every fan-out now goes through per-doc `.create()` (bell AND outbox tried independently). After fan-out, the handler checks `pairPresent()` for each recipient and only marks the receipt + work doc `completed` when BOTH halves are confirmed present. Half-written states repair on the next invocation (live retry or sweep) because the missing half still needs creation. | `functions/queueNotification.js` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 12 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on this push (expect 4/4).
+- Emulator harness: still not run on this host (no Java). This round changes only server-side Cloud Function logic + rules for a new collection; the round-6 59/59 assertions remain structurally unchanged.
+
+### Deployment addendum
+
+- A new Firestore composite index may be needed for `sweepNotificationDedup`'s query (`status == 'pending' AND last_attempt_at < cutoff`). Deploy `firebase deploy --only firestore:indexes` after adding the required entry to `firestore.indexes.json`; verify by running the sweep once in staging.
+- Service account IAM additions already documented for G3 (`roles/firebaseauth.viewer`) remain required alongside `roles/datastore.user`.
+
+### ChatGPT handoff — eighth review
+
+Expected to pass:
+1. **J1** — fail the first batch mid-fanOut; make NO explicit retry call. Wait for the 60s lease and the scheduled sweep (`every 5 minutes` in production, invocable manually in test). The sweep claims the `/notification_work` entry, re-runs the same fanOut using the frozen payload, confirms both halves present, and marks both the work doc and the dedup receipt completed. Inbox + outbox exist afterwards.
+2. **J2** — seed one half of a deterministic pair (bell only) and leave the other missing. Invoke the callable. The per-doc create path creates the missing outbox; the bell is left alone (ALREADY_EXISTS swallowed). `pairPresent()` returns `{inbox:true, outbox:true}`; the receipt is marked completed. Mirror case for outbox-only.
+
+Still outside A2 (tracked separately): C1 completion, 25-defect items 2–8/17–23/25, dispatcher per-row lease, scoped president donations endpoint.
+
+### A2 seventh review response (post-ChatGPT review of e902038)
+
+ChatGPT's seventh review confirmed H1 harness green (59/59, unchanged), 8/8 idGate, H3 single-read + distinct keys, H4 Storage sidecar, and H5 preflight-passing cases. Four remaining findings I1–I4. This commit closes all four.
+
+| I# | Fix | Where |
+|----|-----|-------|
+| **I1** Non-canonical referenced path rotated as a "false orphan" | Phase 1 now tracks TWO sets: `canonicalReferencedPaths` (feeds Phase 3) and `allReferencedPaths` (ONLY used to subtract from orphan inventory). A non-canonical referenced path is excluded from both the orphan set and the rotation set, so its token is left intact. | `scripts/revoke-id-download-tokens.js` |
+| **I2** Retry after fanout success rewrites delivered state | `fanOut` switched to `batch.create()` / per-doc `.create()` with ALREADY_EXISTS caught as "already-delivered — leave the dispatcher's state alone". Single-recipient pickup intents atomic in one create batch; multi-recipient broadcasts per-doc so one existing recipient doesn't block the rest. New scheduled Cloud Function `sweepNotificationDedup` (every 5 min) marks stuck `in_progress` receipts past the 60s lease window as `expired` so the ledger never lies about delivery. Client helper now surfaces `deduped`/`in_progress`/`dedup_key` to callers. | `functions/queueNotification.js`, `functions/sweepNotificationDedup.js`, `functions/index.js`, `src/services/notify.js` |
+| **I3** Named transition not bound to its authorized actor | Callable now validates `(transition, actor)`: `claim`/`enroute`/`complete` require `callerIsClaimant`; `release` requires `pk.released_by === caller`; `handoff` requires `pk.handoff_from_uid === caller`; `verify`/`cancel`/`new_pickup` require the restaurant owner. Exec bypasses. Rejects with `permission-denied` otherwise. | `functions/queueNotification.js` |
+| **I4** `process.exit` inside try skipped the finally; lock acquisition not atomic | Lock acquired via Firestore `create()` (fails ALREADY_EXISTS → atomic). Each run stamps a `owner_id` UUID; release is a transaction that only deletes the lock when the stored `owner_id` still matches. All exits inside the try set `process.exitCode` and `return` so the finally{} block always runs. Clear `LOCK_ACQUIRED` / `LOCK_RELEASED` log lines. | `scripts/revoke-id-download-tokens.js` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 17 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on this push (expect 4/4).
+- Emulator harness: still not run on this host (no Java). The round-6 harness passed 59/59 unchanged; this round's changes are all behind-the-scenes (callable logic, scheduled function, migration script) with no rule-shape changes that would break existing assertions.
+
+### ChatGPT handoff — seventh review
+
+Expected to pass:
+1. **I1** — inject one referenced non-canonical object in the bucket inventory; it stays with its original generation and token; the user's URL string is unchanged; `non_canonical_referenced` lists it; exit 3.
+2. **I2** — run fanOut to success, inject a failure on `markDedupCompleted`, let the lease expire, retry: the retry no-ops on the existing docs (ALREADY_EXISTS swallowed) and preserves the dispatcher's `sent` / `channels_done` / `read` state. After 5 min the `sweepNotificationDedup` scheduled run marks the receipt `expired`.
+3. **I3** — former claimant with recent `released_at` calls with `transition: 'claim'`; callable returns `permission-denied` because the transition's authorized actor is the current claimant.
+4. **I4** — candidate script run in a real child Node process with mocked Admin/Storage; even on `exitCode = 3` the finally{} runs and `LOCK_RELEASED` prints. Two concurrent script runs both call `create()`; only one succeeds. The loser gets ALREADY_EXISTS → exit 2 without ever acquiring the lock.
+
+Not merging, not deploying, not running production migrations.
+
+### A2 sixth review response (post-ChatGPT review of ac918c9)
+
+ChatGPT's sixth review confirmed G1 + source/config G3 and all 59 harness assertions pass with the fixed external harness copy. Five findings H1–H5 remained. This commit closes all five.
+
+| H# | Fix | Where |
+|----|-----|-------|
+| **H1** Harness positive release fixture uses ISO string | Imports the firebase compat SDK, grabs `firebase.firestore.FieldValue.serverTimestamp()` once, uses that sentinel for the B4 positive release update so `released_at == request.time` is actually satisfied. | `scripts/test-a2-rules.cjs` |
+| **H2** Dedup receipt treated as success too early | Dedup receipt now carries `status: 'in_progress'` + `started_at` lease; completed only after fanOut returns. In-progress unexpired reservation → `{deduped: true, in_progress: true}`. Expired lease → next caller takes over; fanOut writes with DETERMINISTIC `${dedupKey}__${uid}__{inapp|outbox}` doc IDs so overlapping retries converge instead of duplicating. | `functions/queueNotification.js` |
+| **H3** Dedup key picked historical timestamps | Caller MUST pass `transition: 'claim' / 'release' / 'handoff' / 'enroute' / 'verify' / 'complete' / 'cancel' / 'new_pickup'`. Server derives key from that transition's own timestamp (`claimed_at` / `released_at` / `handoff_at` / `enroute_at` / `verified_by_restaurant_at` / `completed_at` / `cancelled_at` / `created_at`). Pickup is read ONCE in the callable so auth + recipients + key see consistent state. Collapsed the two completion partner notifications into ONE so they can't collide on the same key. | `functions/queueNotification.js`, `src/services/notify.js`, `src/services/database.js` (every pickup helper call site updated: claim/release/cancel/verify/enroute/handoff/complete) |
+| **H4** Post-validation Storage race | New `/migration_locks/id_docs_rotation` doc. Storage rules deny writes to `/id-docs/*` while the lock exists (`firestore.exists()` sidecar). The revocation script acquires the lock at startup, releases in a `finally` block. Also adds `ifMetagenerationMatch` precondition on `setMetadata` so a concurrent mutation fails the rotation instead of being lost. | `firestore.rules`, `storage.rules`, `scripts/revoke-id-download-tokens.js` |
+| **H5** Non-canonical paths rotated then deferred | Full-validator preflight in Phase 1 splits references into canonical/non-canonical PER OWNER. Non-canonical referenced paths are flagged in `non_canonical_referenced` output, NOT rotated, and the /users bearer URL stays intact until canonicalized. Non-zero exit (`code 3`) whenever any remain, so cutover scripts can gate on it. | `scripts/revoke-id-download-tokens.js` |
+
+### Local verification
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on 20 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- Harness emulator run: still blocked on this host (no Java). ChatGPT's prior external run passed 59/59 at `ac918c9`; this round should pass the UNCHANGED harness because the only prior failure (ISO-string in B4 positive) is now fixed in-place.
+
+### Deployment order addendum (H4 lock sequencing)
+
+Insert between existing step 6 (deploy rules) and step 7 (run revocation):
+
+- **6.5** The migration lock mechanism requires the new rules to be live before the script can trust the Storage write barrier. If rules are not yet deployed, abort — the script now refuses to run when `migration_locks/id_docs_rotation` can't be read or when another lock is already held.
+
+Operator checklist for cutover window:
+1. Announce ID upload downtime window (minutes, usually).
+2. Confirm rules deploy includes `/migration_locks/id_docs_rotation` + storage `idDocsLocked()`.
+3. Run `revoke-id-download-tokens.js --project=… --bucket=…`.
+4. If exit code 3 (non_canonical_referenced non-empty): inspect the output, canonicalize those objects, rerun. Do NOT proceed to cutover acceptance until exit 0.
+5. Lock is released automatically in the `finally{}`; verify via a Firestore read.
+6. Resume ID uploads.
+
+### ChatGPT handoff — sixth review
+
+Expected to pass this round:
+1. **H1** — `firebase emulators:exec … 'node scripts/test-a2-rules.cjs'` exits 0 against the UNCHANGED checked-in harness.
+2. **H2** — simulate a `batch.commit()` failure after the dedup reservation: retry re-runs the fanout (idempotent via deterministic doc IDs) and completes. Concurrent calls see one `in_progress` and one `completed` without duplicating recipients.
+3. **H3** — pickup carrying `released_at` AND `claimed_at` (fresh re-claim); two legitimate messages with distinct `transition` values both queue; replays of either dedupe.
+4. **H4** — attempt a Storage upload to `/id-docs/personal/<uid>-front-<ts>.jpg` while a `/migration_locks/id_docs_rotation` doc exists → denied by Storage rules.
+5. **H5** — a referenced legacy path like `id-docs/<uid>-front-<ts>.jpg` is NOT rotated, is listed in `non_canonical_referenced`, the user's bearer URL stays set, and the script exits 3.
+
+Still outside A2 (tracked separately): C1 completion, 25-defect items 2–8/17–23/25, dispatcher per-row lease, scoped president donations endpoint.
+
+### A2 fifth review response (post-ChatGPT review of f1b8b54)
+
+ChatGPT's fifth review confirmed the harness passes 57/57 and all seven regression probes pass. Five remaining findings G1–G5. This commit closes all five.
+
+| G# | Fix | Where |
+|----|-----|-------|
+| **G1** Gate accepts null status via self-written flags | `requireVerifiedId` and `requireWaiverOnly` now REQUIRE `verification_status === 'approved'`. Null / pending / rejected / absent all fail. Presence flags are no longer sufficient for authorization. Dashboard badge same discipline. | `src/services/idGate.js`, `src/screens/main/DashboardScreen.js` |
+| **G2** Client-controlled released_at + non-idempotent calls | Rules require `released_at == request.time` AND `handoff_at == request.time` — a future stamp is denied. Service writes `serverTimestamp()` for both. Callable rejects negative age (`now - released_at < 0`). New `/notification_dedup/{key}` collection: pickup intents reserve a key derived from the transition timestamp; a replay returns `{deduped: true, queued: 0}`. Deny-all client-write rule on the collection; only admin SDK writes. | `firestore.rules`, `src/services/database.js`, `functions/queueNotification.js` |
+| **G3** JWT scope mismatch for accounts:lookup | Dispatcher scope changed from `firebase` to `identitytoolkit` (documented scope for `projects.accounts:lookup`). IAM requirement added to the worker header: `roles/firebaseauth.viewer` alongside `roles/datastore.user`. | `workers/notification-dispatcher/src/worker.js` |
+| **G4** Incomplete ledger entries trusted + post-rotation overwrite | `ledgerStatus()` returns `absent`/`incomplete`/`ok`/`superseded`/`missing`; only `ok` short-circuits re-rotation. Phase 4 revalidates each path's live Storage generation + token against the state we captured during rotation BEFORE confirming it for clearing. Counters increment OUTSIDE the Firestore transaction so retries don't double-count. | `scripts/revoke-id-download-tokens.js` |
+| **G5** Legacy non-canonical paths blocked at migration | `canonicalPathOk()` enforces `id-docs/<kind>/<uid>-<side>-<digits>.<ext>` with the owner's exact uid. Phase 4 refuses to mint `/id_reviews` OR clear `/users` for a non-canonical path; those are deferred. Final JSON output surfaces `non_canonical_paths` explicitly so an operator can confirm production has none or canonicalize them. | `scripts/revoke-id-download-tokens.js` |
+
+### Positive-flow + regression tests added
+
+- `scripts/test-idgate.cjs` — 8 standalone unit cases for G1 covering missing/null/pending/rejected/presence-only (all deny) and approved (allow). Runs under plain Node without the emulator. **Verified locally: 8/8 pass.**
+- Harness extension — G2 regression: future `released_at` denied; omitted `released_at` denied. Positive serverTimestamp path is exercised by the B4 integration flow already in the harness.
+- Harness still carries all prior assertions (57/57 last run); the two new G2 assertions bring it to 59. Pending ChatGPT re-run on Java-equipped host for independent confirmation.
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" (no `--legacy-peer-deps`) ✓
+- `node --check` on 20 touched JS files ✓
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI: expected 4/4 after this push lands.
+- Emulator harness: still blocked on this host (no Java; `/usr/libexec/java_home` and `brew install openjdk@17` both fail — Xcode-license wall needs sudo). ChatGPT's prior round passed 57/57; this round adds 2 new rule assertions and preserves every passing one.
+
+### Deployment notes
+
+- Dispatcher now needs `roles/firebaseauth.viewer` on the service account (addition to the existing `roles/datastore.user`). Update the service account IAM in staging before cutover; a 403 on the Auth lookup suppresses BOTH push and email during the retry window.
+- The notification dedup ledger lives in `/notification_dedup/` and is unbounded. If pickup volume warrants, add a scheduled cleanup Cloud Function later; the collection is small per pickup and inert.
+
+### ChatGPT handoff — fifth review
+
+Please run the exact gate and report:
+1. **G1** — unit test `node scripts/test-idgate.cjs` prints "all 8 cases passed". ALSO: emulator proof that a user with self-written `id_front_present:true, contract_volunteer_signed:true, driver_setup_complete:true` and NO `verification_status` cannot pass the gate (test is now purely in idGate.js since presence flags remain self-writable).
+2. **G2** — the two new assertions in `scripts/test-a2-rules.cjs` for future/missing `released_at` pass; the positive path through `cancelClaim` still works (serverTimestamp == request.time).
+3. **G3** — JWT scope string equals `.../auth/datastore .../auth/identitytoolkit`. Deployed IAM test will happen in staging only; this review does not touch production.
+4. **G4** — ledger with only `status:'rotated'` re-rotates on rerun; object replaced AFTER rotation but BEFORE Phase 4 keeps the `/users` URL (deferred).
+5. **G5** — non-canonical `id-docs/<uid>-front-<ts>.jpg` path appears in `non_canonical_paths` output and neither clears `/users` nor mints `/id_reviews`.
+
+### A2 fourth review response (post-ChatGPT review of c52c8f1)
+
+ChatGPT's fourth review passed the compatible harness (fixed seed only) at 55/55 and confirmed CI green. It surfaced F1–F11 — mostly workflow gaps and race corner cases. This commit closes all 11.
+
+| F# | Fix | Where |
+|----|-----|-------|
+| **F1** New-model approved volunteers failing the gate | `requireVerifiedId` / `requireWaiverOnly` accept `id_front_present` or `verification_status === 'approved'` (legacy `id_document_url` kept as a bridge). Dashboard badge same. | `src/services/idGate.js`, `src/screens/main/DashboardScreen.js` |
+| **F2** DriverSetup still writes bearer URLs | `DriverSetup` → `submitIdReview({ kind: 'driver' })`. `saveDriverSetup` no longer accepts/writes license URL fields; only driver metadata (type, holder, consent) persists on `/users`. | `src/screens/auth/DriverSetup.js`, `src/services/verifications.js` |
+| **F3** Status-sync restores old approval on late events | Trigger reads live `/id_reviews/{uid}` inside the transaction instead of using `change.after`. Delayed approve-after-reject events can no longer regress the mirror. | `functions/syncIdReviewStatus.js` |
+| **F4** Revocation read/write race | Phase 4 is now one `runTransaction` reading `/users` + `/id_reviews` together. Only mints review mappings where the review slot is empty; preserves newer uploads AND existing reviewer decisions. Does not overwrite a reviewer's status with legacy `verification_status`. | `scripts/revoke-id-download-tokens.js` |
+| **F5** Ledger-skip trusts stale rotated status | Rerun calls `ledgerEntryIsStillValid` which refetches live metadata and compares both the stored generation AND the stored token. Overwritten objects re-rotate. | `scripts/revoke-id-download-tokens.js` |
+| **F6** Migration metadata blocks resubmission | Rules split into `cleanIdReviewOwnerCreate` (hasOnly owner fields) and `cleanIdReviewOwnerUpdate` (changed-fields hasOnly, server fields preserved). Service writes only the owner-authored subset on resubmission. | `firestore.rules`, `src/services/idReview.js` |
+| **F7** Mirror revision guard too eager | Removed the `source_rev >= incoming` skip. The transaction's live read + rewrite is the sole guard; same-timestamp legit changes no longer get dropped. | `functions/lib/publicProfileProjection.js` |
+| **F8** Unverified email delivery | Dispatcher resolves the Firebase Auth record via Identity Toolkit `accounts:lookup`, delivers email only when `emailVerified === true` AND the `/users.email` matches the Auth email (case-insensitive). JWT scope widened to include `firebase`. | `workers/notification-dispatcher/src/worker.js` |
+| **F9** Ex-claimant indefinite authority + handoff state | Callable only honours `pk.released_by` within 30 min of `pk.released_at`, same for `pk.handoff_from_uid` vs `pk.handoff_at`. `isSelfHandoff` now accepts both `claimed`/`enroute` to match the service's state set. `cancelClaim` stamps `released_at`. | `functions/queueNotification.js`, `firestore.rules`, `src/services/database.js` |
+| **F10** Harness seed blocks reinitialise Firestore | `seedBlock(env, fn)` helper centralises `const db = ctx.firestore()`. Every seed-block in the harness updated. | `scripts/test-a2-rules.cjs` |
+| **F11** ManageVerifications parses UID from path | Thumbnail minting uses the joined row's uid + known kind/side directly; no reverse-regex on the path. Works for hyphenated UIDs. | `src/screens/admin/ManageVerifications.js` |
+
+Positive-flow + regression tests added to `scripts/test-a2-rules.cjs`:
+- F6 — rejected migrated user resubmits with new paths, status flips to pending, migration metadata preserved. Self-approve still denied.
+- Hyphenated UID (`alice-member`) accepted by `cleanIdReviewOwnerCreate` path pattern.
+- B4 — self-release stamps `released_by` + `released_at` and passes.
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" (no `--legacy-peer-deps`) ✓
+- `node --check` on 20 touched JS files ✓
+- GitHub CI: 4 passing on `c52c8f1`; next commit (this one) will trigger a re-run.
+- Emulator harness: **not executed on this host** — no Java runtime; `brew install openjdk@17` and `/usr/libexec/java_home` both fail with the Xcode-license wall (needs sudo). All seed blocks now follow the handle-caching pattern ChatGPT demonstrated; the review's temporary-copy pass at 55/55 is the closest signal available, and the pattern applied here is identical. Final confirmation needs ChatGPT's Java-equipped host.
+
+### Explicitly still open
+
+- **Original 25-defect items 2–8, 17–23, 25** stay tracked outside A2. C1 idempotent completion remains the next priority after A2 lands.
+- **Dispatcher per-row lease** for concurrent dispatcher instances — current implementation is single-worker-safe.
+- **President-scoped donations endpoint** — PresFinance currently gracefully degrades; dedicated endpoint remains a follow-up.
+- **Legacy-outbox drain is deploy step 2.5** — `scripts/drain-legacy-outbox.js` is operational, not a build artifact.
+
+### Updated A2 deployment order (unchanged from last round)
+
+1. Deploy functions: `syncPublicProfileOnWrite`, `getIdViewUrl`, `queueBusinessNotification`, `syncIdReviewStatus`.
+2. Deploy dispatcher worker (now does Auth-record verification; requires the `firebase` scope on the service account).
+3. Drain legacy outbox.
+4. Backfill public_profiles.
+5. Deploy client bundle (includes DriverSetup migration + ID-gate change + ManageVerifications switch).
+6. Deploy rules + storage.
+7. Run `scripts/revoke-id-download-tokens.js --project=… --bucket=…` dry-run → review → apply.
+8. Observe one dispatcher cron cycle; verify leaderboard, rosters, protected-viewer flow, delivery to a verified vs unverified account.
+
+### ChatGPT handoff — fourth review
+
+Please run the harness with the project-compatible dependencies as the test gate:
+
+```bash
+firebase emulators:exec --only firestore,storage --project demo-a2 'node scripts/test-a2-rules.cjs'
+```
+
+Specific regression probes requested:
+1. **F3** — write a `pending` to `/id_reviews/{uid}` AFTER an `approved` event has fired; confirm the trigger's live read returns pending and `/users.verification_status` is pending, not approved.
+2. **F4** — upload a NEW `/id_reviews/{uid}` path mid-run of the revocation script; confirm the script does NOT overwrite that mapping with legacy evidence.
+3. **F5** — rotate an object, replace it (new generation), rerun; confirm the ledger entry is recomputed and the new object is rotated.
+4. **F6** — resubmit on a migrated+rejected row via the production `submitIdReview` service; confirm the write passes rules and the `id_tokens_migrated_at` field is untouched.
+5. **F7** — change a public-mirrored field on `/users` with `updated_at` unchanged; confirm the public mirror reflects it.
+6. **F8** — queue a self-notification for a user whose Firebase Auth email is NOT verified; confirm no email send and the row ends `sent` / `rejected` without a provider call.
+7. **F9** — call `queuePickupToPartner` with the former-claimant 31 minutes after `released_at`; confirm `permission-denied`.
+
+### A2 third review response (post-ChatGPT review of e78faee)
+
+ChatGPT's third review verified R1 harness + builds green, then surfaced B1–B11 plus the unfinished ID workflow. This commit closes all twelve.
+
+| B# | Fix | Where |
+|----|-----|-------|
+| **B1** Signup finalization bypass | `isSelfRestaurantSignup` tightened to `hasOnly` allowlist of changed fields. Smuggled email / id_document_front_url writes alongside restaurant_status now denied. | `firestore.rules` |
+| **B2** CREATE arbitrary delivery email | `cleanCreateFields` requires `d.email.lower() == request.auth.token.email.lower()` at create. | `firestore.rules` |
+| **B3** Partner UID resolution | `queueNotification.resolvePartnerUidFromPickup` reads `/restaurants/<rid>.user_id`; `pk.restaurant_user_id` only trusted when it matches. | `functions/queueNotification.js` |
+| **B4** Release/handoff notification auth | Pickup rule `isSelfReleaseClaim` requires `released_by == auth.uid` and adds that field to the allowed-change list. `cancelClaim` stamps it. Callable accepts `caller == pk.released_by` / `pk.handoff_from_uid` for `to_partner` intent. | `firestore.rules`, `src/services/database.js`, `functions/queueNotification.js` |
+| **B5** Global audience scopes | Callable accepts `audience_scope: 'global_bn' / 'global_restaurants' / 'global_all'` — exec-only. Client `enqueueAudienceNotification` maps `'bn' / 'restaurants' / 'all'` to those scopes. No more `chapter_id: '*'` dead query. | `functions/queueNotification.js`, `src/services/notify.js` |
+| **B6** In-app bell lost in callable | `queueBusinessNotification.fanOut` batches BOTH a `/notifications` row and a `/notifications_outbox` row per recipient. | `functions/queueNotification.js` |
+| **B7** Mirror race | `reconcile()` runs in `db.runTransaction()`; writes stamp a `source_rev` from `/users.updated_at`; a stale invocation whose source_rev < existing is `skipped_stale`. | `functions/lib/publicProfileProjection.js` |
+| **B8** No retries on trigger | `syncPublicProfileOnWrite` declared with `.runWith({ failurePolicy: true })`. Paired with the transaction-safe reconciler. | `functions/syncPublicProfile.js` |
+| **B9** Revocation clobbers newer unrotated refs | Phase 4 re-reads each user, parses the CURRENTLY stored URL, nulls only the fields whose path matches a confirmed-rotated entry. Any newer upload stays untouched; the ledger flags it as `deferred_fields`. | `scripts/revoke-id-download-tokens.js` |
+| **B10** No `/id_reviews` from legacy evidence | Phase 4 constructs `/id_reviews/{uid}` with `id_front_path` / `id_back_path` / `driver_license_front_path` / `_back_path` + presence booleans + status, so `getIdViewUrl` can serve legacy users immediately. | `scripts/revoke-id-download-tokens.js` |
+| **B11** Harness fails on repo-declared tooling | `fsCache` / `stCache` WeakMaps per context so repeated `ctx.firestore()` doesn't reinitialise Firestore settings on rules-unit-testing 3.0.4. | `scripts/test-a2-rules.cjs` |
+
+### ID workflow completion
+
+| Area | Status | Where |
+|------|--------|-------|
+| `id_reviews.status` → `/users.verification_status` sync | New trigger with `failurePolicy: true` + inner transaction | `functions/syncIdReviewStatus.js` + exported from `functions/index.js` |
+| Legacy `authFirebase.uploadIdDocument` | Delegates to `idReview.submitIdReview`. Never writes to `/users` ID fields again. | `src/services/authFirebase.js` |
+| `ManageVerifications` | Joins `/id_reviews` with `/users`. Each thumbnail resolves through `getIdViewUrl` (short-lived signed URL). Keeps a legacy-fallback renderer for the pre-migration bridge. Approve/Reject calls `setIdReviewStatus` for migrated rows, `setVerificationStatus` for legacy rows. | `src/screens/admin/ManageVerifications.js`, `src/services/idReview.js` |
+
+### Positive-flow + regression coverage added to harness
+
+- Positive — legitimate restaurant signup finalization succeeds (`carl` → `mine`).
+- B1 regression — same finalization + email change in one update → denied.
+- B1 regression — finalization + legacy ID URL in one update → denied.
+- B2 regression — create with `email != token.email` → denied; matching → succeeds.
+- B4 regression — self-release of own pickup with `released_by: self` succeeds; another user attempting the release → denied.
+- Prior round regressions retained (R5 unverified-email deny, foreign ID path deny, nested driver, email self-redirect, outbox lockdown variants, pres cross-chapter denial, tax_receipt list, Storage ID access).
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" (no `--legacy-peer-deps`) ✓
+- `node --check` on 20 touched JS files ✓ — all parse cleanly.
+- Emulator harness: still blocked on this host (no Java runtime; `brew install openjdk@17` blocked by Xcode-license wall needing sudo). Harness is syntax-clean, uses the handle-caching pattern from the review, and should pass under firebase 10.14.1 / rules-unit-testing 3.0.4. Awaiting ChatGPT's green run to independently confirm.
+
+### Still-tracked follow-ups beyond A2
+
+| Item | Why outside A2 |
+|------|----------------|
+| C1 server-side idempotent completion | Original audit flagged it; needs its own PR. |
+| 25-defect items 2–8, 17–23, 25 | Reporting, receipts, event flows, HTML escaping — separate work streams. |
+| Dispatcher per-row lease / full PATCH response audit | B7 retry logic landed; stricter concurrency semantics for the dispatcher itself tracked for a follow-up. |
+| President-scoped donations endpoint | Current PresFinance gracefully degrades; dedicated endpoint tracked. |
+| Legacy-outbox drain is deploy step 2.5 | Not a code change — operational step in `scripts/drain-legacy-outbox.js`. |
+
+### A2 second review response (post-ChatGPT review of a219914)
+
+ChatGPT's second review verified R1/R5/R6/R7/R10/R11 + foreign-restaurant UPDATE path AS FIXED on `a219914`, confirmed clean dependency resolution and all three deployment checks green, then surfaced seven new blockers. This section is the response to those blockers.
+
+| ChatGPT follow-up finding | Status | Where |
+|---------------------------|--------|-------|
+| **#1 ID viewer arbitrary-path signing** | Fixed | `firestore.rules` `/id_reviews` block now enforces: owner-only writes must use the `cleanIdReviewOwnerFields` allowlist, every `*_path` field is pattern-matched to `id-docs/<kind>/<uid>-<side>-<digits>.<ext>` where `<uid>` is the record's own doc id, `status` can only self-transition to `pending`, reviewer fields are blocked. `functions/idViewer.js` adds defence-in-depth re-matching the exact pattern before signing. |
+| **#2 Signup-time foreign restaurant_id** | Fixed | `cleanCreateFields` now blocks `restaurant_id` entirely at create. Linkage flows only through `isSelfRestaurantSignup`'s update path which calls `selfRestaurantIdOk` (exists + user_id check). |
+| **#3 Notification auth mismatch** | Fixed | Client `/notifications_outbox` writes locked to self-recipient (ordinary) OR exec (admin tooling). Pres cross-chapter writes denied. New `functions/queueNotification.js` HTTPS callable validates `scope: 'pickup'|'event'|'broadcast'`, derives recipients from the operation server-side, writes outbox rows with admin SDK. Client-side `src/services/notify.js` exposes `queuePickupBroadcast`, `queuePickupToPartner`, `queuePickupToClaimant`, `queueChapterBroadcast`, `queueEventBroadcast`. All seven cross-user `enqueueNotification` sites in `src/services/database.js` migrated to the appropriate scoped helper. |
+| **#4 Self-email arbitrary redirect** | Fixed | `email` added to `touchesPrivilegedFields`. A signed-in user can no longer self-rewrite their delivery address and queue a self-notification. Legit email changes must flow through exec. |
+| **#5 ID split incomplete (nested driver.*)** | Fixed | `touchesNestedPrivilegedFields` compares nested `driver.license_url` / `license_front_url` / `license_back_url` old-vs-new values and denies self-writes. `cleanCreateFields` also blocks these at create time. The viewer callable in `functions/idViewer.js` and the service in `src/services/idReview.js` cover both personal and driver kinds end-to-end. |
+| **#6 PresFinance blocked by fetchAllDonations** | Fixed | `src/screens/president/PresFinance.js:load` switched to `Promise.allSettled`; a denied donations fetch no longer blanks the roster/events. Flagged for a dedicated exec-scoped president-donations endpoint as a follow-up. |
+| **#7 Harness fixtures missing email_verified** | Fixed | `scripts/test-a2-rules.cjs` rewritten with `verified(env, ...)` / `unverified(env, ...)` helpers. Harness adds explicit unverified-denial, path-shape, foreign-restaurant create-time, nested driver, email self-redirect, outbox lockdown, pres cross-chapter denial, and ID viewer regression cases. |
+
+Additional work landed in this response:
+
+- **R9 shared projector** — `functions/lib/publicProfileProjection.js` is now the single source of truth used by both the trigger (`functions/syncPublicProfile.js`) and the backfill (`scripts/backfill-public-profiles.js`). The trigger reconciles against live `/users` state (not the event's after snapshot), repairs missing mirrors, propagates deletion failures, and now rethrows on errors so Firestore retries.
+- **R2+R3 revocation rewrite** — `scripts/revoke-id-download-tokens.js` now scans the ACTUAL legacy fields (top-level `id_document_*`, `driver_license_*`, `id_front_url`/`id_back_url`, nested `driver.license_*`), inventories the `id-docs/` Storage prefix for orphan files, writes a per-object ledger at `/id_token_revocation_ledger/{sha256(path)}`, requires explicit `--project` and `--bucket`, and only clears `/users` references for a user whose every path rotated successfully. Preserves evidence.
+
+Build + install verification (local):
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓ (no `--legacy-peer-deps`)
+- `node --check` on every new/changed JS file ✓ (notify, database, publicProfiles, idReview, idViewer, queueNotification, syncPublicProfile, publicProfileProjection, backfill, revoke, drain, test-a2-rules)
+
+Harness: still blocked on Java 17+ on this host (`java -version` fails; Homebrew install blocked by Xcode-license wall needing sudo). Harness is syntactically clean and ChatGPT previously ran it on a Java-equipped environment. Pending a green emulator run before this commit's claims can be independently confirmed.
+
+### Not closed in this commit (deferred follow-ups)
+
+- **ManageVerifications screen migration** to call `getIdViewUrl` + legacy `authFirebase.uploadIdDocument` migration to `idReview.submitIdReview`. Rules + callable + service in place; UI wiring is the remaining work.
+- **id_reviews.status → users.verification_status sync** — a Firestore `onWrite` trigger that mirrors the authoritative review status back to `/users.verification_status` so existing eligibility gates keep working. Follow-up function.
+- **Dispatcher writes** — the worker still doesn't check every Firestore PATCH response code or hold a per-row lease for concurrent dispatcher instances. The current retry changes are progress, not full idempotency.
+- **President-scoped donations endpoint** — PresFinance currently gracefully degrades when exec-only `fetchAllDonations` is denied; a scoped read would restore full visibility.
+- **Legacy-outbox drain** — `scripts/drain-legacy-outbox.js` ships but must run operationally at deploy step 2.5 (before dispatcher deployment can confidently say "no legacy format").
+- **PresFinance CSV / name column** — audit noted the export still expects private `name`; the `public_profile.display_name` field is now populated and used in the roster render, but the CSV export columns need a sweep.
+
+### Updated A2 deployment order
+
+Dispatcher ships before rules lock; function + backfill before rules lock; token revocation after everything is live + the viewer UI switch is in place.
+
+| # | Action | Why this order |
+|---|--------|----------------|
+| 1 | Deploy functions: `syncPublicProfileOnWrite`, `getIdViewUrl`, `queueBusinessNotification` | Trigger populates mirrors on every /users edit; callable serves the ID viewer and the authorized notification queue. All must exist before the rules lock makes them the only path. |
+| 2 | Deploy dispatcher worker | Backward-compatible with any legacy outbox rows; new-format recipient resolution + per-channel retry live. |
+| 2.5 | `node scripts/drain-legacy-outbox.js --dry-run` → review → run for real | Marks any pre-A2 queued row carrying `channel`/`email`/`player_id` as `rejected: legacy_format_dropped` so no legacy row ever flows through the new dispatcher. |
+| 3 | `node scripts/backfill-public-profiles.js --dry-run` → review → run for real | Mint public_profiles for every existing user using the shared reconciler. |
+| 4 | Deploy client bundle | Clients now read public_profiles, write new-format outbox for self, and route cross-user notifications through the callable. |
+| 5 | `firebase deploy --only firestore:rules,storage` | Locks `/users` and `/id-docs` reads. Safe only once backfill + client + callable are live. |
+| 6 | Deploy the ManageVerifications screen migration (follow-up PR) | Reviewer UI calls `getIdViewUrl` before step 7 invalidates all old links. |
+| 7 | `node scripts/revoke-id-download-tokens.js --dry-run --project=<p> --bucket=<b>` → review → run for real | Rotates `firebaseStorageDownloadTokens` on every referenced + orphan id-docs object. Clears `/users` bearer-URL fields only after a per-object ledger confirms rotation succeeded. Preserves evidence. |
+| 8 | Observe dispatcher logs for one cron cycle; verify leaderboard, rosters, volunteer count, notifications, protected-viewer flow | — |
+
+### ChatGPT handoff — next review
+
+Please review on branch `claude/a2-public-profiles` at the new commit above:
+
+1. `functions/idViewer.js` + `firestore.rules` id_reviews block together — does any owner-authored path writeable by rules still reach the signer with a foreign uid?
+2. `functions/queueNotification.js` — any way to make it queue to a recipient the operation's state does not justify? (unauth → `permission-denied`; writer must be pickup party or exec; recipients derived server-side)
+3. `functions/lib/publicProfileProjection.js` as the shared projector + the trigger + backfill — any field in `project()` that leaks something that shouldn't be public?
+4. `scripts/revoke-id-download-tokens.js` — ledger-based retry is restartable, but does the final `/users` field clear ever run when any one path failed? (should not)
+5. `scripts/test-a2-rules.cjs` — any attack from the two review passes not covered?
+
+Report the fresh 25-defect rerun + the eight new attack checks against this commit.
+
+### A2 first review response (post-ChatGPT review of 6927f1e)
+
+Partial — commit TBD. Status per finding:
+
+| Finding | Status | Notes |
+|---------|--------|-------|
+| R1 — rules-unit-testing peer conflict | Fixed | Downgraded to `@firebase/rules-unit-testing@3.0.4` (accepts firebase ^10). `npm ci --dry-run` exits 0 without `--legacy-peer-deps`. |
+| R5 — identity exceptions | Fixed | `isFounderToken()` and `readingMyLinkedAccount()` now require `request.auth.token.email_verified == true`. Full server-flow for merge discovery still queued as a follow-up (noted inline). |
+| Foreign restaurant linkage | Fixed | `selfRestaurantIdOk()` now requires `exists(/restaurants/<newRid>)` AND `restaurants/<newRid>.user_id == auth.uid`. |
+| R10 — legacy outbox email path | Fixed | Rules reject client-supplied `channel`/`player_id`/`email` on create and require `user_id == auth.uid` (or exec/pres). Dispatcher's legacy branch marks any such row `rejected`. `scripts/drain-legacy-outbox.js` for one-shot backlog cleanup. |
+| R11 — dispatcher error handling | Fixed | Lookup now distinguishes 404 (`rejected: recipient_missing`) from 5xx (retried, max 5 attempts). Per-channel success tracked in `channels_done`; partial failures retry only the un-done side. Preference map in `src/config/notifications.js` and worker's `prefKeyForKind` consolidated and documented as paired. |
+| R6 — createPickup chapter recipients | Fixed | `createPickup` now queries `/public_profiles` by `chapter_id` and filters on `role_label`. |
+| R7 — president roster | Fixed | `PresReports` + `PresFinance` switched to `fetchAllPublicProfiles({ chapterId })`. Admin screens (exec-only) continue to use `fetchAllMembers`. |
+| R8 — ID bearer URLs out of /users | Fixed (data model) | New `/id_reviews/{uid}` collection with its own rules (owner + exec only; presidents denied). Legacy `id_document_*`, `driver_license_*`, `id_{front,back}_url` fields added to `touchesPrivilegedFields` so no self-write can restuff them. `src/services/idReview.js` writes to the new path. Legacy upload path in `authFirebase.js:uploadIdDocument` **not yet migrated** — follow-up. |
+| R4 — protected ID viewer | Function in place | `functions/idViewer.js` adds `getIdViewUrl` callable: authorizes owner OR exec via admin SDK; returns a 5-minute signed URL from the Storage path on `/id_reviews`. Review-screen UI (ManageVerifications) **not yet switched to call it** — follow-up. |
+| R2 + R3 — revocation script | NOT YET done | Current `scripts/revoke-id-download-tokens.js` still has the wrong field names and the clear-on-failure bug. Blocking for production migration; non-blocking for merge if we gate on COORDINATION.md deploy step 7. |
+| R9 — mirror robustness | NOT YET done | Shared projector + delete-failure propagation + stale-event guard still open. Non-blocking for merge; blocking for load. |
+| CI (3 red checks) | Likely resolved by R1 | ChatGPT noted the SDK peer conflict is a deterministic install regression. New lockfile pushes next cycle; CF/Vercel re-runs will tell. If still red, inspection follow-up. |
+
+**Not merging A2 until**: R2 + R3 (revocation script), R9 (mirror robustness), ManageVerifications switch to the viewer callable, actual harness green run (needs Java), and ChatGPT re-review of this commit.
+
+### A2 slice details
+
+**New collection:** `public_profiles/{uid}` — minted exclusively by the `syncPublicProfileOnWrite` Firestore trigger from an allowlist of fields on `/users`. Clients cannot write. Open read.
+
+**Allowlist (public):** `display_name`, `chapter_id`, `avatar_url`, `lbs_rescued`, `hours_logged`, `events_attended`, `points`, `leaderboard_score`, `pickups_dropped`, `meals_rescued`, `referral_code`, `role_label` (bucketed, not raw auth role), `updated_at`.
+
+**Deliberately excluded (never mirrored):** email, phone, DOB, age_band, guardian_*, address/city/state/zip, push_tokens, onesignal_player_id, notif_* prefs, sms_consent*, email_consent, verification_status, id_front_url, id_back_url, driver_license_*, member_status, restaurant_status, disabled, disabled_at, pending_chapter_*, chapter_request_status, signed_contracts_*, merged_into, linked_google_emails, deleted_at, raw `role`, raw `roles[]`.
+
+**New read scope on `/users`:**
+- `get`: owner, exec, president-of-same-chapter, or doc whose email/linked_google_emails matches the auth token (merge/link self-service)
+- `list`: exec, or filtered by auth-token email (merge/link self-service)
+- Anonymous: denied (previously allowed via isSignedIn)
+- Ordinary member cross-user read: denied
+
+**New Storage ID-doc rule:**
+- Read: owner (filename prefix is their uid) OR exec (resolved via Firestore sidecar `firestore.get`)
+- Write: owner only
+- Previously signed-in-any read → now owner + exec only
+
+**Consumer switches to `/public_profiles` (or scoped read):**
+- `fetchLeaderboard` (src/services/database.js) — reads mirror; chapter name hydrated from `/chapters`
+- `fetchEventSignups` — attendee names from mirror
+- `fetchMemberOfMonth` — display name/avatar from mirror
+- `WelcomeScreen` + `IrisScreen` — volunteer counts from `org_stats.volunteers` (public aggregate)
+- `enqueueNotification` — client no longer resolves push_token/email; dispatcher does it with service-account creds
+- `enqueueAudienceNotification` — audience filter runs against `public_profiles.role_label`
+- `completePickup` receipt email — reads `/restaurants/{id}` only; `/users` fallback removed
+- `verifyPickupByRestaurant` notification — volunteer name from mirror
+- `findUserByReferralCode` (both `src/services/referrals.js` and `website/firebase-auth.js`) — queries mirror
+- `fetchEventSignups` user hydration — mirror
+
+**Unchanged (self-reads + exec-only reads still work under new rules):**
+- `getProfile(self)`, `claimPickup(self.uid)` — self-reads
+- All admin screens (ManageMembers, ManageVerifications, LiveOps, ManageChapters, ChapterApprovals, duplicates, chapterDenorm, broadcast) — exec reads
+- `listAdmins` (website) — super_admin-only usage
+- Google-link merge queries by own email — covered by `readingMyLinkedAccount` carve-out
+
+**Not in this slice:**
+- Dispatcher worker schema compatibility: honours pre-A2 outbox rows (channel + player_id + email already stuffed) during the drain window, resolves new rows via `/users/{uid}` server-side. One cron cycle (≤1 min) is enough to clear in-flight work.
+- A2 does NOT yet revoke pre-existing Firebase Storage download tokens for ID files (see "Existing ID-link handling" below). Separate operational step.
+
+### A2 deployment order (do not deploy until I review)
+
+Revised ordering: the dispatcher ships **before** the Firestore rules lock, so no window exists where new-format outbox rows are being written but the old dispatcher is still live (which would silently drop them). The dispatcher is backward-compatible with pre-A2 outbox rows via the `channel` compat path, so putting it in front of the client bundle is safe.
+
+| Step | Action | Why this order |
+|------|--------|----------------|
+| 1 | `cd functions && npm i && firebase deploy --only functions:syncPublicProfileOnWrite` | Trigger must exist before any new `/users` edit so the mirror stays live from the moment anyone touches their profile. |
+| 2 | `cd workers/notification-dispatcher && wrangler deploy` | Dispatcher now resolves recipient contact server-side. Backward-compatible with the old outbox format (`channel` + `player_id` + `email`), so queued-but-not-sent pre-A2 rows drain cleanly. Must land **before** clients start writing new-format rows. |
+| 3 | `GOOGLE_APPLICATION_CREDENTIALS=./sa.json node scripts/backfill-public-profiles.js --dry-run` | Preview: counts + non-PII sample. |
+| 4 | Review dry-run output; then re-run **without** `--dry-run` | Mint `public_profiles` for every existing user. Rules in step 6 would otherwise strand leaderboards and rosters. |
+| 5 | Deploy client (web + app bundle). Includes refactored `notify.js` + consumer switches | Clients now read from `public_profiles` and write new-format outbox rows the already-deployed dispatcher understands. |
+| 6 | `firebase deploy --only firestore:rules,storage` | Locks `/users` and `/id-docs` reads. Safe only once backfill is complete, clients are reading the mirror, and the dispatcher is already resolving `/users` server-side via its service account. |
+| 7 | `GOOGLE_APPLICATION_CREDENTIALS=./sa.json node scripts/revoke-id-download-tokens.js --dry-run` → review → run for real | **Required closure for A2.** Rotates `firebaseStorageDownloadTokens` metadata on every existing `/id-docs/*` object, which invalidates every URL already handed out. Preserves the file (evidence is kept). Clears stale `id_front_url` / `id_back_url` fields on `/users` and marks `id_front_present` / `id_back_present` so the reviewer still knows an ID was uploaded; they fetch a fresh signed URL on demand through the admin SDK. |
+| 8 | Observe dispatcher logs for one cron cycle; verify leaderboard, event rosters, website volunteer count, and sample notifications | — |
+
+**Rollback:**
+- Rules commit revert → read access restores.
+- `public_profiles` docs are additive, harmless if ignored.
+- The function and dispatcher refactor are both safe to revert — the dispatcher still honours the pre-A2 outbox format.
+- Token rotation (step 7) is **not** reversible: once a token is rotated, old URLs that depended on it are permanently invalid. By design — the whole point is to revoke them. If an exec needs the ID visually, they request a fresh download URL via the admin SDK after step 6.
+
+### Existing ID-link revocation (required closure, not optional)
+
+Firebase Storage download URLs carry a per-object token stored in the object's metadata (`firebaseStorageDownloadTokens`). Rules tightening in step 6 does NOT invalidate URLs already handed out. Clearing the `id_front_url` field on `/users` or re-uploading does NOT invalidate those links either — the token lives on the file, not in Firestore. Any copy of an old URL (email thread, screenshot, pasted into chat, cached in a browser) keeps working after step 6.
+
+`scripts/revoke-id-download-tokens.js` (step 7) handles this by rotating the metadata token on every existing `/id-docs/*` object. Rotating replaces the current token with a fresh UUID; every URL carrying the old token stops working the moment the metadata update propagates. The file itself is preserved — this is deliberate so pending-review evidence isn't lost.
+
+What the script does per user that has `id_front_url` or `id_back_url`:
+1. Parse the object path from the URL (e.g. `id-docs/front/<uid>-front-123.jpg`).
+2. `storage.file(path).setMetadata({ metadata: { firebaseStorageDownloadTokens: <new uuid> } })` — invalidates all prior tokens for that object.
+3. Null out `id_front_url` / `id_back_url` on `/users` and set `id_{front,back}_present: true` so reviewers still know evidence exists; they fetch a fresh URL on demand.
+4. Stamp `id_tokens_rotated_at` for audit.
+
+Dry-run is required first. Verification steps post-run:
+- Pick 2–3 random pre-A2 IDs; open the old URL you have on file (from an exec's email thread or an earlier screenshot). Expect `403 permission denied`.
+- An exec signs in and views the Verify IDs queue; they should still see `id_{front,back}_present: true` and can click to generate a fresh download URL.
+- Confirm no file was deleted (`gsutil ls -r gs://<bucket>/id-docs/ | wc -l` before and after should match).
+
+Pending-review ownership: a volunteer whose ID is in flight at the moment of rotation can still re-upload — the upload rule is unchanged. Their new upload mints a brand-new file with its own token. The now-null `id_*_url` field gets rewritten on re-upload (owner self-update is allowed under the A2 rules).
+
+### Harness execution — not yet run
+
+The emulator harness in `scripts/test-a2-rules.cjs` **has not been executed yet**. The dev environment on this host does not have a Java runtime (`java -version` fails) and `firebase-tools@15.19.1` requires Java 17+. The harness is written and the `@firebase/rules-unit-testing` dependency is installed (via `--legacy-peer-deps` due to a Firebase SDK v10 vs v12 peer conflict in the project's lockfile — recorded for follow-up).
+
+One-liner to run once Java is on PATH (JDK 17+ via Homebrew: `brew install openjdk@17`):
+
+```bash
+firebase emulators:exec --only firestore,storage --project demo-a2 'node scripts/test-a2-rules.cjs'
+```
+
+I will treat A2 as **not** closed until that command exits 0 with "all assertions passed ✓", and I expect ChatGPT to re-run its own 25-defect harness against the new rules independently. Both results belong on the PR before merge.
+
+### Remaining risks + unverified assumptions
+
+- `readingMyLinkedAccount` depends on `request.auth.token.email` being populated by Firebase Auth. Email/password + Google providers populate it; anonymous auth and some phone-auth setups don't. The merge/link flow is only entered by email + Google users today — confirm before trusting the carve-out for other providers.
+- Firestore rules on `list` queries have strict semantics; the `where('email','==', ...)` and `where('linked_google_emails', 'array-contains', ...)` queries must satisfy the rule evaluator. Covered by one assertion in `scripts/test-a2-rules.cjs`.
+- `storage.rules`' `firestore.get(...)` for the exec check runs a cross-service lookup per read; latency impact on viewing a user's ID should be negligible but confirm in staging.
+- A7 (impact fabrication): inherited risk — if a user self-writes inflated totals to `/users`, the mirror propagates the inflation. Separate PR (full A7) will convert totals to validated-ledger derivations and shut this off at the source.
+- Dispatcher worker refactor: compat path for pre-A2 outbox rows is in. If an old row ever landed with a missing `channel` field (pre-refactor), it now flows through the new resolver — tested only in the harness.
+
+### ChatGPT review handoff for A2
+
+Please review on branch `claude/a2-public-profiles` (starting commit `54cd9a5`):
+
+1. Firestore rules diff on `/users` (now get/list split with scoped carve-outs) and the new `/public_profiles` block.
+2. `functions/syncPublicProfile.js` allowlist — any field that leaked that shouldn't have?
+3. `src/services/notify.js` + `workers/notification-dispatcher/src/worker.js` — the outbox contract moved recipient resolution server-side. Confirm no vector where the client controls `kind`/`title`/`body` reaches a different user than the writer intended.
+4. `storage.rules` ID-doc rule — the `firestore.get(...)` sidecar for exec check.
+5. `scripts/test-a2-rules.cjs` — reproduce the 25-defect harness runs against the new rules; the eight private-data assertions should now flip to "denied for other users".
+6. `scripts/backfill-public-profiles.js` — safety of dry-run and the no-PII sample.
+
+Specific defects from the audit that this slice should flip:
+- #14 (another full private profile readable) → denied for non-owner/exec/pres
+- #15 (anonymous receipt list) → already denied in Phase 1a, retained
+- #24 (another person's ID object readable) → owner + exec only
+
+### Audit items in this slice
+
+Covers from `BetterNature-Audit-and-Claude-Handoff.md`:
+
+- **A1** — self-service executive creation: `cleanCreateFields()` restricts role on create to `['member','restaurant']`, bars `member_status: approved` for member creates, bars `disabled`/`disabled_at` seeding.
+- **A3** — pickup authorization: field-level allow functions per transition (`isAtomicClaim`, `isSelfReleaseClaim`, `isSelfSetEnroute`, `isSelfUpdateFridge`, `isSelfReportSpoiled`, `isSelfHandoffEnroute`, `isSelfComplete`, `isSelfStampReceipt`, `isRestaurantVerify`, `isRestaurantCancel`). Each enforces old→new status, exact `changedKeys()`, and identity. Closes claim-via-update theft, forged completion, forged restaurant verification.
+- **A3** — `restaurant_id` self-write limited to one-shot null→value transition.
+- **A4** — `chapter_id` self-write blocked for users currently holding `chapter_president` / `chapter_pres`.
+- **A5** — `tax_receipts` reads split into `get` (open, since doc id is a capability token) vs `list` (exec only). Closes anonymous collection list.
+- **A6** — `notifications_outbox` create tightened to `isSignedIn()`. Anonymous chapter-application receipt-drop path now needs a Cloud Function (deferred to Phase 2).
+- **A7** (partial) — `org_stats` updates must be non-negative forward bumps with per-field maximum deltas. Closes "SDK write meals: -9999 / 1e9" ticker-tank/inflation.
+
+### Known breaking changes within this slice
+
+- `src/screens/restaurant/RestaurantOnboarding.js:87` — alternate partner onboarding writes `restaurant_id` even when user already has one. Audit B2 already flagged this file as "uses incompatible record"; keeping it broken until that onboarding is rewritten.
+- Website `firebase-auth.js:205` founder bootstrap tries to seed `role: 'super_admin'` at create — now denied. Founder must sign up as `member` and self-promote via the Founder Role Switcher (which still works via `isFounderToken()` in update rules). One-time production event; not worth another carve-out.
+- `notifications_outbox` unauth drops from `chapter_applications` / `restaurant_signup` acknowledgments. Rules deny them now; needs a Cloud Function.
+
+### Not in this slice (next PRs)
+
+- **A2** — split `users` reads into `public_profiles` + private; too many call sites to break at once.
+- **A7** (full) — move impact totals and donation ledgers to validated immutable operations.
+- **A8** — merge/deletion integrity (server workflow).
+- **B1–B6** — onboarding unification.
+- **C1** — authoritative completion command (Cloud Function + repair ledger).
+- Everything else in the audit's §C-§F.
+
+### C1 second iteration (post-ChatGPT review of cd81e50 — R1–R8)
+
+ChatGPT's PR #3 review flagged 8 findings. This iteration rewrites C1 as one coherent completion state machine addressing all of them.
+
+| R# | Fix | Where |
+|----|-----|-------|
+| **R1** override exec-only + required reason | Callable rejects `override: true` unless the caller is exec and `override_reason` is non-empty. The reason is stored on the completion sentinel. | `functions/completePickup.js` |
+| **R2** authorize before cached return | Sentinel-exists branch now first checks `caller === claimant_uid` OR `caller === actor_uid` OR exec. Unrelated signed-in users get `permission-denied` even on a replay. | `functions/completePickup.js` |
+| **R3** single outcome-independent sentinel | New `/pickup_completions/{pickupId}` doc is the ONLY idempotency marker. Spoiled and unclaimed exec_override replays return cached correctly because the sentinel doesn't depend on optional activity/receipt docs. | `functions/completePickup.js` + `firestore.rules` |
+| **R4** client bypasses closed | `/pickups` update rule gains `isExecNonCompletionUpdate()` — exec can admin-correct metadata but CANNOT direct-write `status: 'completed'`. `/pickups` create rejects `status: 'completed'` seeding. `/tax_receipts` client create denied entirely. New `/pickup_completions` + `/receipt_counters` admin-SDK only. | `firestore.rules` |
+| **R5** org counters inside the tx with full field set | `org_stats/global` bumped INSIDE the atomic transaction with `lbs / meals / co2 / water / hours / events`. `users` totals include `leaderboard_score` and `pickups_completed`. | `functions/completePickup.js` |
+| **R6** receipt schema + numbering + attribution | Receipt doc carries `receipt_no` (via transactional counter at `/receipt_counters/{restaurant_id}`), `org` identity, `pickup_id`, `restaurant_id`. Pickup stamped with `tax_receipt_id` + `tax_receipt_url`. Volunteer attribution uses the CLAIMANT, not the exec actor. Exec override with a positive weight also mints a receipt attributed to the claimant. | `functions/completePickup.js` |
+| **R7** client `pkRef` fix + notification intent in-tx | Client declares `pickupRef` locally for the volunteer self-notify read. Partner notification work (and dedup lease) now written INSIDE the completion transaction, so A2's J1 sweep delivers at-least-once even if the client never returns. | `src/services/database.js`, `functions/completePickup.js` |
+| **R8** MVCC-faithful test harness | New in-process Firestore mock stages writes, rolls back on exception, retries on OCC conflict. 14 cases cover R1–R7 regressions plus happy/idempotent/rollback/concurrent-single-winner. | `scripts/test-c1-complete.cjs` |
+
+### Local verification run
+
+- `npm ci --ignore-scripts --dry-run --no-audit --no-fund` → "up to date" ✓
+- `node --check` on all touched JS files ✓
+- `node scripts/test-c1-complete.cjs` → **14/14 pass** ✓
+  1. happy path
+  2. idempotent replay (totals not double-bumped)
+  3. R1 — override denied for non-exec
+  4. R1 — exec override requires reason
+  5. R2 — cached read denied for unrelated user
+  6. R3 — spoiled replay returns cached
+  7. R3 — exec override unclaimed replay cached
+  8. R5 — org_stats bumped in tx with all derived fields
+  9. R6 — receipt has receipt_no + org identity + pickup stamp
+  10. R6 — receipt counter yields distinct sequential numbers
+  11. R6 — override attributes claimant on receipt, actor on sentinel
+  12. R7 — notification work persisted inside tx
+  13. R8 — exception rolls back staged writes
+  14. R8 — concurrent completions produce single winner
+- `node scripts/test-idgate.cjs` → 8/8 pass ✓
+- GitHub CI will re-run on push.
+- Firebase Functions emulator + staging run remain the authoritative pre-deploy gate (not run on this host).
+
+### C1 first iteration (initial draft)
+
+**Goal:** no retry or concurrent request can double-count a pickup, hours, meals/pounds, or receipt records; a completed pickup never ends up with a missing required record.
+
+**New Cloud Function:** `completePickupOperation` HTTPS callable (`functions/completePickup.js`). One Firestore transaction covers:
+- `pickups/{id}` → `status: 'completed'`, `actual_weight_lbs`, `hours_earned`, `completed_at`
+- `member_activity/pickup_{pickupId}` — DETERMINISTIC id, created only on first completion
+- `tax_receipts/rcpt_{pickupId}` — DETERMINISTIC id, skipped on spoiled
+- `users/{claimant}` — totals bumped via `FieldValue.increment()` only on first completion
+
+**Idempotency fast-path:** a transaction read of `pickups/{id}.status === 'completed'` AND the sentinel activity + receipt docs returns `{ cached: true, ... }` without rewriting anything.
+
+**Authorization:**
+- Default: caller must be `pk.claimed_by` (the current claimant).
+- Exec (`role` or `roles[]` in `['executive', 'admin', 'super_admin']`) bypasses the claimed/enroute/weight gates with `override: true`.
+- Every completion appends to `/audit_events` (append-only) with actor_uid, actor_role, override flag, cached flag.
+
+**Spoiled variant:** `data.spoiled: true` lands pickup `completed` with `weight: 0`, no receipt, `spoiled` + `spoiled_kind` + `spoiled_note` fields on the pickup.
+
+**Rules change (`firestore.rules`):**
+- `isSelfComplete()` returns `false` — client-direct writes of `status: 'completed'` to `/pickups` are denied.
+- `isSelfReportSpoiled()` returns `false` — same for the spoiled path.
+- Admin SDK (callable) bypasses rules, so the server callable remains the only writer.
+
+**Client migration (`src/services/database.js`):**
+- `completePickup()` thinned from ~370 lines to a callable invocation + post-completion notifications. Notifications flow through the J1-recoverable `queueBusinessNotification` path.
+- `reportPickupSpoiled()` same migration.
+
+**Notifications:** fire AFTER the transaction commits; `queueBusinessNotification` is already J1-recoverable so delivery is separate from the atomic completion record (per the review's explicit scope note).
+
+**Tests (`scripts/test-c1-complete.cjs`):** 7 cases, all PASS locally:
+1. Happy path — writes all deterministic docs; user totals bumped.
+2. Idempotent replay — second call returns `cached: true`; no additional activity/receipt writes; user totals NOT double-bumped.
+3. Unauthorized caller → `permission-denied`.
+4. Missing `actual_weight_lbs` → `invalid-argument`.
+5. Wrong status (not enroute) → `failed-precondition`.
+6. Spoiled → weight 0, no receipt doc, pickup `spoiled: true`.
+7. Exec override bypasses the enroute gate.
+
+The mock uses a minimal in-process Firestore shim (no Admin SDK transaction retry semantics); the Functions emulator pass is deferred to the staging run but the invariants the callable depends on (deterministic IDs + first-write guards + `FieldValue.increment()` for totals) are covered.
+
+### C1 remaining before merge-readiness
+- Firebase Functions emulator run for the completion callable (needs Java + emulator setup).
+- `completePickup` and `reportPickupSpoiled` end-to-end on an emulator-backed app build.
+- A2 PR #2 merge is a prerequisite (C1 is based on the reviewed A2 tip `900970e`).
+
+## Done
+
+| Task | Owner | Branch | Files | Start → End | Tests |
+|------|-------|--------|-------|-------------|-------|
+| _(none yet)_ |  |  |  |  |  |
+
+## Hand-offs
+
+_(Note here when work needs to be picked up by the other party: what's done, what's next, where to look.)_
