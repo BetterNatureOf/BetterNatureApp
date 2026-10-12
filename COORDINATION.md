@@ -12,6 +12,49 @@ Shared ledger for parallel work on BetterNatureApp. Each party updates its own r
 
 ## Active
 
+### Independent verification of merged commit `23ba279` — 2026-10-12
+
+ChatGPT independently verified the merged tip of `claude/c1-idempotent-completion` at `23ba279`:
+
+- All 185 Codex regression checks pass (delivery 40, release 15, transition 13, A2 rules 59, C1 real-transaction/recovery 44, ID gate 8, client adapters 6).
+- Clean dependency install (`npm ci` at the repo root + `npm install --prefix functions`) passes without `--legacy-peer-deps`.
+- Expo web export passes.
+- The code matches the reviewed Codex version at `355db27`; only `COORDINATION.md` differs between my merged tip and theirs (this entry resolves that drift).
+
+**Remaining gates before C1 is operationally complete** (none performed on this host or in production):
+
+- Full registered **Firebase Functions / Auth / HTTPS** emulator run — tracked as a dedicated staging task. The host used for review and merge is Java-less; Codex's host hit a Unix-socket EPERM on the registered run and used a direct-trigger adapter instead. A compatible host must execute `firebase emulators:exec --only auth,functions,firestore --project demo-c1 'node scripts/test-c1-callable.cjs'` and the full combined suite.
+- **App-level staging acceptance** — end-to-end claim → enroute → handoff → verify → complete → receipt → partner notification against a real staging Firebase project with the deployed functions + rules.
+- **A2 PR #2 merge** — still a prerequisite.
+- **Release cutover sequence** — see the next section; must land in the exact order listed.
+
+### Release cutover order (canonical) — 2026-10-12
+
+The release-accounting cutover supersedes the earlier draft orderings. During the authorized rollout window, run these steps **in order**; do not skip or reorder:
+
+1. **Create the admin-controlled lock** at `/migration_locks/pickup_release_cutover`. Firestore rules deny client-initiated releases while the lock exists, so no client can land a release during the deploy gap.
+2. **Deploy the new rules** (`firebase deploy --only firestore:rules`). The rules reject the old client-side penalty writes and require the server timestamps the triggers write.
+3. **Deploy the two triggers**: `recordPickupRelease` and `dispatchPickupTransition` (`firebase deploy --only functions:recordPickupRelease,functions:dispatchPickupTransition`). Both must be live before any client release can occur under the new rules.
+4. **Ship the updated client bundle** (web + app build) that removes the client-side penalty queue and release-notification initiation. Old clients that are still live cannot write under the new rules; the trigger handles the authoritative accounting.
+5. **Verify in staging**: trigger a release from the updated client, observe the `/pickup_releases` ledger row, confirm user points/score/drop totals and the partner notification lands via A2's J1 recovery path. Confirm old clients fail cleanly under the new rules (expected during the overlap).
+6. **Delete the lock** at `/migration_locks/pickup_release_cutover` to resume releases under the new accounting.
+
+**Do NOT**:
+- Enable the trigger against rules that still permit old client penalty writes (would double-charge old clients).
+- Ship the updated client before the triggers (would silently drop releases).
+- Delete the lock before staging verification completes.
+
+The lock is also independently required for the ID-token rotation migration (`/migration_locks/id_docs_rotation`); the two locks share a collection but are per-operation and do NOT share a window.
+
+### Historical / superseded (my earlier C1 drafts) — 2026-10-12
+
+The following items from my earlier C1 iterations are **historical only**; Codex's merged work supersedes them. Keeping the entries intact for traceability; do not implement from them.
+
+- **`receipt_counters` collection + transactional sequential receipt numbering** — superseded by Codex's deterministic `BN-{pickupId}` numbering. The collection is NOT in the current rules; implementation detail retained in prior commits for diff archaeology only.
+- **`isExecNonCompletionUpdate()` rule helper** — superseded by Codex's `pickupUpdateAllowed()` dispatcher, which also fits within Firestore's 1,000-expression budget that an OR chain could exceed.
+- **In-process MVCC mock harness** (`scripts/test-c1-complete.cjs` as it stood at `0c6481b`) — superseded by the real-Firestore-emulator version that now requires `FIRESTORE_EMULATOR_HOST`. The earlier mock-only approach is what the earlier review correctly flagged as not proving transaction semantics.
+- **Earlier "C1 scope (first iteration)" and "C1 second iteration (R1–R8)" sections below** — the problem statements and findings they address remain valid, but the implementations they describe have been replaced by the merged Codex version. Treat these sections as a design journal, not a current spec.
+
 ### Codex durable release/handoff notifications — 2026-10-11
 
 **Implementation complete; Codex releases these files for Claude to review/resume.** Start `f928b03`, same isolated local `codex/c1-completion-fixes` branch. No push, merge, deployment or production migration. The updated combined Git bundle includes previous intervals and is the transfer route; the remote Codex branch does not exist.
