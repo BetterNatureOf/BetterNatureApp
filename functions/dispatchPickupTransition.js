@@ -2,6 +2,7 @@
 // Retriable trigger persists frozen A2 work before attempting either channel.
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const { _idempotencyKeyForPickup: keyFor } = require('./queueNotification');
 const stampKey = (t) => t && Number.isInteger(t.seconds) && Number.isInteger(t.nanoseconds)
   ? `${t.seconds}:${t.nanoseconds}` : null;
@@ -37,7 +38,7 @@ async function dispatch(change, context, database = admin.firestore(), deliver) 
     const owner = restaurant.exists && restaurant.data().user_id;
     if (typeof owner !== 'string' || !owner || owner.includes('/')) throw new Error(`Missing partner owner for ${pickupId}`);
     const reason = String(transition === 'release' ? after.cancel_reason || '' : after.handoff_reason || '').slice(0, 500);
-    const stamp = admin.firestore.FieldValue.serverTimestamp();
+    const stamp = FieldValue.serverTimestamp();
     const title = transition === 'release' ? 'Pickup released' : 'Volunteer handoff in progress';
     const body = transition === 'release'
       ? 'A volunteer released your pickup. Open the pickup to see its current availability.'

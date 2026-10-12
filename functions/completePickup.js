@@ -1,6 +1,7 @@
 // All completion artifacts, accounting, and notification work commit together.
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const policy = require('./lib/donationPolicy');
 const { pickupEligible: eligible } = require('./lib/pickupEligibility');
 const EXEC_ROLES = new Set(['executive', 'admin', 'super_admin']);
@@ -72,7 +73,7 @@ async function complete(data, context) {
     if (fridgeId && !fridgeSnap.exists) throw error('not-found', 'Destination fridge not found.', 'fridge_missing');
     const fridge = fridgeSnap?.exists ? fridgeSnap.data() : null;
     const nowMs = Date.now(), iso = new Date(nowMs).toISOString();
-    const stamp = admin.firestore.FieldValue.serverTimestamp();
+    const stamp = FieldValue.serverTimestamp();
     const anchor = toMs(pk.enroute_at) || toMs(pk.claimed_at);
     if (!spoiled && claimantUid && (!Number.isFinite(anchor) || anchor > nowMs)) {
       throw error('failed-precondition', 'Pickup start time needs correction.', 'invalid_start_time');
@@ -109,7 +110,7 @@ async function complete(data, context) {
     if (claimantUid) {
       tx.create(actRef, { user_id: claimantUid, date: iso.split('T')[0], project: 'iris', meals, lbs: weight,
         hours, events, points, raised: 0, source_type: spoiled ? 'pickup_spoiled' : 'pickup_complete', source_id: id, created_at: stamp });
-      const inc = admin.firestore.FieldValue.increment;
+      const inc = FieldValue.increment;
       tx.update(claimantSnap.ref, { meals_rescued: inc(meals), lbs_rescued: inc(weight), hours_logged: inc(hours),
         events_attended: inc(events), points: inc(points), leaderboard_score: inc(points), pickups_completed: inc(spoiled ? 0 : 1) });
     }

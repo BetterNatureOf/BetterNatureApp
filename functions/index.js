@@ -15,6 +15,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp();
+const { FieldValue } = require('firebase-admin/firestore');
 
 // A2 — mirror /users → /public_profiles with a strict allowlist.
 // Only writer to the public collection. See syncPublicProfile.js
@@ -81,7 +82,7 @@ exports.sendPushOnNotification = functions.firestore
       });
       if (stale.length) {
         await admin.firestore().doc(`users/${n.user_id}`).update({
-          push_tokens: admin.firestore.FieldValue.arrayRemove(...stale),
+          push_tokens: FieldValue.arrayRemove(...stale),
         });
       }
     } catch (e) {

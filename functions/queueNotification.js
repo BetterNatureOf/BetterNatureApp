@@ -29,6 +29,7 @@
 
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 
 const EXEC_ROLES = new Set(['executive', 'admin', 'super_admin']);
 const PRES_ROLES = new Set(['chapter_president', 'chapter_pres']);
@@ -104,7 +105,7 @@ async function fanOutOne(db, row, inAppKind, title, body, url, base) {
     await inboxRef.create({
       user_id: row.user_id, kind: inAppKind, title, body,
       url: url || null, read: false,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: FieldValue.serverTimestamp(),
     });
     inappCreated = true;
   } catch (e) {
@@ -113,7 +114,7 @@ async function fanOutOne(db, row, inAppKind, title, body, url, base) {
   try {
     await outRef.create({
       ...row, status: 'queued', attempts: 0,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: FieldValue.serverTimestamp(),
     });
     outboxCreated = true;
   } catch (e) {
@@ -395,7 +396,7 @@ async function reserveLeaseAndWork(db, dedupKey, livePayload) {
     tx.set(dedupRef, {
       key: dedupKey,
       status: 'in_progress',
-      started_at: admin.firestore.FieldValue.serverTimestamp(),
+      started_at: FieldValue.serverTimestamp(),
     }, { merge: true });
     if (!wSnap.exists) {
       tx.create(workRef, {
@@ -403,15 +404,15 @@ async function reserveLeaseAndWork(db, dedupKey, livePayload) {
         status: 'pending',
         attempts: 0,
         ...livePayload,
-        created_at: admin.firestore.FieldValue.serverTimestamp(),
-        last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
+        created_at: FieldValue.serverTimestamp(),
+        last_attempt_at: FieldValue.serverTimestamp(),
       });
       return { kind: 'fresh', dedupRef, workRef, frozen: null };
     }
     // Work existed; this caller is resuming it.
     tx.set(workRef, {
-      attempts: admin.firestore.FieldValue.increment(1),
-      last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
+      attempts: FieldValue.increment(1),
+      last_attempt_at: FieldValue.serverTimestamp(),
     }, { merge: true });
     return { kind: 'resumable', dedupRef, workRef, frozen: wSnap.data() };
   });
@@ -421,13 +422,13 @@ async function markBothCompleted(dedupRef, workRef, counts) {
   const batch = admin.firestore().batch();
   if (dedupRef) batch.set(dedupRef, {
     status: 'completed',
-    completed_at: admin.firestore.FieldValue.serverTimestamp(),
+    completed_at: FieldValue.serverTimestamp(),
     inapp: counts?.inapp || 0,
     queued: counts?.queued || 0,
   }, { merge: true });
   if (workRef) batch.set(workRef, {
     status: 'completed',
-    completed_at: admin.firestore.FieldValue.serverTimestamp(),
+    completed_at: FieldValue.serverTimestamp(),
     inapp: counts?.inapp || 0,
     queued: counts?.queued || 0,
   }, { merge: true });

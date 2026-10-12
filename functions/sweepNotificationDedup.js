@@ -16,6 +16,7 @@
 
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const LEASE_WINDOW_MS = 60 * 1000;
 const BATCH_LIMIT = 20;
@@ -44,14 +45,14 @@ async function tryClaimAndResume(db, workSnap, resumeFn) {
     if ((d.attempts || 0) >= MAX_WORK_ATTEMPTS) {
       tx.set(workRef, {
         status: 'failed',
-        failed_at: admin.firestore.FieldValue.serverTimestamp(),
+        failed_at: FieldValue.serverTimestamp(),
         reason: 'max_attempts_exceeded',
       }, { merge: true });
       return false;
     }
     tx.set(workRef, {
-      last_attempt_at: admin.firestore.FieldValue.serverTimestamp(),
-      attempts: admin.firestore.FieldValue.increment(1),
+      last_attempt_at: FieldValue.serverTimestamp(),
+      attempts: FieldValue.increment(1),
     }, { merge: true });
     return true;
   });
@@ -70,14 +71,14 @@ async function tryClaimAndResume(db, workSnap, resumeFn) {
     // Mark both work + dedup receipt completed.
     await workRef.set({
       status: 'completed',
-      completed_at: admin.firestore.FieldValue.serverTimestamp(),
+      completed_at: FieldValue.serverTimestamp(),
       inapp: out.inapp || 0,
       queued: out.queued || 0,
     }, { merge: true });
     const dedupRef = db.collection('notification_dedup').doc(safeKeyFragment(work.key));
     await dedupRef.set({
       status: 'completed',
-      completed_at: admin.firestore.FieldValue.serverTimestamp(),
+      completed_at: FieldValue.serverTimestamp(),
       inapp: out.inapp || 0,
       queued: out.queued || 0,
       recovered_by: 'sweep',
@@ -94,7 +95,7 @@ exports.sweepNotificationDedup = functions
   .onRun(async () => {
     const db = admin.firestore();
     const { _resumeFromWork } = require('./queueNotification');
-    const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - LEASE_WINDOW_MS);
+    const cutoff = Timestamp.fromMillis(Date.now() - LEASE_WINDOW_MS);
     const snap = await db.collection('notification_work')
       .where('status', '==', 'pending')
       .where('last_attempt_at', '<', cutoff)

@@ -1,6 +1,7 @@
 // A release is committed by the client; its accounting is retriable server work.
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const { createHash } = require('node:crypto');
 const stampKey = (t) => t && Number.isInteger(t.seconds) && Number.isInteger(t.nanoseconds)
   ? `${t.seconds}:${t.nanoseconds}` : null;
@@ -36,12 +37,12 @@ async function record(change, context, database = admin.firestore()) {
     const operation = { pickup_id: pickupId, actor_uid: uid, released_at: after.released_at,
       points_delta: points, leaderboard_delta: score, counter_applied: usable,
       status: usable ? 'applied' : 'profile_unavailable',
-      processed_at: admin.firestore.FieldValue.serverTimestamp() };
+      processed_at: FieldValue.serverTimestamp() };
     tx.create(opRef, operation);
     tx.create(activityRef, { user_id: uid, date: after.released_at.toDate().toISOString().slice(0, 10),
       project: 'iris', meals: 0, hours: 0, events: 0, raised: 0, points,
       leaderboard_delta: score, source_type: 'pickup_dropped', source_id: pickupId,
-      notes: after.cancel_reason || null, created_at: admin.firestore.FieldValue.serverTimestamp() });
+      notes: after.cancel_reason || null, created_at: FieldValue.serverTimestamp() });
     tx.create(database.doc(`audit_events/pickup_release_${key}`), { ...operation, type: 'pickup_released' });
     return { cached: false, key };
   });

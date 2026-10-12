@@ -4,6 +4,7 @@
 // paired policy.
 
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 
 const ALLOWLIST = [
   'uid',
@@ -53,7 +54,7 @@ function project(uid, data) {
     meals_rescued: num(data.meals_rescued),
     referral_code: data.referral_code || null,
     role_label: roleLabel(data.role),
-    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
   };
 }
 

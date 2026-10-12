@@ -10,6 +10,7 @@
 
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 
 const VALID_STATUSES = new Set(['pending', 'approved', 'rejected', 'none', 'unverified']);
 
@@ -38,7 +39,7 @@ exports.syncIdReviewStatus = functions
           verification_status: liveStatus,
           verification_reviewed_at:
             liveStatus === 'approved' || liveStatus === 'rejected'
-              ? admin.firestore.FieldValue.serverTimestamp()
+              ? FieldValue.serverTimestamp()
               : null,
         });
       });
