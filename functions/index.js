@@ -84,6 +84,11 @@ exports.reconcileSiteReservation = functions.runWith({ failurePolicy: true }).fi
 exports.listCustodyCandidates = functions.https.onCall((data, context) =>
   require('./custodyCandidates').listCustodyCandidates(admin.firestore(), data, context.auth?.uid));
 
+exports.volunteerImpact = functions.https.onCall((data, context) =>
+  require('./impactReports').volunteerImpact(admin.firestore(), data, context.auth?.uid));
+exports.chapterImpact = functions.https.onCall((data, context) =>
+  require('./impactReports').chapterImpact(admin.firestore(), data, context.auth?.uid));
+
 exports.suggestRescueVolunteers = functions.https.onCall((data, context) =>
   require('./rescueSuggestions').suggest(admin.firestore(), data, context.auth?.uid));
 

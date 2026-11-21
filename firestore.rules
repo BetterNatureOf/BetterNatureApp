@@ -510,7 +510,8 @@ service cloud.firestore {
     match /event_signups/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
-      allow update: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow update: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid)
+        || isPresOfChapter(get(/databases/$(database)/documents/events/$(resource.data.event_id)).data.get('chapter_id', null));
       allow delete: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
     }
 
@@ -1166,8 +1167,25 @@ service cloud.firestore {
           && row.keys().hasOnly(['user_id', 'date', 'project', 'meals', 'lbs', 'hours', 'events',
             'points', 'raised', 'source_type', 'source_id', 'created_at']);
       }
+      // Event check-in: one row per event per volunteer (doc id
+      // checkin_<event>_<user>), written by that event's chapter staff.
+      // Profile counters and org_stats are applied server-side, once.
+      function recordsCheckIn() {
+        let row = request.resource.data;
+        let event = get(/databases/$(database)/documents/events/$(row.source_id)).data;
+        return id == 'checkin_' + row.source_id + '_' + row.user_id
+          && row.source_type == 'event_checkin' && row.user_id is string
+          && isPresOfChapter(event.get('chapter_id', null))
+          && row.events == 1 && row.raised == 0
+          && row.hours is number && row.hours >= 0 && row.hours <= 12
+          && row.meals is number && row.meals >= 0 && row.meals <= 1000
+          && row.created_at == request.time
+          && row.keys().hasOnly(['user_id', 'date', 'project', 'meals', 'hours', 'events', 'raised',
+            'source_type', 'source_id', 'checked_in_by', 'created_at']);
+      }
       allow read: if isSignedIn();
-      allow write: if isExec() && !id.matches('pickup_.*');
+      allow create: if !exists(/databases/$(database)/documents/member_activity/$(id)) && recordsCheckIn();
+      allow write: if isExec() && !id.matches('pickup_.*') && !id.matches('checkin_.*');
     }
 
     match /pickup_releases/{id} {

@@ -33,9 +33,9 @@ function deltasFor({ lbs = 0, meals, hours = 0, events = 0, volunteers = 0 }) {
   return d;
 }
 
-async function applyOnce(db, key, deltas) {
+async function applyOnce(db, key, deltas, profile = null) {
   const entries = Object.entries(deltas).filter(([, v]) => v);
-  if (!entries.length) return false;
+  if (!entries.length && !profile) return false;
   const marker = db.collection('org_stats_applied').doc(key);
   const stats = db.collection('org_stats').doc('global');
   return db.runTransaction(async (tx) => {
@@ -43,6 +43,10 @@ async function applyOnce(db, key, deltas) {
     const update = { updated_at: FieldValue.serverTimestamp() };
     for (const [k, v] of entries) update[k] = FieldValue.increment(v);
     tx.set(stats, update, { merge: true });
+    if (profile) {
+      const inc = Object.fromEntries(Object.entries(profile.deltas).filter(([, v]) => v).map(([k, v]) => [k, FieldValue.increment(v)]));
+      if (Object.keys(inc).length) tx.set(db.collection('users').doc(profile.uid), inc, { merge: true });
+    }
     tx.create(marker, { deltas, applied_at: FieldValue.serverTimestamp() });
     return true;
   });
@@ -51,9 +55,12 @@ async function applyOnce(db, key, deltas) {
 // member_activity/{id} create with source_type 'event_checkin'
 function eventCheckedIn(db, activityId, row) {
   if (row?.source_type !== 'event_checkin') return null;
+  // The member's running counters move with the org counters, once.
+  const profile = typeof row.user_id === 'string' && !row.user_id.includes('/')
+    ? { uid: row.user_id, deltas: { events_attended: 1, hours_logged: num(row.hours), meals_rescued: num(row.meals) } } : null;
   return applyOnce(db, `activity_${activityId}`, deltasFor({
     meals: num(row.meals), hours: num(row.hours), events: 1,
-  }));
+  }), profile);
 }
 
 // users/{uid} create — only member volunteers move the counter

@@ -327,33 +327,26 @@ export async function checkInVolunteer({
     });
   }
 
-  // 2. Insert activity row
-  await addDoc(collection(db, 'member_activity'), {
-    user_id: userId,
-    date: now.split('T')[0],
-    project,
-    meals,
-    hours,
-    events: 1,
-    raised: 0,
-    source_type: 'event_checkin',
-    source_id: eventId,
-    created_at: serverTimestamp(),
+  // 2. One activity row per event per volunteer. A repeated check-in
+  // (double tap, two coordinators) is a no-op. Profile counters and
+  // org_stats are applied server-side from this row (impactCounters).
+  const activityRef = doc(db, 'member_activity', `checkin_${eventId}_${userId}`);
+  await runTransaction(db, async (tx) => {
+    if ((await tx.get(activityRef)).exists()) return;
+    tx.set(activityRef, {
+      user_id: userId,
+      date: now.split('T')[0],
+      project,
+      meals,
+      hours,
+      events: 1,
+      raised: 0,
+      source_type: 'event_checkin',
+      source_id: eventId,
+      checked_in_by: checkedInBy || null,
+      created_at: serverTimestamp(),
+    });
   });
-
-  // 3. Bump user running totals
-  try {
-    const userRef = doc(db, 'users', userId);
-    const profile = await getDoc(userRef);
-    if (profile.exists()) {
-      const p = profile.data();
-      await updateDoc(userRef, {
-        events_attended: (p.events_attended || 0) + 1,
-        hours_logged: (p.hours_logged || 0) + hours,
-        meals_rescued: (p.meals_rescued || 0) + meals,
-      });
-    }
-  } catch (e) { console.warn('user stats bump failed', e); }
 
   // 3b. Org-wide live counters are bumped server-side by the
   // countEventCheckin Cloud Function from the activity row above.
@@ -2249,6 +2242,15 @@ export async function saveVehicle(userId, { type, packageCapacity, weightCapacit
 // Coordinator-only ranked list of nearby volunteers for a rescue.
 export async function suggestRescueVolunteers(pickupId) {
   return (await httpsCallable(getFunctions(firebaseApp), 'suggestRescueVolunteers')({ pickupId })).data;
+}
+
+// Verified impact from the activity ledger, with legacy profile
+// differences explained (functions/impactReports.js).
+export async function fetchVolunteerImpact(memberId) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'volunteerImpact')({ memberId })).data;
+}
+export async function fetchChapterImpact(chapterId) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'chapterImpact')({ chapterId })).data;
 }
 
 export async function manageVolunteerHistory(memberId, entry, change) {

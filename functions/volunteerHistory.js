@@ -139,4 +139,4 @@ async function volunteerHistory(db, input, actorId) {
   });
 }
 
-module.exports = { volunteerHistory };
+module.exports = { volunteerHistory, accessFor };

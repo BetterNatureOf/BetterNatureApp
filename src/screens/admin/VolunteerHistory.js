@@ -4,6 +4,7 @@ import { Colors, Type } from '../../config/theme';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { manageVolunteerHistory } from '../../services/database';
+import VerifiedImpact from '../../components/impact/VerifiedImpact';
 
 function duration(minutes) {
   if (minutes === null) return 'Time unrecorded';
@@ -97,6 +98,7 @@ export default function VolunteerHistory({ memberId }) {
   return (
     <View style={{ gap: 10, paddingVertical: 12 }}>
       <Text accessibilityRole="header" style={[Type.body, { color: Colors.dark, fontWeight: '700' }]}>Volunteer activity</Text>
+      <VerifiedImpact memberId={memberId} />
       {!!error && <Text accessibilityRole="alert" style={Type.body}>{error}</Text>}
       {!history && (error ? <Button title="Retry loading activity" variant="secondary" onPress={load} />
         : <Text accessibilityRole="status" style={Type.body}>Loading activity…</Text>)}
