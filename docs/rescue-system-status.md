@@ -22,7 +22,7 @@ deployment section says so.
 | Donor posts surplus | ScheduleDonation → `createPickup` | rules: create as `pending_destination` | verified (delivery suite) |
 | Coordinator confirms receiving site | PickupDetail → `confirmPickupDestination` | rules `isDestinationConfirm` (chapter staff or exec) | verified |
 | Receiving-site account assigned | PickupDetail → `assignRescueReceiver` callable | functions/pickupReceiving.js | code only |
-| Nearby alert | `alertVolunteersOnPickupConfirmation` trigger | functions/pickupAlerts.js | one round, no tests |
+| Nearby alert rounds + escalation | `dispatchRescueOffer` trigger, `advanceRescueDispatch` scheduler | functions/rescueDispatch.js | verified (12 emulator cases + browser) |
 | Volunteer discovery | PickupsScreen (Map/List, H3 cells) | `usePickups`, rescueCells | code only |
 | Claim | PickupDetail → `claimPickup` | rules `isAtomicClaim` + `claimWindowOk` | verified (race, chapter, window) |
 | Release | PickupDetail → `cancelClaim` | rules + `recordPickupRelease` ledger | verified |
@@ -34,13 +34,14 @@ deployment section says so.
 
 ## Gap list (priority order)
 
-1. **Dispatch recovery.** Nearby alerts fire once, when a destination is first
-   confirmed. Nothing re-alerts after a release, handoff or abandonment, widens
-   the search when nobody accepts, or escalates to a coordinator before the
-   deadline. The dispatch record stores only a count, so later rounds can't
-   avoid duplicates. `sweepAbandonedPickups` and `releaseAbandonedPickup` have
-   no caller. The C1 chapter-wide `new_pickup_broadcast` is no longer called
-   (blasting every volunteer conflicts with bounded rounds).
+1. **Dispatch recovery — done (bd34d580, slice 1 fixes after it).** Bounded
+   rounds that widen each time, a new generation after a release or abandonment
+   that skips the volunteer who let go, coordinator escalation before the
+   deadline, a reminder for claimants who haven't started, and a coordinator
+   status card. Web deep links (`/#/pickups/<id>`, the alert URL) now open the
+   rescue, including from a cold start and after signing in. Still open:
+   `sweepAbandonedPickups` and `releaseAbandonedPickup` have no UI caller, and
+   the C1 chapter-wide `new_pickup_broadcast` is intentionally unused.
 2. **Practical matching.** `functions/rescueMatching.js` is a disconnected CLI.
    No volunteer vehicle/capacity/equipment data, no pickup food category or
    package count, and no receiving-site categories, hours or capacity exist in
@@ -66,6 +67,19 @@ Known A2 trade-offs to keep in mind: signed-out visitors can no longer queue
 outbox email (StartChapter receipt email fails quietly). Cross-user
 notifications must go through `queueBusinessNotification` or server code.
 
+## Browser flows run (emulators, 375 px wide)
+
+- Coordinator confirms a receiving site, which opens the offer. Round 1 alerts
+  the nearby volunteer and the status card updates live.
+- Volunteer cold-opens the alert URL, sees the confirmed site, accepts, and the
+  active-run view loads.
+- Volunteer releases: generation `release_*` starts with that volunteer
+  excluded, and the release ledger records the drop.
+- Signed-out cold open of an escalated rescue, then sign in, lands on the
+  rescue with the "Needs your decision" card.
+- President dashboard (LiveOps) loads: names come from public profiles and
+  timestamps render.
+
 ## Local verification
 
 ```bash
@@ -73,4 +87,10 @@ npm run test:emulators   # every Firestore/Storage suite + registered callable s
 ```
 
 Requires Java (Homebrew `openjdk@21`) and `firebase-tools`. Uses demo projects
-only (`demo-a2`, `demo-c1`, `demo-bn-*`); never production.
+only (`demo-a2`, `demo-c1`, `demo-bn-*`); never production. Tests use the ports
+in `firebase.test-ports.json`, so they can run while the dev emulators are up.
+
+Manual browser testing: `npm run emulators`, then `npm run seed:emulators`,
+then `npm run web:emulators` (or the "Expo Web (emulators)" launch config).
+Demo accounts are `*@demo.betternature.test`; the password is in
+`scripts/seed-emulator.cjs`.

@@ -44,6 +44,11 @@ export default function PickupCard({
       state: pickup.fridge_state,
     });
 
+  const destination = pickup.destination_confirmation || null;
+  const dropName = destination?.site_name || pickup.fridge_name || '';
+  const dropAddr = destination?.address || fridgeAddr;
+  const awaitingSite = !destination && ['pending_destination', 'available'].includes(pickup.status);
+
   return (
     <View style={styles.card}>
       {/* Status pill */}
@@ -72,18 +77,22 @@ export default function PickupCard({
         connector
       />
 
-      {/* Drop-off row */}
+      {/* Drop-off row: the confirmed receiving site when there is one.
+          Offers waiting for a coordinator have no destination yet; only
+          legacy runs without a confirmed site let the volunteer choose. */}
       <StopRow
         index="2"
         eyebrow="DROP OFF"
-        primary={pickup.fridge_name || 'Volunteer will choose'}
-        secondary={fridgeAddr || (pickup.fridge_name ? 'Address not listed' : 'Choose a community fridge before you head out')}
-        onOpenMaps={showMapLinks && fridgeAddr ? () => openInMaps({
-          address: fridgeAddr,
-          lat: pickup.fridge_lat, lng: pickup.fridge_lng,
-          label: pickup.fridge_name,
+        primary={dropName || (awaitingSite ? 'Receiving site not confirmed yet' : 'Volunteer will choose')}
+        secondary={dropAddr || (dropName ? 'Address not listed'
+          : awaitingSite ? 'A coordinator confirms where this food goes before volunteers can accept.'
+          : 'Choose a community fridge before you head out')}
+        onOpenMaps={showMapLinks && dropAddr ? () => openInMaps({
+          address: dropAddr,
+          lat: destination ? null : pickup.fridge_lat, lng: destination ? null : pickup.fridge_lng,
+          label: dropName,
         }) : null}
-        muted={!pickup.fridge_name}
+        muted={!dropName}
       />
 
       {/* Optional photo + notes */}

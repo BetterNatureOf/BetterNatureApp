@@ -45,6 +45,12 @@ const rescueTime = (ms) => new Date(ms).toLocaleString([], {
 
 export default function PickupDetail({ route, navigation }) {
   const pickupId = route?.params?.pickupId;
+  // A cold deep link (e.g. a rescue alert) has nothing underneath it.
+  const goBackOrRescue = () => (navigation.canGoBack()
+    ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Rescue' }));
+  // `pickup` is an in-memory preview from the list; a reloaded URL only
+  // carries the id, so ignore anything that isn't a real object.
+  const previewPickup = route?.params?.pickup && typeof route.params.pickup === 'object' ? route.params.pickup : null;
   const [receivingSite, setReceivingSite] = useState('');
   const [receivingAddress, setReceivingAddress] = useState('');
   const [receivingContact, setReceivingContact] = useState('');
@@ -56,7 +62,7 @@ export default function PickupDetail({ route, navigation }) {
   const [volunteerSearch, setVolunteerSearch] = useState('');
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const [pickup, setPickup] = useState(route?.params?.pickup || null);
+  const [pickup, setPickup] = useState(previewPickup);
   const offerDeadline = pickup?.status === 'available' ? rescueOfferDeadline(pickup) : null;
   const [, setDeadlineTick] = useState(0);
   useEffect(() => {
@@ -131,7 +137,7 @@ export default function PickupDetail({ route, navigation }) {
         <Text style={{ color: Colors.dark, textAlign: 'center', padding: 24 }}>
           {loadError}
         </Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 12 }}>
+        <TouchableOpacity onPress={goBackOrRescue} style={{ padding: 12 }}>
           <Text style={{ color: Colors.green, fontWeight: '700' }}>‹ Back</Text>
         </TouchableOpacity>
       </View>
@@ -186,9 +192,11 @@ export default function PickupDetail({ route, navigation }) {
     // can see every detail of the pickup before being asked to
     // verify; only the actual claim requires an approved ID.
     if (!requireVerifiedId(user, navigation)) return;
+    // The coordinator-confirmed cutoff wins over the donor's original window.
+    const claimBy = pickupDeadline(pickup.destination_confirmation?.pickup_by ?? pickup.pickup_window_until);
     const ok = await confirm(
       'Claim this pickup?',
-      `You're committing to picking this up${pickup.pickup_window_until ? ' by ' + new Date(pickup.pickup_window_until).toLocaleString() : ''}. Releasing a claimed pickup costs leaderboard points — only claim if you can make the run.`
+      `You're committing to picking this up${claimBy ? ' by ' + new Date(claimBy).toLocaleString() : ''}. Releasing a claimed pickup costs leaderboard points — only claim if you can make the run.`
     );
     if (!ok) return;
     setBusy(true);
@@ -236,7 +244,7 @@ export default function PickupDetail({ route, navigation }) {
       const released = await cancelClaim(pickup.id, reason.trim() || undefined);
       notifyThen('Released', released?.status === 'cancelled'
         ? 'The pickup window closed, so the offer has ended.'
-        : 'The pickup is open again.', () => navigation.goBack());
+        : 'The pickup is open again.', goBackOrRescue);
     } catch (e) {
       notify('Could not release', e?.message || 'Try again.');
     } finally { setBusy(false); }
@@ -584,7 +592,7 @@ export default function PickupDetail({ route, navigation }) {
   return (
     <Screen contentStyle={styles.content}>
       <ResponsiveContainer maxWidth={720}>
-        <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
+        <AnimatedPressable onPress={goBackOrRescue} style={styles.back} scaleTo={0.97}>
           <Icon name="back" size={18} color={Colors.green} />
           <Text style={styles.backText}>Back</Text>
         </AnimatedPressable>
@@ -969,7 +977,7 @@ export default function PickupDetail({ route, navigation }) {
               <Text style={styles.doneSub}>Tax receipt is being generated for the restaurant…</Text>
             )}
             <TouchableOpacity
-              onPress={() => navigation.goBack()}
+              onPress={goBackOrRescue}
               style={styles.doneBackBtn}
               activeOpacity={0.85}
             >

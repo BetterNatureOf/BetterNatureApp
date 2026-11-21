@@ -5,6 +5,7 @@
 // returns 404 or redirects to / *before* the app loads. Hash fragments
 // (`/#/settings`) never hit the server, so reload is bulletproof.
 import { Linking, Platform } from 'react-native';
+import { getStateFromPath as defaultGetStateFromPath, getPathFromState as defaultGetPathFromState } from '@react-navigation/native';
 
 const screens = {
   // Auth flow
@@ -90,6 +91,31 @@ const screens = {
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
 const nativePrefix = 'betternature://';
 
+// React Navigation 7's web linking ignores getInitialURL/subscribe and
+// reads window.location.pathname — always "/" with hash routing — on
+// load and on popstate. Resolve that "/" from the hash instead, so cold
+// links like /#/pickups/<id> (the URL every rescue alert carries) open
+// the right screen.
+function currentHashPath() {
+  if (!isWeb) return null;
+  const hash = window.location.hash || '';
+  const path = hash.startsWith('#') ? hash.slice(1) : hash;
+  return path && path !== '/' ? path : null;
+}
+const AUTH_PATHS = /^\/?(welcome|login|signup|start-chapter)(\/|\?|$)/i;
+
+// The link the page was opened with, kept until the signed-in app is
+// on screen: sign-in (or a slow session restore) renders the auth
+// navigator first, which would otherwise overwrite it with #/Welcome.
+let bootDeepLink = isWeb && currentHashPath() && !AUTH_PATHS.test(currentHashPath()) ? currentHashPath() : null;
+
+export function restoreBootDeepLink() {
+  if (!isWeb || !bootDeepLink) return;
+  const target = bootDeepLink;
+  bootDeepLink = null;
+  if (currentHashPath() !== target) window.history.replaceState(null, '', `/#${target}`);
+}
+
 function pickupNotificationUrl(response) {
   const data = response?.notification.request.content.data;
   if (data?.type !== 'pickup_available' || typeof data.pickupId !== 'string' ||
@@ -102,6 +128,19 @@ function pickupNotificationUrl(response) {
 const linking = {
   prefixes: isWeb ? [window.location.origin] : [nativePrefix],
   config: { screens },
+  // In-memory preview objects (e.g. PickupDetail's `pickup`) must not be
+  // serialized into the URL as "[object Object]".
+  getPathFromState(state, options) {
+    const path = defaultGetPathFromState(state, options);
+    const [base, query] = path.split('?');
+    if (!query) return path;
+    const kept = query.split('&').filter((pair) => !/^pickup=/.test(pair));
+    return kept.length ? `${base}?${kept.join('&')}` : base;
+  },
+  getStateFromPath(path, options) {
+    const resolved = (!path || path === '/') && currentHashPath() ? currentHashPath() : path;
+    return defaultGetStateFromPath(resolved, options);
+  },
   ...(isWeb
     ? {
         getInitialURL() {
@@ -123,8 +162,6 @@ const linking = {
         // When RN Navigation's state changes, mirror the resulting path into
         // the hash so reload re-reads it. We override history via the default
         // mechanism but force it through window.location.hash.
-        getStateFromPath: undefined, // use default
-        getPathFromState: undefined, // use default
       }
     : {
         async getInitialURL() {

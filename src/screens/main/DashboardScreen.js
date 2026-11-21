@@ -218,7 +218,8 @@ export default function DashboardScreen({ navigation }) {
       )}
 
       {/* First-time checklist — below the fold */}
-      {isNewMember && (
+      {/* Only while something is actually left to do. */}
+      {isNewMember && !(user?.verification_status === 'approved' && user?.profile_complete) && (
         <NewMemberChecklist
           verified={user?.verification_status === 'approved'}
           profileComplete={!!user?.profile_complete}
