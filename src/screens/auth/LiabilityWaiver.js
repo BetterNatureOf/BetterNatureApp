@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: 18,
-    borderWidth: 1, borderColor: Colors.glassBorder,
+    borderWidth: 1, borderColor: Colors.grayLight,
     ...Shadows.soft,
     marginBottom: 18,
   },
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     padding: 14,
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
-    borderWidth: 1.5, borderColor: Colors.glassBorder,
+    borderWidth: 1.5, borderColor: Colors.grayLight,
   },
   agreeRowOn: { borderColor: Colors.green, backgroundColor: Colors.greenLight },
   checkbox: {

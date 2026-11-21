@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import AuthScaffold from '../../components/ui/AuthScaffold';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { createRestaurant, updateRestaurant, fetchChapters } from '../../services/database';
@@ -168,17 +169,10 @@ export default function RestaurantSignup({ navigation }) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <BrushText variant="screenTitle" style={styles.title}>
-          Food Donor Partner Signup
-        </BrushText>
-        <Text style={styles.subtitle}>
-          Restaurants, churches, community gardens, schools, food banks — any organization with edible surplus. Join BetterNature's rescue network.
-        </Text>
+    <AuthScaffold title="Become a food partner"
+      subtitle="Restaurants, stores, churches, community gardens, schools — any organization with good surplus food. We review every application."
+      kicker="For food partners" headline={'Your surplus,\nsomeone’s dinner.'}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Welcome'))}>
 
         {/* Partner type — drives the labels every screen shows for
             this account after signup ("Church Dashboard" vs
@@ -289,12 +283,18 @@ export default function RestaurantSignup({ navigation }) {
           loading={loading}
           style={styles.btn}
         />
-      </Screen>
-    </KeyboardAvoidingView>
+      <Text style={styles.switchLink}>
+        Already a partner?{' '}
+        <Text style={styles.switchBold} accessibilityRole="link"
+          onPress={() => navigation.navigate('Login', { as: 'partner' })}>Sign in</Text>
+      </Text>
+    </AuthScaffold>
   );
 }
 
 const styles = StyleSheet.create({
+  switchLink: { textAlign: 'center', marginTop: 20, fontSize: 15, color: Colors.gray },
+  switchBold: { color: Colors.pink, fontWeight: '700' },
   flex: { flex: 1 },
   container: {
     flex: 1,
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9, paddingHorizontal: 14,
     backgroundColor: Colors.white,
     borderRadius: Radius.pill,
-    borderWidth: 1, borderColor: Colors.glassBorder,
+    borderWidth: 1, borderColor: Colors.grayLight,
     maxWidth: 220,
   },
   chapterChipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8, paddingHorizontal: 12,
     backgroundColor: Colors.white,
     borderRadius: Radius.pill,
-    borderWidth: 1, borderColor: Colors.glassBorder,
+    borderWidth: 1, borderColor: Colors.grayLight,
   },
   typeChipActive: { backgroundColor: Colors.green, borderColor: Colors.green },
   typeChipText: { fontSize: 12, fontWeight: '600', color: Colors.dark },

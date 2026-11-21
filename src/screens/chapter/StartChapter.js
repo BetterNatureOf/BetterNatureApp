@@ -4,6 +4,8 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import AuthScaffold from '../../components/ui/AuthScaffold';
+import { getSignupDraft } from '../../services/signupDraft';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Screen from '../../components/ui/Screen';
@@ -27,8 +29,10 @@ export default function StartChapter({ navigation, route }) {
   //      applicant_uid/email/name for the approve-flow to notify + auto-
   //      elevate them to president.
   const authUser = useAuthStore((s) => s.user);
+  const draft = getSignupDraft();
   const userData = (route?.params && Object.keys(route.params).length)
     ? route.params
+    : draft ? draft
     : (authUser ? {
         uid: authUser.id,
         full_name: authUser.name || '',
@@ -106,14 +110,10 @@ export default function StartChapter({ navigation, route }) {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <BrushText variant="screenTitle" style={styles.title}>
-          Start a Chapter
-        </BrushText>
-        <Text style={styles.subtitle}>
-          Bring BetterNature to your community. Tell us where — we'll review and reach out within 48 hours.
-        </Text>
+    <AuthScaffold title="Start a chapter"
+      subtitle="Bring BetterNature to your community. Tell us where and we'll review your application."
+      step={2} steps={['About you', 'Your chapter', 'Verify your ID']} kicker="Start something local"
+      headline={'Bring BetterNature\nhome.'} onBack={() => navigation.goBack()}>
 
         {submitted ? (
           <View style={styles.successCard}>
@@ -161,8 +161,7 @@ export default function StartChapter({ navigation, route }) {
         {submitted ? null : (
           <Button title="Submit Chapter Application" onPress={handleCreate} loading={loading} style={styles.btn} />
         )}
-      </Screen>
-    </KeyboardAvoidingView>
+    </AuthScaffold>
   );
 }
 

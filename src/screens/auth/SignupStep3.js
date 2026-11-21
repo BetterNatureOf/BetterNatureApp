@@ -4,11 +4,13 @@
 // services/authFirebase.js — previously SignupStep3 passed a single
 // URI and silently swallowed the destructuring error, which is why
 // every recent signup had no ID on file.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import AuthScaffold from '../../components/ui/AuthScaffold';
+import { getSignupDraft, clearSignupDraft } from '../../services/signupDraft';
 import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { signUp, uploadIdDocument } from '../../services/auth';
@@ -16,8 +18,12 @@ import useAuthStore from '../../store/authStore';
 import Screen from '../../components/ui/Screen';
 import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 
-export default function SignupStep3({ route }) {
-  const userData = route.params;
+export default function SignupStep3({ navigation }) {
+  const userData = getSignupDraft() || {};
+  // A reload clears the in-memory draft: start again from step 1.
+  useEffect(() => {
+    if (!getSignupDraft()) navigation.replace('SignupStep1');
+  }, [navigation]);
   const { contentStyle } = useResponsiveLayout();
   const [frontUri, setFrontUri] = useState(null);
   const [backUri, setBackUri]   = useState(null);
@@ -77,6 +83,8 @@ export default function SignupStep3({ route }) {
         chapter_id: userData.chapter_id,
         chapter_name: userData.chapter_name,
       });
+      // The account exists now; drop the in-memory copy of the password.
+      clearSignupDraft();
 
       // Upload is best-effort — never block account creation. If
       // either side is missing we skip (the user can re-upload from
@@ -134,14 +142,10 @@ export default function SignupStep3({ route }) {
   const hasBothSides = !!(frontUri && backUri);
 
   return (
-    <Screen contentStyle={contentStyle}>
-     <ResponsiveContainer maxWidth={620}>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Verify Your Identity
-      </BrushText>
-      <Text style={styles.subtitle}>
-        Upload both sides of a school or government ID. Both are required to be cleared for pickups.
-      </Text>
+    <AuthScaffold title="Verify your identity"
+      subtitle="Upload both sides of a school or government ID. Both are required before you can take pickups."
+      step={3} steps={['About you', 'Your chapter', 'Verify your ID']} kicker="For volunteers" headline={'Last step,\nthen you’re in.'}
+      onBack={() => navigation.goBack()}>
 
       <SideUpload label="Front of ID"  uri={frontUri} setter={setFrontUri} sideKey="front" />
       <SideUpload label="Back of ID"   uri={backUri}  setter={setBackUri}  sideKey="back"  />
@@ -160,8 +164,7 @@ export default function SignupStep3({ route }) {
       <Text style={styles.note}>
         Your ID is stored securely and only visible to BetterNature executives for verification.
       </Text>
-     </ResponsiveContainer>
-    </Screen>
+    </AuthScaffold>
   );
 }
 
@@ -190,7 +193,7 @@ const styles = StyleSheet.create({
   buttonRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   smallBtn: {
     flex: 1, paddingVertical: 10, borderRadius: 10,
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.glassBorder,
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.grayLight,
     alignItems: 'center',
   },
   smallBtnText: { fontSize: 13, fontWeight: '700', color: Colors.green },

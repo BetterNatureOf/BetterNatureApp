@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: 18,
-    borderWidth: 1, borderColor: Colors.glassBorder,
+    borderWidth: 1, borderColor: Colors.grayLight,
     ...Shadows.card,
   },
   cardTitle: { fontSize: 13, fontWeight: '800', color: Colors.dark, letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 8 },

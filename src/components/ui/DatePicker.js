@@ -18,7 +18,7 @@ function toLocalIso(d, withTime) {
   return `${date}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function DatePicker({ value, onChange, mode = 'date', placeholder = 'Pick a date', minDate, style }) {
+export default function DatePicker({ value, onChange, mode = 'date', placeholder = 'Pick a date', minDate, style, accessibilityLabel, invalid }) {
   const [open, setOpen] = useState(false);
 
   // Web: hand the browser a real calendar widget.
@@ -33,9 +33,15 @@ export default function DatePicker({ value, onChange, mode = 'date', placeholder
           min,
           onChange: (e) => {
             const v = e.target.value;
-            onChange?.(v ? new Date(v) : null);
+            if (!v) { onChange?.(null); return; }
+            // "YYYY-MM-DD" parses as UTC midnight, which is the previous
+            // day in US time zones. Build the date in local time instead.
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+            onChange?.(m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(v));
           },
-          style: webInputStyle,
+          style: invalid ? { ...webInputStyle, borderColor: '#B42318' } : webInputStyle,
+          'aria-label': accessibilityLabel || placeholder,
+          'aria-invalid': invalid || undefined,
         })}
       </View>
     );
@@ -48,7 +54,8 @@ export default function DatePicker({ value, onChange, mode = 'date', placeholder
 
   return (
     <>
-      <TouchableOpacity style={[styles.field, style]} onPress={() => setOpen(true)} activeOpacity={0.8}>
+      <TouchableOpacity style={[styles.field, style]} onPress={() => setOpen(true)} activeOpacity={0.8}
+        accessibilityRole="button" accessibilityLabel={`${accessibilityLabel || placeholder}: ${display}`}>
         <Text style={[styles.fieldText, !value && styles.placeholder]}>{display}</Text>
         <Text style={styles.icon}>📅</Text>
       </TouchableOpacity>
@@ -99,16 +106,19 @@ function SimpleDateScroller({ value, minDate, onChange }) {
   );
 }
 
+// Matches the shared Input field (height, border, radius, 16px text) and
+// keeps the browser's focus outline for keyboard users.
 const webInputStyle = {
   width: '100%',
-  padding: '12px 14px',
-  borderRadius: 14,
-  border: `1.5px solid ${Colors.glassBorder}`,
+  boxSizing: 'border-box',
+  minHeight: 52,
+  padding: '12px 16px',
+  borderRadius: 12,
+  border: `1.5px solid ${Colors.grayLight}`,
   background: Colors.white,
-  fontSize: 15,
+  fontSize: 16,
   color: Colors.dark,
   fontFamily: 'inherit',
-  outline: 'none',
 };
 
 const styles = StyleSheet.create({
@@ -116,9 +126,9 @@ const styles = StyleSheet.create({
   field: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    borderWidth: 1.5, borderColor: Colors.glassBorder,
-    paddingVertical: 14, paddingHorizontal: 14,
+    borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.grayLight,
+    minHeight: 52, paddingHorizontal: 16,
   },
   fieldText: { ...Type.body, color: Colors.dark },
   placeholder: { color: Colors.gray },

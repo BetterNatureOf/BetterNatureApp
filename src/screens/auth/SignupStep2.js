@@ -2,14 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import AuthScaffold from '../../components/ui/AuthScaffold';
+import { getSignupDraft, updateSignupDraft } from '../../services/signupDraft';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import { fetchChapters } from '../../services/database';
 import Screen from '../../components/ui/Screen';
 import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 
-export default function SignupStep2({ navigation, route }) {
-  const userData = route.params;
+export default function SignupStep2({ navigation }) {
+  const userData = getSignupDraft() || {};
+  // A reload clears the in-memory draft: start again from step 1.
+  useEffect(() => {
+    if (!getSignupDraft()) navigation.replace('SignupStep1');
+  }, [navigation]);
   const { contentStyle } = useResponsiveLayout();
   const [chapters, setChapters] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -43,22 +49,14 @@ export default function SignupStep2({ navigation, route }) {
     // + on the Membership row — otherwise the WorkspaceChip has to
     // fetch the chapter separately just to render a label.
     const chosen = chapters.find((c) => c.id === selected);
-    navigation.navigate('SignupStep3', {
-      ...userData,
-      chapter_id: selected,
-      chapter_name: chosen?.name || '',
-    });
+    updateSignupDraft({ chapter_id: selected, chapter_name: chosen?.name || '' });
+    navigation.navigate('SignupStep3');
   }
 
   return (
-    <Screen contentStyle={contentStyle}>
-     <ResponsiveContainer maxWidth={560}>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Choose Your Chapter
-      </BrushText>
-      <Text style={styles.subtitle}>
-        Chapters are local groups that organize events in your area.
-      </Text>
+    <AuthScaffold title="Choose your chapter" subtitle="Chapters are local groups that organize rescues and events in your area."
+      step={2} steps={['About you', 'Your chapter', 'Verify your ID']} kicker="For volunteers" headline={'Find your\nlocal team.'}
+      onBack={() => navigation.goBack()}>
 
       {loading ? (
         <ActivityIndicator size="large" color={Colors.pink} style={styles.loader} />
@@ -104,15 +102,14 @@ export default function SignupStep2({ navigation, route }) {
       <Button title="Next" onPress={handleNext} style={styles.btn} />
 
       <TouchableOpacity
-        onPress={() => navigation.navigate('StartChapter', userData)}
+        onPress={() => navigation.navigate('StartChapter')}
         style={styles.startLink}
       >
         <Text style={styles.startText}>
           Don't see your area? <Text style={styles.startBold}>Start a chapter</Text>
         </Text>
       </TouchableOpacity>
-     </ResponsiveContainer>
-    </Screen>
+    </AuthScaffold>
   );
 }
 

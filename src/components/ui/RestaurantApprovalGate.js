@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream, alignItems: 'center', justifyContent: 'center', padding: 24 },
   card: {
     width: '100%', maxWidth: 480, backgroundColor: Colors.white, borderRadius: Radius.xl, padding: 26,
-    borderWidth: 1, borderColor: Colors.glassBorder, ...Shadows.card,
+    borderWidth: 1, borderColor: Colors.grayLight, ...Shadows.card,
   },
   title: { color: Colors.green, marginBottom: 6 },
   body: { ...Type.body, color: Colors.gray, lineHeight: 22 },

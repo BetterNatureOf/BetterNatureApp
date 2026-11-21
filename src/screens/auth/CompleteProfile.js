@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import AuthScaffold from '../../components/ui/AuthScaffold';
+import { signOut } from '../../services/auth';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import PlaceInput from '../../components/ui/PlaceInput';
 import Button from '../../components/ui/Button';
@@ -27,6 +29,7 @@ import Screen from '../../components/ui/Screen';
 export default function CompleteProfile() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const clearAuth = useAuthStore((s) => s.signOut);
 
   // Try to pre-split the Google displayName into first / last.
   const initialName = (user?.name || '').trim().split(/\s+/);
@@ -82,18 +85,9 @@ export default function CompleteProfile() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
-       <ResponsiveContainer maxWidth={560}>
-        <BrushText variant="screenTitle" style={styles.title}>
-          Welcome!
-        </BrushText>
-        <Text style={styles.subtitle}>
-          Just a few details to finish setting up your account.
-        </Text>
+    <AuthScaffold title="Welcome!" subtitle="Just a few details to finish setting up your account."
+      kicker="Almost there" headline={'Finish your\nprofile.'}
+      backLabel="Sign out" onBack={async () => { try { await signOut(); } catch {} clearAuth(); }}>
 
         <View style={styles.row}>
           <Input
@@ -192,9 +186,7 @@ export default function CompleteProfile() {
           loading={saving}
           style={styles.btn}
         />
-       </ResponsiveContainer>
-      </Screen>
-    </KeyboardAvoidingView>
+    </AuthScaffold>
   );
 }
 

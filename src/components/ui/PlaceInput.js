@@ -118,27 +118,29 @@ export default function PlaceInput({ value, onChange, placeholder = 'Start typin
   );
 }
 
+// Matches the shared Input field and keeps the browser focus outline.
 const webInputStyle = {
   width: '100%',
-  padding: '12px 14px',
-  borderRadius: 14,
-  border: `1.5px solid ${Colors.glassBorder}`,
+  boxSizing: 'border-box',
+  minHeight: 52,
+  padding: '12px 16px',
+  borderRadius: 12,
+  border: `1.5px solid ${Colors.grayLight}`,
   background: Colors.white,
-  fontSize: 15,
+  fontSize: 16,
   color: Colors.dark,
   fontFamily: 'inherit',
-  outline: 'none',
 };
 
 const styles = StyleSheet.create({
   input: {
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
-    borderColor: Colors.glassBorder,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontSize: 15,
+    borderColor: Colors.grayLight,
+    minHeight: 52,
+    paddingHorizontal: 16,
+    fontSize: 16,
     color: Colors.dark,
   },
   suggestBox: {
@@ -146,7 +148,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.glassBorder,
+    borderColor: Colors.grayLight,
     overflow: 'hidden',
   },
   suggestRow: { paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: Colors.grayLight },
