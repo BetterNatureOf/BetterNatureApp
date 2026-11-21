@@ -10,7 +10,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
-import { fetchPickupsAwaitingDestination, fetchActivePickups, fetchAllMembers, fetchRestaurants, fetchRecentlyCompletedPickups } from '../../services/database';
+import { fetchPickupsAwaitingDestination, fetchActivePickups, fetchRestaurants, fetchRecentlyCompletedPickups } from '../../services/database';
+import { fetchAllPublicProfiles } from '../../services/publicProfiles';
 
 // Start of the local day in ms. LiveOps resets at midnight — every
 // morning the leader sees a clean board, the prior day's runs move
@@ -31,7 +32,10 @@ function toMs(t) {
 
 function timeAgo(ts) {
   if (!ts) return '';
-  const ms = Date.now() - new Date(ts).getTime();
+  // Server stamps arrive as Firestore Timestamps; legacy rows as ISO strings.
+  const at = toMs(ts);
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const ms = Date.now() - at;
   const m = Math.floor(ms / 60000);
   if (m < 1) return 'just now';
   if (m < 60) return `${m}m ago`;
@@ -65,7 +69,8 @@ export default function LiveOps({ chapterId = null, navigation }) {
       const [pk, done, mem, rest, waiting] = await Promise.all([
         fetchActivePickups({ chapterId }),
         fetchRecentlyCompletedPickups({ chapterId, hours: 24 }),
-        fetchAllMembers(chapterId),
+        // Names come from the public mirror; presidents can't list private profiles.
+        fetchAllPublicProfiles({ chapterId }),
         fetchRestaurants(),
         fetchPickupsAwaitingDestination(chapterId),
       ]);
@@ -79,7 +84,7 @@ export default function LiveOps({ chapterId = null, navigation }) {
       setPickups(inflightToday.sort((a, b) => Number(!!b.safety_hold) - Number(!!a.safety_hold)));
       setRecent(deliveredToday);
       setPending(waiting);
-      setMembers(Object.fromEntries(mem.map((m) => [m.id, m])));
+      setMembers(Object.fromEntries(mem.map((m) => [m.uid || m.id, { ...m, name: m.display_name || m.name }])));
       setRestaurants(Object.fromEntries(rest.map((r) => [r.id, r])));
     } catch (e) {
       setLoadFailed(true);
@@ -162,7 +167,7 @@ export default function LiveOps({ chapterId = null, navigation }) {
                 </Text>
                 <Text style={styles.cardSub} numberOfLines={1}>
                   {vol?.name || vol?.full_name || 'Volunteer'}
-                  {vol?.phone ? ` · ${vol.phone}` : ''}
+                  {p.claimant_phone ? ` · ${p.claimant_phone}` : ''}
                 </Text>
                 <Text style={styles.cardMeta} numberOfLines={1}>
                   {p.safety_hold ? ({

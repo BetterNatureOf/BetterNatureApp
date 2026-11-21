@@ -995,6 +995,17 @@ service cloud.firestore {
       allow update: if pickupUpdateAllowed();
 
       allow delete: if isAdmin();
+
+      // Dispatch state (rounds, escalation) is written only by the
+      // rescueDispatch functions. Chapter staff can read it to see
+      // where a rescue stands; who was alerted stays server-side.
+      match /dispatch/{doc} {
+        allow read: if isPresOfChapter(get(/databases/$(database)/documents/pickups/$(id)).data.get('chapter_id', null));
+        allow write: if false;
+      }
+      match /dispatch_alerts/{doc} {
+        allow read, write: if false;
+      }
     }
 
     // ── restaurants ──

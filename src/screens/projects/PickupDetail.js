@@ -21,6 +21,7 @@ import PickupTimeline from '../../components/pickup/PickupTimeline';
 import PickupContacts from '../../components/pickup/PickupContacts';
 import { pickupDeadline, rescueOfferDeadline } from '../../services/rescueCells';
 import PickupCountdown from '../../components/pickup/PickupCountdown';
+import DispatchStatus from '../../components/pickup/DispatchStatus';
 import FridgePicker from '../../components/ui/FridgePicker';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
@@ -484,7 +485,9 @@ export default function PickupDetail({ route, navigation }) {
   // never ambiguous what the volunteer should tap next.
   const isClaimant = !!user?.id && pickup.claimed_by === user.id;
   const onHold = !!pickup.safety_hold && ['claimed', 'enroute'].includes(pickup.status);
-  const canCloseHold = onHold && hasRole(user, ['executive', 'admin', 'super_admin']);
+  const chapterLead = hasRole(user, ['executive', 'admin', 'super_admin']) || (!!pickup.chapter_id &&
+    pickup.chapter_id === user?.chapter_id && hasRole(user, ['chapter_president', 'chapter_pres']));
+  const canCloseHold = onHold && chapterLead;
   const waitingForSite = ['pending_destination', 'available'].includes(pickup.status) && !pickup.destination_confirmation;
   const staff = hasRole(user, ['executive', 'admin', 'super_admin']);
   const chapterCoordinator = staff || (pickup.chapter_id && pickup.chapter_id === user?.chapter_id &&
@@ -494,8 +497,8 @@ export default function PickupDetail({ route, navigation }) {
     !pickup.receiving_receipt && (pickupDeadline(pickup.destination_confirmation?.arrival_by) ?? 0) > Date.now();
   const matchingVolunteers = transferOptions?.filter((volunteer) =>
     `${volunteer.name} ${volunteer.email}`.toLowerCase().includes(volunteerSearch.trim().toLowerCase()));
-  const canConfirmSite = waitingForSite && staff;
-  const canReroute = staff && onHold && pickup.safety_hold.reason === 'destination_unavailable' &&
+  const canConfirmSite = waitingForSite && chapterCoordinator;
+  const canReroute = chapterCoordinator && onHold && pickup.safety_hold.reason === 'destination_unavailable' &&
     pickup.status === 'enroute' && !!pickup.claimed_by && !!pickup.destination_confirmation &&
     !!pickup.verified_by_restaurant_at && !pickup.receiving_receipt;
   const waitingForReceipt = !onHold && pickup.status === 'enroute' && !!pickup.destination_confirmation && !pickup.receiving_receipt;
@@ -595,6 +598,9 @@ export default function PickupDetail({ route, navigation }) {
             <Text style={styles.previewBannerTitle}>This pickup is no longer available</Text>
             <Button title="Browse open pickups" variant="secondary" onPress={() => navigation.navigate('Pickups')} />
           </View>
+        )}
+        {chapterCoordinator && ['available', 'claimed'].includes(pickup.status) && (
+          <DispatchStatus pickupId={pickup.id} />
         )}
         {waitingForSite && (
           <View style={styles.previewBanner}>

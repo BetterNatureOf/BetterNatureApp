@@ -22,7 +22,10 @@
     "web:deploy": "npm run web:build && echo 'Upload the dist/ folder to Vercel or Cloudflare Pages'",
     "test:rules": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:exec --only firestore,storage --project demo-a2 \"node scripts/test-pickup-transition.cjs && node scripts/test-pickup-release.cjs && node scripts/test-delivery-flow.cjs && node scripts/test-a2-rules.cjs && node scripts/test-c1-complete.cjs && node scripts/test-idgate.cjs && node scripts/test-c1-client.cjs && node --test tests/rules/*.test.mjs\"",
     "test:functions": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:exec --only auth,functions,firestore --project demo-c1 \"node scripts/test-c1-callable.cjs\"",
-    "test:emulators": "npm run test:rules && npm run test:functions"
+    "test:emulators": "npm run test:rules && npm run test:functions",
+    "emulators": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:start --only auth,firestore,functions,storage --project demo-bn-local",
+    "seed:emulators": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-bn-local node scripts/seed-emulator.cjs",
+    "web:emulators": "EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 expo start --web --port 8081"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

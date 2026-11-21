@@ -142,6 +142,8 @@ beforeEach(async () => {
       setDoc(doc(db, 'org_stats', 'global'), { meals: 100, lbs: 80 }),
       setDoc(doc(db, 'org_units', CH_A), { type: 'chapter', name: 'Chapter A' }),
       setDoc(doc(db, 'public_profiles', 'volB'), { name: 'Vol B', chapter_id: CH_B }),
+      setDoc(doc(db, 'pickups/pAvail/dispatch/state'), { status: 'searching', round: 1 }),
+      setDoc(doc(db, 'pickups/pAvail/dispatch_alerts/g_volA'), { uid: 'volA' }),
     ];
     await Promise.all(writes);
   });
@@ -535,5 +537,19 @@ describe('tightened paths still allow the real app flows', () => {
     await assertFails(setDoc(doc(anon(), 'notifications_outbox/o4'), {
       to_email: 'applicant@example.org', subject: 's', body: 'b', kind: 'chapter_application_receipt',
     }));
+  });
+});
+
+describe('dispatch state: coordinators see it, nobody else writes it', () => {
+  it('chapter president can read dispatch status', async () => {
+    await assertSucceeds(getDoc(doc(as('presA'), 'pickups/pAvail/dispatch/state')));
+  });
+  it('other chapter president and volunteers cannot', async () => {
+    await assertFails(getDoc(doc(as('presB'), 'pickups/pAvail/dispatch/state')));
+    await assertFails(getDoc(doc(as('volA'), 'pickups/pAvail/dispatch/state')));
+  });
+  it('nobody reads who was alerted or writes dispatch state from a client', async () => {
+    await assertFails(getDoc(doc(as('presA'), 'pickups/pAvail/dispatch_alerts/g_volA')));
+    await assertFails(setDoc(doc(as('exec'), 'pickups/pAvail/dispatch/state'), { status: 'closed' }));
   });
 });

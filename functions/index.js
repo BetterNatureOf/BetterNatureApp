@@ -14,7 +14,8 @@
 // of every state change.
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const { KIND, offerDeadline, offerIsOpen, wantsPickupAlert, queuePickupAlerts } = require('./pickupAlerts');
+const { KIND, offerDeadline, offerIsOpen, wantsPickupAlert } = require('./pickupAlerts');
+const rescueDispatch = require('./rescueDispatch');
 const { assignPickupReceiver } = require('./pickupReceiving');
 const { volunteerHistory } = require('./volunteerHistory');
 const { expireOpenPickups } = require('./pickupExpiry');
@@ -75,9 +76,16 @@ exports.manageVolunteerHistory = functions.https.onCall((data, context) =>
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
-exports.alertVolunteersOnPickupConfirmation = functions.runWith({ failurePolicy: true }).firestore
+// Rescue dispatch (see rescueDispatch.js): bounded alert rounds,
+// expansion, release recovery, coordinator escalation.
+exports.dispatchRescueOffer = functions.runWith({ failurePolicy: true }).firestore
   .document('pickups/{pickupId}')
-  .onUpdate((change) => queuePickupAlerts(admin.firestore(), change));
+  .onUpdate((change) => rescueDispatch.onPickupChange(admin.firestore(), change.after.ref, change.after.data()));
+
+exports.advanceRescueDispatch = functions.pubsub.schedule('every 2 minutes').onRun(async () => {
+  const results = await rescueDispatch.advanceDue(admin.firestore());
+  if (results.length) console.log('Rescue dispatch advanced', JSON.stringify(results));
+});
 
 exports.sendPushOnNotification = functions.firestore
   .document('notifications/{notifId}')
