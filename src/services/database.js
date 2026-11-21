@@ -1331,16 +1331,17 @@ export async function closeHeldPickup(pickupId, outcome) {
 function canTakeCustody(member, chapterId) {
   return chapterId && member.chapter_id === chapterId && !member.disabled && !member.deleted_at &&
     !['pending', 'rejected'].includes(member.member_status) &&
-    member.verification_status === 'approved' && member.contract_volunteer_signed &&
+    member.verification_status === 'approved' && member.contract_volunteer_signed && member.driver_setup_complete === true &&
     ![member.role, ...(member.roles || [])].some((role) => ['restaurant', 'partner'].includes(role));
 }
 
-export async function fetchCustodyVolunteers(chapterId, currentVolunteerId) {
-  if (!chapterId || useMock()) return [];
-  const snap = await getDocs(query(collection(db, 'users'), where('chapter_id', '==', chapterId)));
-  return snap.docs.filter((d) => d.id !== currentVolunteerId && canTakeCustody(d.data(), chapterId))
-    .map((d) => ({ id: d.id, name: d.data().name || 'Unnamed volunteer', email: d.data().email || '' }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+// Presidents can't list private profiles (A2), so the server returns the
+// eligible volunteers (functions/custodyCandidates.js). `pickupId` scopes
+// the check to that rescue's chapter and current assignment.
+export async function fetchCustodyVolunteers(chapterId, currentVolunteerId, pickupId) {
+  if (!chapterId || useMock() || !pickupId) return [];
+  const { candidates } = (await httpsCallable(getFunctions(firebaseApp), 'listCustodyCandidates')({ pickupId })).data;
+  return candidates.filter((c) => c.id !== currentVolunteerId);
 }
 
 // Record the physical handoff after the coordinator has heard from both volunteers.

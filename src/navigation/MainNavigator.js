@@ -75,6 +75,7 @@ import { isExec as isExecRole, isPresident as isPresRole } from '../services/rol
 import NotificationPreferences from '../screens/other/NotificationPreferences';
 import VehicleSetup from '../screens/other/VehicleSetup';
 import ReceivingSites from '../screens/admin/ReceivingSites';
+import RescueQueue from '../screens/admin/RescueQueue';
 import WebsiteContent from '../screens/admin/WebsiteContent';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
@@ -244,6 +245,7 @@ export default function MainNavigator() {
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferences} />
       <Stack.Screen name="VehicleSetup" component={VehicleSetup} />
       <Stack.Screen name="ReceivingSites" component={ReceivingSites} />
+      <Stack.Screen name="RescueQueue" component={RescueQueue} />
       <Stack.Screen name="WebsiteContent" component={WebsiteContent} />
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />

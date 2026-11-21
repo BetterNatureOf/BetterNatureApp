@@ -73,11 +73,19 @@ deployment section says so.
    Gaps: no site-level receiver assignment UI (receivers are still set per
    rescue by email or on the site record), no geocoding for site addresses (so
    no drive time to the site), and hours support one window per day.
-4. **Coordinator exceptions.** Actions exist only per pickup inside
-   PickupDetail. LiveOps lists awaiting-destination and active rescues. There is
-   no single queue for unassigned, near-deadline, late, held or
-   awaiting-confirmation rescues. Under A2 rules, presidents can't list `/users`,
-   so `fetchCustodyVolunteers` (custody picker) fails; it needs a callable.
+4. **Coordinator exceptions — done (slice 4).** Rescue queue at `/#/admin/queue`
+   (linked from Live operations, which also shows a "needs a decision"
+   count). One list built by `functions/lib/rescueQueue.js`: on hold,
+   turned-away food, dispatch escalations, late pickup, late delivery, closing
+   soon, no receiving site, awaiting receipt, awaiting donor. Each row shows the
+   owner of the next step, the next step and the deadline that matters, and
+   updates live. Actions open the rescue (where the real services live) or
+   release a no-show claim. Chapter presidents can now release no-shows (the
+   rules allowed only executives before), including the variant that cancels
+   once the window has passed. The released volunteer, and the donor when the
+   offer closes, are notified server-side. Custody transfer candidates come from
+   `listCustodyCandidates`, which fixes the A2 regression where presidents
+   couldn't load the picker.
 5. **Reporting.** C1 completion writes the activity, totals and org_stats once.
    Legacy profile totals, manual history entries and event check-ins are not
    reconciled against activity rows.
@@ -112,6 +120,11 @@ notifications must go through `queueBusinessNotification` or server code.
   pantry receiver records 20 lb accepted and 10 lb turned away; the coordinator
   records 6 lb taken by the Cooper St fridge; the volunteer completes and 26 lb
   is recorded with a receipt.
+- Rescue queue shows an escalation, an unsited offer and a pending receipt; a
+  claimed rescue past its cutoff appears live as "Late · 5 min overdue" and is
+  released as a no-show, which cancels it because its window had passed. A held,
+  collected run loads eligible replacements through the callable and the
+  president records the custody transfer.
 
 ## Local verification
 

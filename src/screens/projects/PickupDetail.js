@@ -356,7 +356,7 @@ export default function PickupDetail({ route, navigation }) {
     setBusy(true);
     try {
       setVolunteerSearch('');
-      setTransferOptions(await fetchCustodyVolunteers(pickup.chapter_id, pickup.claimed_by));
+      setTransferOptions(await fetchCustodyVolunteers(pickup.chapter_id, pickup.claimed_by, pickup.id));
     } catch (e) {
       notify('Could not load volunteers', e?.message || 'Try again.');
     } finally { setBusy(false); }
@@ -575,7 +575,7 @@ export default function PickupDetail({ route, navigation }) {
     pickup.safety_hold.reason === 'cannot_continue' && pickup.verified_by_restaurant_at &&
     !pickup.receiving_receipt && (pickupDeadline(pickup.destination_confirmation?.arrival_by) ?? 0) > Date.now();
   const matchingVolunteers = transferOptions?.filter((volunteer) =>
-    `${volunteer.name} ${volunteer.email}`.toLowerCase().includes(volunteerSearch.trim().toLowerCase()));
+    `${volunteer.name} ${volunteer.phone || ''}`.toLowerCase().includes(volunteerSearch.trim().toLowerCase()));
   const canConfirmSite = waitingForSite && chapterCoordinator;
   const canReroute = chapterCoordinator && onHold && pickup.safety_hold.reason === 'destination_unavailable' &&
     pickup.status === 'enroute' && !!pickup.claimed_by && !!pickup.destination_confirmation &&
@@ -822,10 +822,10 @@ export default function PickupDetail({ route, navigation }) {
                   <Text style={styles.sectionHelp}>{transferOptions.length ? 'No volunteers match that search.' : 'No eligible replacement volunteers in this chapter.'}</Text>
                 )}
                 {matchingVolunteers.slice(0, 5).map((volunteer) => (
-                  <Button key={volunteer.id} title={volunteer.email ? `${volunteer.name} · ${volunteer.email}` : volunteer.name}
+                  <Button key={volunteer.id} title={`${volunteer.name}${volunteer.phone ? ` · ${volunteer.phone}` : ''}${volunteer.busy ? ' · on another run' : ''}`}
                     variant="secondary" disabled={busy} onPress={() => handleTransfer(volunteer)} />
                 ))}
-                {matchingVolunteers.length > 5 && <Text style={styles.sectionHelp}>Search by name or email to narrow the list.</Text>}
+                {matchingVolunteers.length > 5 && <Text style={styles.sectionHelp}>Search by name or phone to narrow the list.</Text>}
               </>
             )}
           </View>

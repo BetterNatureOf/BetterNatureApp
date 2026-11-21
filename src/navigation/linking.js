@@ -48,6 +48,7 @@ const screens = {
   NotificationPreferences: 'notifications/prefs',
   VehicleSetup: 'profile/vehicle',
   ReceivingSites: 'admin/sites',
+  RescueQueue: 'admin/queue',
   WebsiteContent: 'admin/website',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',

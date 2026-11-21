@@ -81,6 +81,9 @@ exports.reconcileSiteReservation = functions.runWith({ failurePolicy: true }).fi
   .onUpdate((change) => require('./receivingSites').reconcileReservation(admin.firestore(),
     change.after.ref, change.before.data(), change.after.data()));
 
+exports.listCustodyCandidates = functions.https.onCall((data, context) =>
+  require('./custodyCandidates').listCustodyCandidates(admin.firestore(), data, context.auth?.uid));
+
 exports.suggestRescueVolunteers = functions.https.onCall((data, context) =>
   require('./rescueSuggestions').suggest(admin.firestore(), data, context.auth?.uid));
 

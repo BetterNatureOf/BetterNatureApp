@@ -154,7 +154,7 @@ function prettyStatus(s, reason) {
   switch (s) {
     case 'available': return 'Available';
     case 'claimed':   return 'Claimed — heading there';
-    case 'enroute':   return 'En route to fridge';
+    case 'enroute':   return 'En route to drop-off';
     case 'completed': return 'Delivered';
     case 'cancelled': return reason === 'Pickup window expired' ? 'Expired' : 'Cancelled';
     default: return 'Available';

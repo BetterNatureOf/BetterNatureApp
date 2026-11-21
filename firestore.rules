@@ -729,15 +729,22 @@ service cloud.firestore {
         && pChanged().hasOnly(['status','cancel_reason','cancelled_at']);
     }
 
+    // A chapter coordinator (or exec) clears a no-show claim before the
+    // donor confirms collection. Reopens the offer, or cancels it when
+    // the pickup window has already closed.
     function isExecutiveAbandonedRelease() {
-      return isExec() && oldStatus() == 'claimed' && newStatus() == 'available'
+      return isPresOfChapter(resource.data.get('chapter_id', null)) && oldStatus() == 'claimed'
+        && (newStatus() == 'available'
+          || (newStatus() == 'cancelled' && pDestination() != null && !hasOpenClaimWindow()
+            && request.resource.data.get('cancel_reason', null) == 'Pickup window expired'))
         && resource.data.get('verified_by_restaurant_at', null) == null
         && request.resource.data.get('claimed_by', null) == null
         && request.resource.data.get('abandoned_by', null) == request.auth.uid
         && request.resource.data.get('abandoned_at', null) == request.time
         && request.resource.data.get('abandoned_prior_claimant', null) == resource.data.get('claimed_by', null)
         && pChanged().hasOnly(['status','claimed_by','claimed_at','claimant_name','claimant_phone',
-          'abandoned_by','abandoned_at','abandoned_reason','abandoned_prior_claimant']);
+          'abandoned_by','abandoned_at','abandoned_reason','abandoned_prior_claimant',
+          'cancel_reason','cancelled_at']);
     }
     function isExecutivePickupMetadataEdit() {
       return isExec() && newStatus() == oldStatus()
@@ -955,6 +962,7 @@ service cloud.firestore {
             : after == 'claimed' ? (before == 'available' && isAtomicClaim())
             : after == 'enroute' ? (before == 'claimed' && isSelfSetEnroute())
             : after == 'cancelled' ? (changed.hasAny(['released_at']) ? isSelfReleaseExpired()
+              : changed.hasAny(['abandoned_at']) ? isExecutiveAbandonedRelease()
               : isRestaurantCancel())
             : false)
           : (changed.hasAny(['destination_confirmation']) ? isDestinationConfirm()

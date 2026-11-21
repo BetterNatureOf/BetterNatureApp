@@ -615,3 +615,18 @@ describe('receiving sites', () => {
     await assertFails(setDoc(doc(as('presA'), 'receiving_sites/sA/reservations/x'), { status: 'held' }));
   });
 });
+
+describe('no-show release', () => {
+  const release = (uid) => ({ status: 'available', claimed_by: null, claimed_at: null, claimant_name: null, claimant_phone: null,
+    abandoned_at: serverTimestamp(), abandoned_by: uid, abandoned_reason: 'coordinator_no_show', abandoned_prior_claimant: 'volA' });
+  it('the chapter president can release a no-show claim before collection', async () => {
+    await assertSucceeds(updateDoc(doc(as('presA'), 'pickups/pClaimed'), release('presA')));
+  });
+  it('another chapter’s president and volunteers cannot', async () => {
+    await assertFails(updateDoc(doc(as('presB'), 'pickups/pClaimed'), release('presB')));
+    await assertFails(updateDoc(doc(as('volA2'), 'pickups/pClaimed'), release('volA2')));
+  });
+  it('collected food is never released as a no-show', async () => {
+    await assertFails(updateDoc(doc(as('presA'), 'pickups/pClaimedCollected'), release('presA')));
+  });
+});

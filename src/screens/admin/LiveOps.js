@@ -12,6 +12,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'rea
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import { fetchPickupsAwaitingDestination, fetchActivePickups, fetchRestaurants, fetchRecentlyCompletedPickups } from '../../services/database';
 import { fetchAllPublicProfiles } from '../../services/publicProfiles';
+import { buildQueue } from '../../../functions/lib/rescueQueue';
 
 // Start of the local day in ms. LiveOps resets at midnight — every
 // morning the leader sees a clean board, the prior day's runs move
@@ -97,6 +98,9 @@ export default function LiveOps({ chapterId = null, navigation }) {
   useEffect(() => { load(); }, [load]);
 
   // Unique volunteers currently out so the leader sees a roster too.
+  // Held, turned-away, late and unsited rescues (dispatch escalations show in the queue itself).
+  const needsYou = buildQueue([...pickups, ...pending]).items
+    .filter((i) => ['held', 'remainder_pending', 'late_pickup', 'late_delivery', 'awaiting_site'].includes(i.kind)).length;
   const volunteersOut = Array.from(new Set(
     pickups.map((p) => p.claimed_by).filter(Boolean)
   )).map((id) => members[id]).filter(Boolean);
@@ -108,6 +112,9 @@ export default function LiveOps({ chapterId = null, navigation }) {
           <Text style={styles.heading}>Live operations</Text>
           <Text style={styles.subhead}>Today only · resets at midnight</Text>
         </View>
+        <TouchableOpacity onPress={() => navigation.navigate('RescueQueue')} style={styles.refresh} accessibilityRole="link">
+          <Text style={styles.refreshText}>Queue</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => navigation.navigate('ReceivingSites')} style={styles.refresh} accessibilityRole="link">
           <Text style={styles.refreshText}>Sites</Text>
         </TouchableOpacity>
@@ -132,6 +139,14 @@ export default function LiveOps({ chapterId = null, navigation }) {
       </View>
 
       {loadFailed && <Text style={styles.cardSub}>Couldn’t refresh operations. Try again.</Text>}
+      {needsYou > 0 && (
+        <TouchableOpacity style={styles.card} accessibilityRole="button" onPress={() => navigation.navigate('RescueQueue')}>
+          <View>
+            <Text style={styles.cardTitle}>{needsYou} rescue{needsYou === 1 ? ' needs' : 's need'} a decision</Text>
+            <Text style={styles.cardSub}>Open the rescue queue →</Text>
+          </View>
+        </TouchableOpacity>
+      )}
       {pending.length > 0 && (
         <View>
           <Text style={styles.heading}>Waiting for a receiving site</Text>

@@ -186,6 +186,18 @@ describe('rescue dispatch: recovery and reminders', () => {
     assert.deepEqual(await noticesOfType('rescue_escalation'), ['coord', 'pres']);
   });
 
+  it('a no-show release tells the volunteer once, and the donor when it closes the offer', async () => {
+    await db.doc('restaurants/r1').set({ user_id: 'donorUid' });
+    await open();
+    await ref().update({ status: 'cancelled', claimed_by: null, cancel_reason: 'Pickup window expired',
+      abandoned_at: Timestamp.fromMillis(T0 + MIN), abandoned_prior_claimant: 'near2' });
+    const after = (await ref().get()).data();
+    await D.onPickupChange(db, ref(), after, { now: T0 + MIN, roadTimes: noRoads });
+    await D.onPickupChange(db, ref(), after, { now: T0 + MIN, roadTimes: noRoads });
+    assert.deepEqual(await noticesOfType('pickup_auto_released'), ['near2']);
+    assert.deepEqual(await noticesOfType('pickup_closed'), ['donorUid']);
+  });
+
   it('a cancelled or started rescue closes its dispatch', async () => {
     await open();
     await ref().update({ status: 'cancelled' });

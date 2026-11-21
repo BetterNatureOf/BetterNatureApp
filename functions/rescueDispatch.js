@@ -108,6 +108,7 @@ async function coordinatorsFor(db, chapterId) {
 // Starts a generation when an offer (re)opens; tracks claim / start.
 async function onPickupChange(db, pickupRef, after, { now = Date.now(), roadTimes = pickupRoadTimes } = {}) {
   const stateRef = pickupRef.collection('dispatch').doc('state');
+  await noticeNoShowRelease(db, pickupRef, after);
   const gen = currentGeneration(after);
   if (offerIsOpen(after, now) && gen) {
     const started = await db.runTransaction(async (tx) => {
@@ -148,6 +149,31 @@ async function onPickupChange(db, pickupRef, after, { now = Date.now(), roadTime
       return { action: 'closed' };
     }
     return { action: 'none' };
+  });
+}
+
+// A coordinator released a no-show claim: tell the volunteer (and the
+// donor if the offer closed). Clients can't notify other members under
+// A2, so this runs here, once per release.
+async function noticeNoShowRelease(db, pickupRef, p) {
+  const key = stamp(p?.abandoned_at);
+  if (!key || !p.abandoned_prior_claimant) return;
+  let donor = null;
+  if (p.status === 'cancelled' && p.restaurant_id && !String(p.restaurant_id).includes('/')) {
+    donor = (await db.collection('restaurants').doc(p.restaurant_id).get()).data()?.user_id || null;
+  }
+  await db.runTransaction(async (tx) => {
+    const id = `rescue_released_${safeId(pickupRef.id)}_${safeId(key)}`;
+    if ((await tx.get(db.collection('notifications').doc(id))).exists) return;
+    writeNotice(tx, db, id, { uid: p.abandoned_prior_claimant, kind: 'pickup', title: 'Your claim was released',
+      body: p.status === 'cancelled' ? 'The pickup window passed, so a coordinator closed this rescue. No penalty.'
+        : 'A coordinator released your claim so someone else can take this rescue. No penalty.',
+      url: pickupUrl(pickupRef.id), data: { type: 'pickup_auto_released', pickupId: pickupRef.id } });
+    if (donor) {
+      writeNotice(tx, db, `${id}_donor`, { uid: donor, kind: 'pickup', title: 'Pickup closed',
+        body: 'The volunteer couldn’t make the pickup window, so this rescue closed. Post again if the food is still available.',
+        url: pickupUrl(pickupRef.id), data: { type: 'pickup_closed', pickupId: pickupRef.id } });
+    }
   });
 }
 
