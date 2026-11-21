@@ -743,7 +743,8 @@ service cloud.firestore {
       return isExec() && newStatus() == oldStatus()
         && !pChanged().hasAny(['destination_confirmation','destination_history','receiving_receipt',
           'receiver_uid','receiver_assigned_at','receiver_assigned_by','custody_transfer',
-          'custody_transfer_history','safety_hold','safety_resolution','restaurant_id','dispatch'])
+          'custody_transfer_history','safety_hold','safety_resolution','restaurant_id','dispatch',
+          'receiving_site','remainder_disposition'])
         && (pDestination() == null || !pChanged().hasAny(['fridge_id','fridge_name','fridge_address',
           'fridge_lat','fridge_lng','fridge_h3','pickup_window_until']))
         && !pChanged().hasAny(['claimed_by','claimed_at','enroute_at','verified_by_restaurant_at',
@@ -781,7 +782,7 @@ service cloud.firestore {
         && resource.data.get('claimed_by', null) == null
         && d is map
         && d.keys().hasOnly(['site_name','address','contact','confirmed_by','confirmed_at',
-             'accepted_weight_lbs','pickup_by','arrival_by','site_id'])
+             'accepted_weight_lbs','pickup_by','arrival_by'])
         && d.site_name is string && d.site_name.size() > 0 && d.site_name.size() <= 200
         && d.address is string && d.address.size() > 0 && d.address.size() <= 200
         && d.contact is string && d.contact.size() > 0 && d.contact.size() <= 200
@@ -839,7 +840,12 @@ service cloud.firestore {
         && profile.get('disabled', false) == false && profile.get('deleted_at', null) == null
         && profile.get('member_status', null) != 'rejected'
         && receipt is map && pChanged().hasOnly(['receiving_receipt'])
-        && receipt.keys().hasOnly(['receiver_name','weight_lbs','recorded_by','recorded_at','source'])
+        && receipt.keys().hasOnly(['receiver_name','weight_lbs','recorded_by','recorded_at','source',
+             'rejected_weight_lbs','rejection_reason'])
+        && (!('rejected_weight_lbs' in receipt) || (receipt.rejected_weight_lbs is number
+             && receipt.rejected_weight_lbs >= 0 && receipt.rejected_weight_lbs <= 100000))
+        && (!('rejection_reason' in receipt) || (receipt.rejection_reason is string
+             && receipt.rejection_reason.size() <= 200))
         && receipt.receiver_name is string && receipt.receiver_name.size() > 0
         && receipt.receiver_name.size() <= 200
         && receipt.weight_lbs is number && receipt.weight_lbs > 0 && receipt.weight_lbs <= 100000
@@ -899,7 +905,7 @@ service cloud.firestore {
           'receiver_assigned_by','fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng',
           'fridge_h3','destination_confirmation','destination_history'])
         && backup.keys().hasOnly(['site_name','address','contact','confirmed_by','confirmed_at',
-          'accepted_weight_lbs','pickup_by','arrival_by','site_id'])
+          'accepted_weight_lbs','pickup_by','arrival_by'])
         && backup.site_name is string && backup.site_name.size() > 0 && backup.site_name.size() <= 200
         && backup.address is string && backup.address.size() > 0 && backup.address.size() <= 200
         && backup.address != previous.address
@@ -984,7 +990,7 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['destination_confirmation', 'destination_history',
              'receiving_receipt', 'receiver_uid', 'receiver_assigned_at', 'receiver_assigned_by',
              'custody_transfer', 'custody_transfer_history', 'safety_hold', 'safety_resolution',
-             'dispatch'])
+             'dispatch', 'receiving_site', 'remainder_disposition'])
         && request.resource.data.estimated_weight_lbs is number
         && request.resource.data.estimated_weight_lbs > 0
         && approvedPickupRestaurant(pickupRid())
@@ -1005,6 +1011,35 @@ service cloud.firestore {
       }
       match /dispatch_alerts/{doc} {
         allow read, write: if false;
+      }
+    }
+
+    // ── receiving_sites ──
+    // Staffed centers, steward fridges and outreach partners. Contacts
+    // and capacity are operational data: chapter staff manage them; the
+    // site's own receiver can read its record. Reservations are written
+    // only by the receivingSites functions.
+    function validSite(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 120
+        && d.type in ['staffed_center', 'steward_fridge', 'outreach_partner']
+        && d.chapter_id is string
+        && d.get('status', 'active') in ['active', 'paused']
+        && (!('address' in d) || (d.address is string && d.address.size() <= 200))
+        && (!('food_categories' in d) || d.food_categories is list)
+        && (!('contacts' in d) || (d.contacts is list && d.contacts.size() <= 5))
+        && (!('hours' in d) || d.hours is map)
+        && (!('capacity' in d) || d.capacity is map);
+    }
+    match /receiving_sites/{siteId} {
+      allow read: if isPresOfChapter(resource.data.get('chapter_id', null))
+        || (isSignedIn() && resource.data.get('receiver_uid', null) == request.auth.uid);
+      allow create: if isPresOfChapter(request.resource.data.get('chapter_id', null)) && validSite(request.resource.data);
+      allow update: if isPresOfChapter(resource.data.get('chapter_id', null))
+        && isPresOfChapter(request.resource.data.get('chapter_id', null)) && validSite(request.resource.data);
+      allow delete: if isAdmin();
+      match /reservations/{pickupId} {
+        allow read: if isPresOfChapter(get(/databases/$(database)/documents/receiving_sites/$(siteId)).data.get('chapter_id', null));
+        allow write: if false;
       }
     }
 

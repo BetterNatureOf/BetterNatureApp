@@ -56,9 +56,23 @@ deployment section says so.
    deadline (no volunteer schedules exist). Road times need
    `RESCUE_ROUTING_BASE_URL` (OSRM-compatible); without it, ranking uses
    straight-line distance and timing shows as unknown.
-3. **Receiving sites.** A destination is free text (name, address, contact).
-   No site records with hours, pause status, contacts, capacity reservation,
-   partial acceptance or rejected-food accounting.
+3. **Receiving sites — done (slice 3).** `receiving_sites` records (types: staffed
+   center, steward fridge, outreach partner) with weekly hours in the site's
+   timezone, pause and resume, accepted food types, daily item and pound
+   capacity, contacts and a designated receiver or steward. Coordinators manage
+   them on Live operations → Sites (`/#/admin/sites`). Confirming against a saved
+   site goes through `confirmRescueDestination`, which checks pause, hours at the
+   receiving deadline, food type and remaining capacity, reserves capacity, and
+   assigns the site's receiver in one transaction. Clients can't attach a site
+   ID themselves. `reconcileSiteReservation` releases or settles reservations on
+   cancel, reroute and receipt, including client-side paths. Receipts can record
+   pounds turned away with a reason. The volunteer keeps custody, and completion
+   is blocked (`remainder_pending`), until a coordinator records the remainder
+   (`recordRescueRemainder`: another site with accepted pounds, returned to
+   donor, composted, or discarded). Only accepted pounds count toward impact.
+   Gaps: no site-level receiver assignment UI (receivers are still set per
+   rescue by email or on the site record), no geocoding for site addresses (so
+   no drive time to the site), and hours support one window per day.
 4. **Coordinator exceptions.** Actions exist only per pickup inside
    PickupDetail. LiveOps lists awaiting-destination and active rescues. There is
    no single queue for unassigned, near-deadline, late, held or
@@ -92,6 +106,12 @@ notifications must go through `queueBusinessNotification` or server code.
   "Travel time unknown · Vehicle fit unknown", and the not-yet-known list.
 - Add vehicle (SUV, cooler) from the rescue → saved under the real rules →
   back on the rescue the line reads "Fits your vehicle".
+- Receiving sites screen shows open, paused and hours-unknown states. Picking
+  the fridge for cold food is refused in plain language; picking the pantry
+  opens the offer, holds the reservation and assigns the pantry receiver. The
+  pantry receiver records 20 lb accepted and 10 lb turned away; the coordinator
+  records 6 lb taken by the Cooper St fridge; the volunteer completes and 26 lb
+  is recorded with a receipt.
 
 ## Local verification
 
@@ -102,6 +122,10 @@ npm run test:emulators   # every Firestore/Storage suite + registered callable s
 Requires Java (Homebrew `openjdk@21`) and `firebase-tools`. Uses demo projects
 only (`demo-a2`, `demo-c1`, `demo-bn-*`); never production. Tests use the ports
 in `firebase.test-ports.json`, so they can run while the dev emulators are up.
+
+Browser tip: other preview tabs on `localhost:8081` share Firebase auth storage
+with yours (signing in or out in one affects the other). Use
+`http://127.0.0.1:8081` for an isolated session.
 
 Manual browser testing: `npm run emulators`, then `npm run seed:emulators`,
 then `npm run web:emulators` (or the "Expo Web (emulators)" launch config).

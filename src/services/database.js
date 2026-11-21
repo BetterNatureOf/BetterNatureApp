@@ -621,7 +621,7 @@ export async function rerouteHeldPickup(pickupId, { siteName, address, contact, 
   }
 }
 
-export async function recordPickupReceipt(pickupId, { receiverName, weightLbs, fromReceivingSite = false }) {
+export async function recordPickupReceipt(pickupId, { receiverName, weightLbs, fromReceivingSite = false, rejectedLbs = 0, rejectionReason = '' }) {
   const uid = auth?.currentUser?.uid;
   const name = receiverName.trim();
   if (!uid || !pickupId) throw new Error('Sign in to record receipt.');
@@ -644,9 +644,13 @@ export async function recordPickupReceipt(pickupId, { receiverName, weightLbs, f
         pickup.safety_hold || pickup.status !== 'enroute') {
       throw new Error('This pickup is not ready for receiving confirmation.');
     }
+    // Partial acceptance: what the site turned away keeps the run open
+    // until a coordinator records where it went.
+    const rejected = Number.isFinite(rejectedLbs) && rejectedLbs > 0 ? rejectedLbs : 0;
     tx.update(ref, {
       receiving_receipt: { receiver_name: name, weight_lbs: weightLbs, recorded_by: uid,
-        recorded_at: serverTimestamp(), source: fromReceivingSite ? 'receiving_site' : 'coordinator' },
+        recorded_at: serverTimestamp(), source: fromReceivingSite ? 'receiving_site' : 'coordinator',
+        ...(rejected ? { rejected_weight_lbs: rejected, rejection_reason: String(rejectionReason || '').trim().slice(0, 200) } : {}) },
     });
   });
 }
@@ -2196,6 +2200,35 @@ export async function fetchAllMembers() {
     chapters: u.chapter_id ? { name: chapMap.get(u.chapter_id) || '' } : null,
   }));
   return list;
+}
+
+// ── Receiving sites ──
+export async function listReceivingSites(chapterId) {
+  if (useMock() || !chapterId) return [];
+  const snap = await getDocs(query(collection(db, 'receiving_sites'), where('chapter_id', '==', chapterId)));
+  return snapToList(snap).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+export async function saveReceivingSite(siteId, site) {
+  const data = { ...site, updated_at: serverTimestamp() };
+  if (siteId) { await updateDoc(doc(db, 'receiving_sites', siteId), data); return siteId; }
+  const ref = await addDoc(collection(db, 'receiving_sites'), { status: 'active', ...data, created_at: serverTimestamp() });
+  return ref.id;
+}
+
+// Saved sites go through the server so hours, pause, food types and
+// remaining capacity are checked and reserved in one transaction.
+export async function confirmRescueDestination(pickupId, siteId, arrivalBy) {
+  try {
+    return (await httpsCallable(getFunctions(firebaseApp), 'confirmRescueDestination')({ pickupId, siteId, arrivalBy })).data;
+  } catch (e) {
+    if (e?.details?.reasons) e.reasons = e.details.reasons;
+    throw e;
+  }
+}
+
+export async function recordRescueRemainder(pickupId, { outcome, note, siteName, acceptedLbs }) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'recordRescueRemainder')({ pickupId, outcome, note, siteName, acceptedLbs })).data;
 }
 
 // What the volunteer can carry (functions/lib/rescueCargo.js reads it).

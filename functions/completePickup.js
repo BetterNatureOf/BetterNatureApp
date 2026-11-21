@@ -4,6 +4,7 @@ const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const policy = require('./lib/donationPolicy');
 const { pickupEligible: eligible } = require('./lib/pickupEligibility');
+const { deliverableWeight } = require('./receivingSites');
 const EXEC_ROLES = new Set(['executive', 'admin', 'super_admin']);
 const roles = (u) => [u?.role, ...(Array.isArray(u?.roles) ? u.roles : [])];
 const isExec = (u) => roles(u).some((r) => EXEC_ROLES.has(r));
@@ -75,7 +76,13 @@ async function complete(data, context) {
       throw error('failed-precondition', 'Use the confirmed receiving site.', 'destination_locked');
     }
     if (destination && !spoiled) {
-      const receipted = pk.receiving_receipt?.weight_lbs;
+      // Partial acceptance: the rest of the food needs a recorded
+      // disposition first, and only accepted pounds count.
+      const deliverable = deliverableWeight(pk);
+      if (deliverable?.pending) {
+        throw error('failed-precondition', 'Record what happened to the food the site didn’t accept first.', 'remainder_pending');
+      }
+      const receipted = deliverable ? deliverable.weight : undefined;
       if (!override && !pk.verified_by_restaurant_at) {
         throw error('failed-precondition', 'The donor must confirm the handoff first.', 'handoff_not_confirmed');
       }

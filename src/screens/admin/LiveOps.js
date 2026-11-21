@@ -108,6 +108,9 @@ export default function LiveOps({ chapterId = null, navigation }) {
           <Text style={styles.heading}>Live operations</Text>
           <Text style={styles.subhead}>Today only · resets at midnight</Text>
         </View>
+        <TouchableOpacity onPress={() => navigation.navigate('ReceivingSites')} style={styles.refresh} accessibilityRole="link">
+          <Text style={styles.refreshText}>Sites</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={load} style={styles.refresh}>
           <Text style={styles.refreshText}>Refresh</Text>
         </TouchableOpacity>

@@ -71,6 +71,16 @@ exports.closeExpiredRescueOffers = functions.pubsub.schedule('every 5 minutes').
 exports.assignRescueReceiver = functions.https.onCall((data, context) =>
   assignPickupReceiver(admin.firestore(), admin.auth(), data, context.auth?.uid));
 
+// Receiving sites (see receivingSites.js).
+exports.confirmRescueDestination = functions.https.onCall((data, context) =>
+  require('./receivingSites').confirmDestination(admin.firestore(), data, context.auth?.uid));
+exports.recordRescueRemainder = functions.https.onCall((data, context) =>
+  require('./receivingSites').recordRemainder(admin.firestore(), data, context.auth?.uid));
+exports.reconcileSiteReservation = functions.runWith({ failurePolicy: true }).firestore
+  .document('pickups/{pickupId}')
+  .onUpdate((change) => require('./receivingSites').reconcileReservation(admin.firestore(),
+    change.after.ref, change.before.data(), change.after.data()));
+
 exports.suggestRescueVolunteers = functions.https.onCall((data, context) =>
   require('./rescueSuggestions').suggest(admin.firestore(), data, context.auth?.uid));
 

@@ -47,6 +47,7 @@ const screens = {
   ChapterChecklist: 'chapter',
   NotificationPreferences: 'notifications/prefs',
   VehicleSetup: 'profile/vehicle',
+  ReceivingSites: 'admin/sites',
   WebsiteContent: 'admin/website',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',

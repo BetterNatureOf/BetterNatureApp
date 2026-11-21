@@ -99,7 +99,27 @@ function pickup(extra) {
       destination_confirmation: destination(60, 90), receiver_uid: uid.receiver }),
   };
   for (const [id, data] of Object.entries(pickups)) await db.doc(`pickups/${id}`).set(data);
-  console.log(`Seeded ${projectId}: ${Object.keys(PEOPLE).length} accounts, ${Object.keys(pickups).length} rescues.`);
+  // Receiving sites: staffed pantry (hours, capacity, receiver), a steward
+  // fridge without fixed hours, and a paused outreach partner.
+  const week = (open, close, days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) =>
+    Object.fromEntries(days.map((d) => [d, [{ open, close }]]));
+  const sites = {
+    'site-midsouth': { name: 'Mid-South Pantry', type: 'staffed_center', chapter_id: CHAPTER, address: SITE.address,
+      timezone: 'America/Chicago', hours: week('06:00', '23:00'), status: 'active',
+      food_categories: ['prepared_cold', 'prepared_hot', 'produce', 'bakery', 'packaged'],
+      capacity: { packages_per_day: 20, weight_lbs_per_day: 300 }, receiver_uid: uid.receiver,
+      contacts: [{ name: 'Pat', phone: '901-555-0140', role: 'receiving' }] },
+    'site-cooper-fridge': { name: 'Cooper St community fridge', type: 'steward_fridge', chapter_id: CHAPTER,
+      address: '1500 Cooper St, Memphis, TN', status: 'active', food_categories: ['produce', 'packaged', 'bakery'],
+      capacity: { packages_per_day: 6, weight_lbs_per_day: null }, contacts: [{ name: 'Sam (steward)', phone: '901-555-0177' }] },
+    'site-outreach': { name: 'Hope Street outreach team', type: 'outreach_partner', chapter_id: CHAPTER,
+      address: 'Downtown Memphis', status: 'paused', pause_reason: 'Van in the shop', food_categories: ['prepared_hot', 'prepared_cold'] },
+  };
+  for (const [id, data] of Object.entries(sites)) {
+    await db.recursiveDelete(db.doc(`receiving_sites/${id}`));
+    await db.doc(`receiving_sites/${id}`).set(data);
+  }
+  console.log(`Seeded ${projectId}: ${Object.keys(PEOPLE).length} accounts, ${Object.keys(pickups).length} rescues, 3 receiving sites.`);
   console.log('Sign in with any of:', Object.values(PEOPLE).map((p) => p.email).join(', '));
   await admin.app().delete();
 })().catch((error) => { console.error(error); process.exitCode = 1; });

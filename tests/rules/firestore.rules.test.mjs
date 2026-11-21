@@ -110,6 +110,8 @@ function pickups() {
     },
     pHeld: { ...collected, safety_hold: HOLD },
     pDone: { ...collected, status: 'completed', actual_weight_lbs: 20 },
+    pPending: { restaurant_id: 'r1', chapter_id: CH_A, estimated_weight_lbs: 40, status: 'pending_destination', claimed_by: null,
+      pickup_window_until: new Date(Date.now() + 2 * HOUR).toISOString() },
   };
 }
 
@@ -143,6 +145,8 @@ beforeEach(async () => {
       setDoc(doc(db, 'org_units', CH_A), { type: 'chapter', name: 'Chapter A' }),
       setDoc(doc(db, 'public_profiles', 'volB'), { name: 'Vol B', chapter_id: CH_B }),
       setDoc(doc(db, 'pickups/pAvail/dispatch/state'), { status: 'searching', round: 1 }),
+      setDoc(doc(db, 'receiving_sites/sA'), { name: 'Pantry', type: 'staffed_center', chapter_id: CH_A, status: 'active', receiver_uid: 'receiver' }),
+      setDoc(doc(db, 'receiving_sites/sA/reservations/pAvail'), { status: 'held', packages: 2 }),
       setDoc(doc(db, 'pickups/pAvail/dispatch_alerts/g_volA'), { uid: 'volA' }),
     ];
     await Promise.all(writes);
@@ -338,6 +342,18 @@ describe('receiving: only the receiving site confirms, weight must match', () =>
   });
   const complete = (lbs) => ({
     status: 'completed', actual_weight_lbs: lbs, completed_at: new Date().toISOString(), hours_earned: 1,
+  });
+
+  it('receiving site can record a partial acceptance with a reason', async () => {
+    const db = as('receiver', { email_verified: true });
+    await assertSucceeds(updateDoc(doc(db, 'pickups/pCollected'), { receiving_receipt: {
+      receiver_name: 'Pat', weight_lbs: 15, rejected_weight_lbs: 5, rejection_reason: 'No cold storage left',
+      recorded_by: 'receiver', recorded_at: serverTimestamp(), source: 'receiving_site' } }));
+  });
+
+  it('nobody writes a remainder disposition or site snapshot from a client', async () => {
+    await assertFails(updateDoc(doc(as('exec'), 'pickups/pReceived'), { remainder_disposition: { outcome: 'discarded' } }));
+    await assertFails(updateDoc(doc(as('exec'), 'pickups/pAvail'), { receiving_site: { id: 'sA' } }));
   });
 
   it('receiving site can confirm the handoff (positive control)', async () => {
@@ -565,5 +581,37 @@ describe('vehicle details', () => {
   });
   it('nobody can write someone else\'s vehicle', async () => {
     await assertFails(updateDoc(doc(as('volA'), 'users/volA2'), { vehicle }));
+  });
+});
+
+describe('receiving sites', () => {
+  const site = (extra = {}) => ({ name: 'Cooper St fridge', type: 'steward_fridge', chapter_id: CH_A, status: 'active', ...extra });
+  it('chapter president manages their chapter’s sites', async () => {
+    await assertSucceeds(setDoc(doc(as('presA'), 'receiving_sites/new'), site()));
+    await assertSucceeds(updateDoc(doc(as('presA'), 'receiving_sites/sA'), { status: 'paused' }));
+    await assertSucceeds(getDoc(doc(as('presA'), 'receiving_sites/sA')));
+  });
+  it('other chapters and volunteers cannot read or write them', async () => {
+    await assertFails(setDoc(doc(as('presB'), 'receiving_sites/new'), site()));
+    await assertFails(getDoc(doc(as('presB'), 'receiving_sites/sA')));
+    await assertFails(getDoc(doc(as('volA'), 'receiving_sites/sA')));
+    await assertFails(setDoc(doc(as('volA'), 'receiving_sites/new'), site()));
+  });
+  it('the site’s own receiver can read it', async () => {
+    await assertSucceeds(getDoc(doc(as('receiver'), 'receiving_sites/sA')));
+  });
+  it('sites must have a valid type', async () => {
+    await assertFails(setDoc(doc(as('presA'), 'receiving_sites/new'), site({ type: 'warehouse' })));
+  });
+  it('a client cannot attach a saved site (that path checks and reserves capacity)', async () => {
+    const dest = (extra) => ({ site_name: 'Pantry', address: 'A', contact: 'Pat', confirmed_by: 'presA',
+      confirmed_at: serverTimestamp(), accepted_weight_lbs: 40, pickup_by: Timestamp.fromMillis(Date.now() + HOUR),
+      arrival_by: Timestamp.fromMillis(Date.now() + 2 * HOUR), ...extra });
+    await assertFails(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({ site_id: 'sA' }) }));
+    await assertSucceeds(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({}) }));
+  });
+  it('reservations are server-only', async () => {
+    await assertSucceeds(getDoc(doc(as('presA'), 'receiving_sites/sA/reservations/pAvail')));
+    await assertFails(setDoc(doc(as('presA'), 'receiving_sites/sA/reservations/x'), { status: 'held' }));
   });
 });
