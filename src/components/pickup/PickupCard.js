@@ -23,6 +23,8 @@ export default function PickupCard({
   pickup,
   cta,                  // { label, onPress, disabled }
   showPhoto = true,
+  showMapLinks = true,
+  showCountdown = true,
 }) {
   if (!pickup) return null;
   const meals = pickup.meals_estimate || Math.round((pickup.estimated_weight_lbs || 0) * 1.2);
@@ -47,9 +49,9 @@ export default function PickupCard({
       {/* Status pill */}
       <View style={styles.head}>
         <View style={[styles.pill, pillTone(pickup.status)]}>
-          <Text style={styles.pillText}>{prettyStatus(pickup.status)}</Text>
+          <Text style={styles.pillText}>{prettyStatus(pickup.status, pickup.cancel_reason)}</Text>
         </View>
-        <PickupCountdown pickup={pickup} />
+        {showCountdown && <PickupCountdown pickup={pickup} />}
         <View style={styles.headStats}>
           {weight ? <Text style={styles.headStat}>{weight} lb</Text> : null}
           <Text style={styles.headStatStrong}>{meals} meals</Text>
@@ -62,11 +64,11 @@ export default function PickupCard({
         eyebrow="PICK UP"
         primary={pickup.restaurant_name || 'Restaurant'}
         secondary={restAddr}
-        onOpenMaps={() => openInMaps({
+        onOpenMaps={showMapLinks ? () => openInMaps({
           address: restAddr,
           lat: pickup.restaurant_lat, lng: pickup.restaurant_lng,
           label: pickup.restaurant_name,
-        })}
+        }) : null}
         connector
       />
 
@@ -75,8 +77,8 @@ export default function PickupCard({
         index="2"
         eyebrow="DROP OFF"
         primary={pickup.fridge_name || 'Volunteer will choose'}
-        secondary={fridgeAddr || 'Pick a community fridge when you arrive'}
-        onOpenMaps={fridgeAddr ? () => openInMaps({
+        secondary={fridgeAddr || (pickup.fridge_name ? 'Address not listed' : 'Choose a community fridge before you head out')}
+        onOpenMaps={showMapLinks && fridgeAddr ? () => openInMaps({
           address: fridgeAddr,
           lat: pickup.fridge_lat, lng: pickup.fridge_lng,
           label: pickup.fridge_name,
@@ -139,13 +141,13 @@ function StopRow({ index, eyebrow, primary, secondary, onOpenMaps, connector, mu
   );
 }
 
-function prettyStatus(s) {
+function prettyStatus(s, reason) {
   switch (s) {
     case 'available': return 'Available';
     case 'claimed':   return 'Claimed — heading there';
     case 'enroute':   return 'En route to fridge';
     case 'completed': return 'Delivered';
-    case 'cancelled': return 'Cancelled';
+    case 'cancelled': return reason === 'Pickup window expired' ? 'Expired' : 'Cancelled';
     default: return 'Available';
   }
 }

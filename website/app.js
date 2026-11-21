@@ -520,16 +520,16 @@
     set('#getappEyebrow', C.getApp.eyebrow);
     set('#getappTitle', C.getApp.title);
     set('#getappBody', C.getApp.body);
-    set('#getappQrNote', C.getApp.qrNote || '');
+    set('#getappQrNote', C.getApp.qrNote || 'Scan to open the web app');
     const links = (C.brand && C.brand.appLinks) || {};
     const webUrl = links.webApp || 'https://app.betternatureofficial.org';
     const qr = $('#getappQr');
     if (qr) qr.src = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(webUrl)}`;
     const ctas = [
-      { href: links.appStore || '#', label: 'App Store', sub: 'Download on the', cls: 'btn--forest' },
-      { href: links.googlePlay || '#', label: 'Google Play', sub: 'Get it on', cls: 'btn--forest' },
-      { href: webUrl, label: 'Open web app', sub: 'app.betternatureofficial.org', cls: 'btn--pink' },
-    ];
+      { href: webUrl, label: 'Open web app', sub: 'Use in your browser', cls: 'btn--pink' },
+      { href: links.appStore, label: 'App Store', sub: 'Download on the', cls: 'btn--forest' },
+      { href: links.googlePlay, label: 'Google Play', sub: 'Get it on', cls: 'btn--forest' },
+    ].filter(({ href }) => href && href !== '#');
     setHTML('#getappCtas', ctas.map(c =>
       `<a class="btn ${c.cls} btn--lg storebtn" href="${c.href}" target="_blank" rel="noreferrer"><small>${c.sub}</small><span>${c.label}</span></a>`
     ).join(''));
@@ -629,7 +629,7 @@
             if (taken) {
               if (status) {
                 status.className = 'signup__status is-err';
-                status.innerHTML = 'That email is already registered. <a href="/admin.html">Sign in</a> instead, or use a different email.';
+                status.innerHTML = 'That email is already registered. <a href="https://app.betternatureofficial.org/#/login">Sign in</a> instead, or use a different email.';
               }
               btn.disabled = false;
               btn.textContent = originalLabel;
@@ -732,9 +732,18 @@
 
   // Mobile menu toggle
   const burger = $('#burger');
-  burger.addEventListener('click', () => nav.classList.toggle('is-open'));
-  document.querySelectorAll('.nav__links a').forEach(a => {
-    a.addEventListener('click', () => nav.classList.remove('is-open'));
+  function setMenuOpen(open) {
+    nav.classList.toggle('is-open', open);
+    burger.setAttribute('aria-expanded', String(open));
+  }
+  burger.addEventListener('click', () => setMenuOpen(!nav.classList.contains('is-open')));
+  document.querySelectorAll('.nav__links a, .nav__ctas a').forEach(a => {
+    a.addEventListener('click', () => setMenuOpen(false));
+  });
+  nav.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !nav.classList.contains('is-open')) return;
+    setMenuOpen(false);
+    burger.focus();
   });
 
   // Scroll reveal

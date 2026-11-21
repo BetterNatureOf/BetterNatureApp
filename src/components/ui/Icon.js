@@ -15,11 +15,12 @@ import {
   Users, Mail, Phone, Lock, LogOut, Eye, EyeOff, Search, Filter, Trash2,
   Edit3, Download, Upload, Image as ImageIcon, FileText, Leaf, TreePine,
   Droplet, Recycle, Sparkles, Award, TrendingUp, Building2, Store, Truck,
-  Share2, Copy, ExternalLink, AlertCircle, Info, ShieldCheck,
+  Share2, Copy, ExternalLink, AlertCircle, Info, ShieldCheck, House,
 } from 'lucide-react-native';
 import { Colors } from '../../config/theme';
 
 const ICONS = {
+  home: House,
   camera: Camera,
   'id-card': IdCard,
   clipboard: ClipboardList,

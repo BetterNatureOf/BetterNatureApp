@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 // Firebase Auth wrapper — mirrors the API shape of the old Supabase auth.js
 // so screens calling signIn/signUp/getProfile don't need changes.
 //
@@ -41,7 +42,6 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage, isFirebaseConfigured } from '../config/firebase';
 import { generateReferralCode, applyReferral, readPendingReferralCode } from './referrals';
 import { withNormalizedPhone } from './duplicates';
-import { bumpOrgStats } from './orgStats';
 
 function makeMockUser({ email, name, phone, city, zip, role }) {
   return {
@@ -205,13 +205,8 @@ export async function signUp({ email, password, name, phone, city, state, countr
     } catch (e) { console.warn('signup membership shadow-write', e?.message); }
   }
 
-  // Bump the org-wide volunteer counter so the homepage ticker reflects
-  // the new signup. We only count actual member volunteers — partner /
-  // restaurant accounts don't move this number. Best-effort: if the
-  // org_stats write fails the user is still fully signed up.
-  if ((userDoc.role || 'member') === 'member') {
-    try { await bumpOrgStats({ volunteers: 1 }); } catch (e) { console.warn('volunteer bump', e); }
-  }
+  // The org-wide volunteer counter is bumped server-side by the
+  // countVolunteerSignup Cloud Function (member role only).
 
   // Attribute the inviter if a code was supplied (form field or ?ref= URL).
   const inviteCode = (referralCode || readPendingReferralCode() || '').trim();
@@ -372,11 +367,7 @@ async function bootstrapSocialUser(fbUser) {
   };
   await setDoc(ref, data);
 
-  // Bump the org-wide volunteer counter on first OAuth sign-in. Skip
-  // super_admins (they're org staff, not volunteers). Best-effort.
-  if (data.role === 'member') {
-    try { await bumpOrgStats({ volunteers: 1 }); } catch (e) { console.warn('volunteer bump (oauth)', e); }
-  }
+  // Volunteer counter: bumped server-side by countVolunteerSignup.
 
   // OAuth users may have arrived via a /?ref= link — attribute now.
   const inviteCode = (readPendingReferralCode() || '').trim();
@@ -448,7 +439,21 @@ export async function signInWithGoogle({ restrictDomain } = {}) {
   const provider = new GoogleAuthProvider();
   if (restrictDomain) provider.setCustomParameters({ hd: restrictDomain });
   let cred;
-  try { cred = await signInWithPopup(auth, provider); }
+  try {
+    if (Platform.OS === 'ios') {
+      const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+      const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+      if (!iosClientId || !webClientId) throw new Error('Google sign-in needs the BetterNature iOS and web OAuth client IDs.');
+      const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+      GoogleSignin.configure({ iosClientId, webClientId });
+      const result = await GoogleSignin.signIn();
+      if (result.type === 'cancelled') return {};
+      if (!result.data?.idToken) throw new Error('Google did not return a sign-in token.');
+      cred = await signInWithCredential(auth, GoogleAuthProvider.credential(result.data.idToken));
+    } else {
+      cred = await signInWithPopup(auth, provider);
+    }
+  }
   catch (e) {
     // Two-tier friendly-ing: linking errors first (they carry a
     // pending credential the caller can complete-link with), then
@@ -510,8 +515,27 @@ export async function signInWithApple() {
   provider.addScope('email');
   provider.addScope('name');
   let cred;
-  try { cred = await signInWithPopup(auth, provider); }
+  let appleName;
+  try {
+    if (Platform.OS === 'ios') {
+      const Apple = require('expo-apple-authentication');
+      const Crypto = require('expo-crypto');
+      if (!(await Apple.isAvailableAsync())) throw new Error('Apple sign-in is unavailable on this device.');
+      const rawNonce = Crypto.randomUUID();
+      const nonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+      const response = await Apple.signInAsync({
+        nonce,
+        requestedScopes: [Apple.AppleAuthenticationScope.FULL_NAME, Apple.AppleAuthenticationScope.EMAIL],
+      });
+      if (!response.identityToken) throw new Error('Apple did not return a sign-in token.');
+      appleName = [response.fullName?.givenName, response.fullName?.familyName].filter(Boolean).join(' ');
+      cred = await signInWithCredential(auth, provider.credential({ idToken: response.identityToken, rawNonce }));
+    } else {
+      cred = await signInWithPopup(auth, provider);
+    }
+  }
   catch (e) {
+    if (e?.code === 'ERR_REQUEST_CANCELED') return {};
     // Cross-provider linking still wins if Firebase says the email is
     // already on a different sign-in method; otherwise fall through to
     // our Apple-specific explainer so the admin sees a clear next step.
@@ -524,7 +548,7 @@ export async function signInWithApple() {
   // so the CompleteProfile screen can pre-split it into first/last.
   if (cred.user && !cred.user.displayName) {
     const oauth = OAuthProvider.credentialFromResult(cred);
-    const fullName = oauth?.fullName || '';
+    const fullName = appleName || oauth?.fullName || '';
     if (fullName) {
       try { await fbUpdateProfile(cred.user, { displayName: fullName }); } catch {}
     }

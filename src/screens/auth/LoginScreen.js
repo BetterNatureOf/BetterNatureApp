@@ -68,6 +68,7 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       const { user } = await promise;
+      if (!user) return;
       // If we had a pending credential from a previous attempt, complete
       // the link now. After this, both providers point at one account.
       if (pendingLink?.pending) {
@@ -114,9 +115,7 @@ export default function LoginScreen({ navigation }) {
   function handleGoogle() { return handleOAuthResult(signInWithGoogle(), 'Google'); }
   function handleApple()  { return handleOAuthResult(signInWithApple(),  'Apple'); }
 
-  // Popup auth only works on web. Native needs expo-auth-session
-  // (a separate, larger setup) — surface the buttons only where they work.
-  const showOAuth = Platform.OS === 'web' && isFirebaseConfigured;
+  const showOAuth = ['web', 'ios'].includes(Platform.OS) && isFirebaseConfigured;
   const { contentStyle } = useResponsiveLayout();
 
   return (
@@ -174,21 +173,13 @@ export default function LoginScreen({ navigation }) {
                 <Text style={styles.googleG}>G</Text>
                 <Text style={styles.googleText}>Continue with Google</Text>
               </TouchableOpacity>
-              {/* Apple sign-in is gated on FEATURES.APPLE_SIGNIN.
-                  Until you (a) join the Apple Developer Program,
-                  (b) create a Services ID, (c) enable Apple in Firebase
-                  Console → Authentication → Sign-in method, and
-                  (d) set EXPO_PUBLIC_APPLE_SIGNIN_ENABLED=true in your
-                  Cloudflare env, the button stays hidden. Exposing a
-                  broken auth path is worse than not exposing one. */}
-              {FEATURES.APPLE_SIGNIN ? (
+              {(Platform.OS === 'ios' || FEATURES.APPLE_SIGNIN) ? (
                 <TouchableOpacity
                   style={styles.appleBtn}
                   onPress={handleApple}
                   disabled={loading}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.appleLogo}></Text>
                   <Text style={styles.appleText}>Continue with Apple</Text>
                 </TouchableOpacity>
               ) : null}
@@ -257,10 +248,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     backgroundColor: '#000',
     marginTop: 10,
-  },
-  appleLogo: {
-    fontSize: 18,
-    color: '#fff',
   },
   appleText: {
     fontSize: 15,

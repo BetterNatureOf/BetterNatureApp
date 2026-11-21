@@ -63,6 +63,29 @@ async function complete(data, context) {
     if (!override && !spoiled && !pk.verified_by_restaurant_at && !note) {
       throw error('failed-precondition', 'Restaurant has not confirmed handoff.', 'handoff_not_confirmed');
     }
+    // Rescues with a confirmed receiving site close only on the site's
+    // own receipt: the donor confirmed collection, the receiving site
+    // recorded the weight it accepted, and the run is not on hold.
+    // Impact is counted from that receipted weight.
+    const destination = pk.destination_confirmation || null;
+    if (pk.safety_hold && !override) {
+      throw error('failed-precondition', 'This rescue is on hold for a coordinator decision.', 'on_hold');
+    }
+    if (destination && fridgeId) {
+      throw error('failed-precondition', 'Use the confirmed receiving site.', 'destination_locked');
+    }
+    if (destination && !spoiled) {
+      const receipted = pk.receiving_receipt?.weight_lbs;
+      if (!override && !pk.verified_by_restaurant_at) {
+        throw error('failed-precondition', 'The donor must confirm the handoff first.', 'handoff_not_confirmed');
+      }
+      if (!override && !(Number.isFinite(receipted) && receipted > 0)) {
+        throw error('failed-precondition', 'The receiving site must confirm the delivered weight first.', 'receipt_required');
+      }
+      if (Number.isFinite(receipted) && weight !== receipted) {
+        throw error('failed-precondition', 'Delivered weight must match the receiving site’s receipt.', 'weight_mismatch');
+      }
+    }
     const claimantUid = pk.claimed_by || null;
     const claimantSnap = claimantUid && claimantUid !== caller ? await tx.get(db.doc(`users/${claimantUid}`)) : claimantUid ? actorSnap : null;
     if (claimantUid && !claimantSnap?.exists) throw error('failed-precondition', 'Claimant profile missing.', 'claimant_missing');
@@ -74,7 +97,9 @@ async function complete(data, context) {
     const fridge = fridgeSnap?.exists ? fridgeSnap.data() : null;
     const nowMs = Date.now(), iso = new Date(nowMs).toISOString();
     const stamp = FieldValue.serverTimestamp();
-    const anchor = toMs(pk.enroute_at) || toMs(pk.claimed_at);
+    // A coordinator-recorded custody transfer restarts the clock for
+    // the volunteer who finished the run.
+    const anchor = toMs(pk.custody_transfer?.recorded_at) || toMs(pk.enroute_at) || toMs(pk.claimed_at);
     if (!spoiled && claimantUid && (!Number.isFinite(anchor) || anchor > nowMs)) {
       throw error('failed-precondition', 'Pickup start time needs correction.', 'invalid_start_time');
     }

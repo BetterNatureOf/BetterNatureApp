@@ -3,7 +3,7 @@
 // The screen adapts to what the volunteer is actually doing right now
 // instead of showing the same stats-first layout every time:
 //   State 1 · on a run     → hero = the claimed pickup (countdown, route, resume CTA)
-//   State 2 · pickup ready → hero = the newest available pickup + claim
+//   State 2 · pickup ready → hero = an available pickup with a preview
 //   State 3 · quiet moment → hero = a warm impact card so a new/quiet day
 //                             doesn't greet the user with a wall of zeros
 //
@@ -28,7 +28,8 @@ import Screen from '../../components/ui/Screen';
 import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import useEvents from '../../hooks/useEvents';
 import usePickups from '../../hooks/usePickups';
-import { confirm } from '../../services/ui';
+import Button from '../../components/ui/Button';
+import { hasRole } from '../../services/roles';
 import { getProfile } from '../../services/auth';
 import { ensureMyPartnerRecord, fetchRecentlyCompletedPickups } from '../../services/database';
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
@@ -101,7 +102,7 @@ export default function DashboardScreen({ navigation }) {
   }, [user?.id]));
 
   const { events } = useEvents();
-  const { pickups, claim } = usePickups();
+  const { pickups, loading, error, loadPickups } = usePickups();
   const chapterPulse = useChapterPulse(user?.chapter_id, focusTick);
   const { contentStyle } = useResponsiveLayout();
 
@@ -115,16 +116,10 @@ export default function DashboardScreen({ navigation }) {
 
   const state = active.length > 0 ? 'active'
               : available.length > 0 ? 'available'
+              : loading ? 'loading'
+              : error ? 'error'
+              : !user?.chapter_id ? 'no-chapter'
               : 'quiet';
-
-  async function handleClaimPickup(pickup) {
-    const ok = await confirm(
-      'Claim Pickup',
-      `Claim the pickup from ${pickup.restaurant_name}?`
-    );
-    if (!ok) return;
-    try { await claim(pickup.id); } catch {}
-  }
 
   const isPartner = user?.role === 'restaurant'
     || (Array.isArray(user?.roles) && user.roles.includes('partner'));
@@ -143,6 +138,9 @@ export default function DashboardScreen({ navigation }) {
         unreadCount={unreadCount}
         onNotifPress={() => navigation.navigate('Notifications')}
       />
+      {hasRole(user, 'chapter_vol_coord') && (
+        <Button title="Volunteer activity" variant="secondary" onPress={() => navigation.navigate('PresMembers')} />
+      )}
 
       {/* Hero — adapts to state */}
       {state === 'active' && (
@@ -155,16 +153,39 @@ export default function DashboardScreen({ navigation }) {
         <HeroAvailable
           pickup={available[0]}
           extraCount={available.length - 1}
-          onClaim={() => handleClaimPickup(available[0])}
+          onBrowse={() => navigation.navigate('Rescue')}
           onOpen={() => navigation.navigate('PickupDetail', { pickupId: available[0].id, pickup: available[0] })}
         />
+      )}
+      {['loading', 'error', 'no-chapter'].includes(state) && (
+        <View style={styles.hero}>
+          <Text style={styles.heroPrimary}>
+            {state === 'loading' ? 'Checking for pickups…'
+              : state === 'error' ? 'Couldn’t load pickups.'
+              : 'Find your local chapter.'}
+          </Text>
+          {state === 'no-chapter' && (
+            <Text style={styles.heroSecondary}>Join a chapter to see food pickups near you.</Text>
+          )}
+          {state !== 'loading' && (
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.btnPrimary}
+                accessibilityRole="button"
+                onPress={state === 'error' ? loadPickups : () => navigation.navigate('FindChapter')}
+              >
+                <Text style={styles.btnPrimaryText}>{state === 'error' ? 'Try again' : 'Find a chapter'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       )}
       {state === 'quiet' && (
         <HeroQuiet
           userLbs={userLbs}
           chapterName={user?.chapter?.name || user?.chapter_name}
           personalPickups={user?.pickups_completed || 0}
-          onOpenEvents={() => navigation.navigate('Iris')}
+          onBrowse={() => navigation.navigate('Rescue')}
         />
       )}
 
@@ -239,6 +260,17 @@ function IdentityStrip({ greeting, name, avatarInitial, unreadCount, onNotifPres
 // ── Hero: on a run ──────────────────────────────────────────────────
 function HeroActive({ pickup, onOpen }) {
   if (!pickup) return null;
+  if (pickup.safety_hold) {
+    return (
+      <View style={styles.hero}>
+        <Text style={styles.heroPrimary}>Pickup on hold</Text>
+        <Text style={styles.heroSecondary}>Contact your chapter coordinator for next steps.</Text>
+        <TouchableOpacity style={styles.btnPrimary} onPress={onOpen} accessibilityRole="button">
+          <Text style={styles.btnPrimaryText}>View pickup</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
   const restAddr = pickup.restaurant_address || formatAddress({
     street: pickup.restaurant_street,
     city: pickup.restaurant_city,
@@ -248,9 +280,12 @@ function HeroActive({ pickup, onOpen }) {
   const dropTarget = pickup.status === 'enroute'
     ? (pickup.fridge_name || 'Chosen fridge')
     : (pickup.fridge_name || 'You choose on arrival');
-  const primaryLabel = pickup.status === 'enroute' ? 'Complete drop-off →' : 'Continue pickup →';
+  const handoffConfirmed = pickup.status === 'enroute' && !!pickup.verified_by_restaurant_at;
+  const primaryLabel = handoffConfirmed ? 'Continue to drop-off →' : 'Continue pickup →';
   const primaryPickup = pickup.restaurant_name || 'This pickup';
-  const primaryText = pickup.estimated_weight_lbs
+  const primaryText = handoffConfirmed
+    ? 'Head to your drop-off.'
+    : pickup.estimated_weight_lbs
     ? `${primaryPickup} has ${pickup.estimated_weight_lbs} lbs ready.`
     : `${primaryPickup} is waiting on you.`;
 
@@ -290,11 +325,17 @@ function HeroActive({ pickup, onOpen }) {
         <TouchableOpacity style={styles.btnPrimary} onPress={onOpen} activeOpacity={0.88}>
           <Text style={styles.btnPrimaryText}>{primaryLabel}</Text>
         </TouchableOpacity>
-        {restAddr && (
+        {(handoffConfirmed ? pickup.fridge_address : restAddr) && (
           <TouchableOpacity
             style={styles.btnGhost}
+            accessibilityRole="button"
             activeOpacity={0.88}
-            onPress={() => openInMaps({
+            onPress={() => openInMaps(handoffConfirmed ? {
+              address: pickup.fridge_address,
+              lat: pickup.fridge_lat,
+              lng: pickup.fridge_lng,
+              label: pickup.fridge_name,
+            } : {
               address: restAddr,
               lat: pickup.restaurant_lat,
               lng: pickup.restaurant_lng,
@@ -302,7 +343,7 @@ function HeroActive({ pickup, onOpen }) {
             })}
           >
             <Icon name="pin" size={14} color={Colors.green} />
-            <Text style={styles.btnGhostText}>Maps</Text>
+            <Text style={styles.btnGhostText}>{handoffConfirmed ? 'Map to fridge' : 'Map to pickup'}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -311,7 +352,7 @@ function HeroActive({ pickup, onOpen }) {
 }
 
 // ── Hero: pickup available ─────────────────────────────────────────
-function HeroAvailable({ pickup, extraCount, onClaim, onOpen }) {
+function HeroAvailable({ pickup, extraCount, onBrowse, onOpen }) {
   if (!pickup) return null;
   const meals = mealsFromLbs(pickup.estimated_weight_lbs || 0);
   const families = familyDaysFromLbs(pickup.estimated_weight_lbs || 0);
@@ -335,25 +376,24 @@ function HeroAvailable({ pickup, extraCount, onClaim, onOpen }) {
       <Text style={styles.heroPrimary}>{primaryText}</Text>
       {sub ? <Text style={styles.heroSecondary}>{sub}.</Text> : null}
       <View style={styles.actionsRow}>
-        <TouchableOpacity style={styles.btnPrimary} onPress={onClaim} activeOpacity={0.88}>
-          <Text style={styles.btnPrimaryText}>Claim pickup</Text>
+        <TouchableOpacity style={styles.btnPrimary} onPress={onOpen} accessibilityRole="button" activeOpacity={0.88}>
+          <Text style={styles.btnPrimaryText}>View pickup</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.btnGhost} onPress={onOpen} activeOpacity={0.88}>
-          <Text style={styles.btnGhostText}>
-            {extraCount > 0 ? `See all ${extraCount + 1}` : 'Details'}
-          </Text>
-        </TouchableOpacity>
+        {extraCount > 0 && (
+          <TouchableOpacity style={styles.btnGhost} onPress={onBrowse} accessibilityRole="button" activeOpacity={0.88}>
+            <Text style={styles.btnGhostText}>See all {extraCount + 1} pickups</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
 }
 
 // ── Hero: quiet moment ─────────────────────────────────────────────
-function HeroQuiet({ userLbs, chapterName, personalPickups, onOpenEvents }) {
+function HeroQuiet({ userLbs, chapterName, personalPickups, onBrowse }) {
   // Personal impact if the user has any, otherwise nudge to first
   // pickup. Family-days is the emotional payoff number.
   const families = familyDaysFromLbs(userLbs);
-  const meals    = mealsFromLbs(userLbs);
   const hasImpact = userLbs > 0;
   return (
     <View style={styles.heroQuiet}>
@@ -376,14 +416,13 @@ function HeroQuiet({ userLbs, chapterName, personalPickups, onOpenEvents }) {
         <>
           <Text style={styles.heroQuietNum}>Ready when you are.</Text>
           <Text style={styles.heroQuietBody}>
-            {chapterName ? `Nothing new in ${chapterName} right this second — we'll notify you the moment a partner posts. `
-                         : 'Nothing new right this second — we\'ll notify you the moment a partner posts. '}
-            Meanwhile, RSVP for something upcoming.
+            {chapterName ? `No pickups are available in ${chapterName} right now.`
+                         : 'No pickups are available in your chapter right now.'}
           </Text>
         </>
       )}
-      <TouchableOpacity style={styles.btnWarm} onPress={onOpenEvents} activeOpacity={0.88}>
-        <Text style={styles.btnWarmText}>See what's next →</Text>
+      <TouchableOpacity style={styles.btnWarm} onPress={onBrowse} accessibilityRole="button" activeOpacity={0.88}>
+        <Text style={styles.btnWarmText}>Browse pickups →</Text>
       </TouchableOpacity>
     </View>
   );

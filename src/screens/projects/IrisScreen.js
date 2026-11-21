@@ -2,29 +2,21 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Alert,
-  RefreshControl,
   Platform,
 } from 'react-native';
-import { Colors, Type, Radius, Shadows } from '../../config/theme';
+import { Colors, Type, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import StatCard from '../../components/ui/StatCard';
 import EventCard from '../../components/ui/EventCard';
 import BrushDivider from '../../components/ui/BrushDivider';
-import usePickups from '../../hooks/usePickups';
 import useEvents from '../../hooks/useEvents';
-import useAuthStore from '../../store/authStore';
 import { getOrgStats } from '../../services/orgStats';
 import { fetchRestaurants } from '../../services/database';
-import { requireVerifiedId } from '../../services/idGate';
-import PickupCard from '../../components/pickup/PickupCard';
 import Icon from '../../components/ui/Icon';
-import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import ProjectLogo from '../../components/ui/ProjectLogo';
 import Screen from '../../components/ui/Screen';
 import FridgeNetworkMap from '../../components/maps/FridgeNetworkMap';
@@ -34,10 +26,7 @@ import { loadLiveFridges } from '../../data/impactMap';
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
 export default function IrisScreen({ navigation }) {
-  const { pickups, loading: pickupsLoading, loadPickups, claim } = usePickups();
   const { events } = useEvents();
-  const user = useAuthStore((s) => s.user);
-  const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState({ meals: 0 });
   const [partners, setPartners] = useState(0);
   const [volunteers, setVolunteers] = useState(0);
@@ -56,58 +45,8 @@ export default function IrisScreen({ navigation }) {
 
   const irisEvents = events.filter((e) => e.project === 'IRIS');
 
-  async function onRefresh() {
-    setRefreshing(true);
-    await loadPickups();
-    setRefreshing(false);
-  }
-
-  async function handleClaim(pickupId) {
-    if (!requireVerifiedId(user, navigation)) return;
-    Alert.alert(
-      'Claim Pickup',
-      'Are you sure you want to claim this pickup? The restaurant will receive your contact info.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Claim',
-          onPress: async () => {
-            try {
-              await claim(pickupId);
-              Alert.alert('Claimed!', 'You\'ve been assigned this pickup. Check your notifications for details.');
-            } catch (e) {
-              Alert.alert('Error', 'This pickup may have already been claimed.');
-            }
-          },
-        },
-      ]
-    );
-  }
-
-  const Body = Platform.OS === 'web'
-    ? ({ children }) => React.createElement(
-        'div',
-        {
-          style: {
-            height: '100vh',
-            width: '100%',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            backgroundColor: Colors.cream,
-          },
-        },
-        React.createElement('div', { style: { paddingBottom: 40 } }, children)
-      )
-    : ({ children }) => (
-        <Screen contentStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          {children}
-        </Screen>
-      );
-
   return (
-    <Body>
+    <Screen contentStyle={styles.content}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -124,6 +63,10 @@ export default function IrisScreen({ navigation }) {
           Rescue surplus food from local restaurants and deliver it to communities
           in need. Every meal counts.
         </Text>
+      </View>
+
+      <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
+        <Button title="Browse food pickups" onPress={() => navigation.navigate('Pickups')} />
       </View>
 
       {/* Stats */}
@@ -166,51 +109,6 @@ export default function IrisScreen({ navigation }) {
 
       <BrushDivider color={Colors.sage} />
 
-      {/* Available Pickups */}
-      <BrushText variant="sectionHeader" style={styles.sectionTitle}>
-        Available Pickups
-      </BrushText>
-
-      {pickups.length === 0 ? (
-        <Card style={styles.emptyCard}>
-          <Icon name="clipboard" size={36} color={Colors.green} strokeWidth={1.5} />
-          <Text style={[styles.emptyText, { marginTop: 10 }]}>No pickups available right now</Text>
-          <Text style={styles.emptySubtext}>Check back soon</Text>
-        </Card>
-      ) : (
-        <View style={{ gap: 14 }}>
-          {pickups.map((pickup) => (
-            <AnimatedPressable
-              key={pickup.id}
-              onPress={() => navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup })}
-              scaleTo={0.99}
-            >
-              <PickupCard
-                pickup={pickup}
-                cta={{
-                  // Volunteers preview the pickup (photo, exact
-                  // address, distance, weight, notes) on the detail
-                  // screen BEFORE the claim button is reachable.
-                  // 'View details' makes that clear; 'Claim pickup'
-                  // on the card incorrectly implied tapping locked
-                  // them into a run.
-                  label: pickup.status === 'claimed'
-                    ? (pickup.claimed_by === user?.id ? 'Open' : 'Already claimed')
-                    : 'View details',
-                  onPress: () => {
-                    // ID gate still applies to claim — but the
-                    // preview is open to anyone signed in.
-                    navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup });
-                  },
-                }}
-              />
-            </AnimatedPressable>
-          ))}
-        </View>
-      )}
-
-      <BrushDivider color={Colors.sage} />
-
       {/* IRIS Events */}
       <BrushText variant="sectionHeader" style={styles.sectionTitle}>
         IRIS Events
@@ -229,16 +127,11 @@ export default function IrisScreen({ navigation }) {
           />
         ))
       )}
-    </Body>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.cream,
-    ...(Platform.OS === 'web' ? { height: '100vh' } : null),
-  },
   content: { paddingBottom: 40 },
   header: { padding: 24, paddingTop: 60 },
   back: { fontSize: 16, color: Colors.sage, marginBottom: 8 },
@@ -255,15 +148,6 @@ const styles = StyleSheet.create({
   emptyCard: { marginHorizontal: 24, alignItems: 'center', padding: 32 },
   emptyEmoji: { fontSize: 40, marginBottom: 8 },
   emptyText: { fontSize: 15, fontWeight: '500', color: Colors.dark },
-  emptySubtext: { ...Type.caption, marginTop: 4 },
-  pickupCard: { marginHorizontal: 24, marginBottom: 12 },
-  pickupRestaurant: { fontSize: 16, fontWeight: '700', color: Colors.dark },
-  pickupItems: { ...Type.body, color: Colors.gray, marginTop: 4 },
-  pickupMeta: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  pickupDate: { ...Type.caption },
-  pickupQty: { ...Type.caption, fontWeight: '600' },
-  pickupInstructions: { ...Type.caption, fontStyle: 'italic', marginTop: 6 },
-  claimBtn: { marginTop: 12 },
   mapPreviewWrap: {
     marginHorizontal: 24,
     marginTop: 20,

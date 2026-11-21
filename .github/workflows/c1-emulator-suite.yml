@@ -26,7 +26,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [claude/c1-idempotent-completion]
+    branches: [claude/c1-idempotent-completion, rescue/integration]
   workflow_dispatch:
 
 permissions:
@@ -104,7 +104,8 @@ jobs:
               && node scripts/test-a2-rules.cjs \
               && node scripts/test-c1-complete.cjs \
               && node scripts/test-idgate.cjs \
-              && node scripts/test-c1-client.cjs'
+              && node scripts/test-c1-client.cjs \
+              && node --test tests/rules/*.test.mjs'
 
       - name: Auth + Functions + Firestore registered suite (demo-c1)
         env:

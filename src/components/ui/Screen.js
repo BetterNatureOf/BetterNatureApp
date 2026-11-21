@@ -19,6 +19,7 @@ export default function Screen({
   children,
   bg = Colors.cream,
   contentStyle,
+  webHeight = '100vh',
   // Native-only props forwarded to ScrollView
   refreshControl,
   keyboardShouldPersistTaps,
@@ -31,7 +32,7 @@ export default function Screen({
       'div',
       {
         style: {
-          height: '100vh',
+          height: webHeight,
           width: '100%',
           overflowY: 'auto',
           overflowX: 'hidden',

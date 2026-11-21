@@ -1,55 +1,58 @@
-import { useEffect, useCallback } from 'react';
-import usePickupStore from '../store/pickupStore';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import useAuthStore from '../store/authStore';
-import { fetchPickups, fetchMyActivePickups, claimPickup as claimPickupApi } from '../services/database';
+import { fetchPickups, fetchMyActivePickups } from '../services/database';
+import { rescueOfferDeadline } from '../services/rescueCells';
 
 export default function usePickups() {
-  const { pickups, loading, setPickups, setLoading, claimPickup: claimInStore } = usePickupStore();
-  const user = useAuthStore((s) => s.user);
+  const userId = useAuthStore((s) => s.user?.id);
+  const chapterId = useAuthStore((s) => s.user?.chapter_id);
+  const [result, setResult] = useState(null);
+  const [, setExpiryTick] = useState(0);
+  const request = useRef(0);
 
   const loadPickups = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Union the chapter feed (available pickups everyone can claim)
-      // with the volunteer's OWN claimed/enroute pickups so MyPickups
-      // doesn't go silent the moment they tap Claim.
-      //
-      // Skip the chapter feed if the user has no chapter — the
-      // service function would otherwise return every available
-      // pickup across every chapter (nulls to the chapter_id filter
-      // fall through to unfiltered), which meant a chapterless user
-      // saw pickups from cities they've never heard of. Volunteer's
-      // own active pickups still load so a mid-flight claim doesn't
-      // disappear if they somehow ended up chapterless.
-      const [feed, mine] = await Promise.all([
-        user?.chapter_id ? fetchPickups(user.chapter_id) : Promise.resolve([]),
-        user?.id ? fetchMyActivePickups(user.id) : Promise.resolve([]),
-      ]);
-      // De-dupe by id (a claimed pickup shouldn't appear in the feed
-      // anyway but defensively guard).
-      const byId = new Map();
-      for (const p of feed) byId.set(p.id, p);
-      for (const p of mine) byId.set(p.id, p);
-      setPickups([...byId.values()]);
-    } catch (e) {
-      console.error('Failed to load pickups:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.chapter_id, user?.id]);
+    if (!userId) return;
+    const current = ++request.current;
+    setResult({ userId, chapterId, loading: true });
+    const [feed, mine] = await Promise.allSettled([
+      chapterId ? fetchPickups(chapterId) : [],
+      fetchMyActivePickups(userId),
+    ]);
+    if (current !== request.current) return;
+    const byId = new Map([...(feed.value || []), ...(mine.value || [])].map((p) => [p.id, p]));
+    setResult({
+      userId,
+      chapterId,
+      pickups: [...byId.values()],
+      error: feed.status === 'rejected' || mine.status === 'rejected',
+    });
+  }, [userId, chapterId]);
 
-  const claim = useCallback(
-    async (pickupId) => {
-      if (!user?.id) return;
-      await claimPickupApi(pickupId, user.id);
-      claimInStore(pickupId, user.id);
-    },
-    [user?.id]
-  );
+  useFocusEffect(useCallback(() => {
+    loadPickups();
+    return () => { request.current++; };
+  }, [loadPickups]));
 
+  const scoped = result?.userId === userId && result?.chapterId === chapterId ? result : null;
+  const now = Date.now();
+  let nextExpiry = Infinity;
+  const pickups = (scoped?.pickups || []).filter((pickup) => {
+    if (pickup.status !== 'available') return true;
+    const cutoff = rescueOfferDeadline(pickup);
+    if (cutoff === null || cutoff <= now) return false;
+    nextExpiry = Math.min(nextExpiry, cutoff);
+    return true;
+  });
   useEffect(() => {
-    if (user) loadPickups();
-  }, [user, loadPickups]);
-
-  return { pickups, loading, loadPickups, claim };
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(() => setExpiryTick((tick) => tick + 1), Math.max(0, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [nextExpiry]);
+  return {
+    pickups,
+    loading: !!userId && (!scoped || !!scoped.loading),
+    error: !!scoped?.error,
+    loadPickups,
+  };
 }

@@ -9,7 +9,7 @@
 //   users/{uid}.referred_by     — the inviter's uid, set once on the new user
 import {
   collection, doc, getDoc, getDocs, query, where, limit,
-  setDoc, updateDoc, increment, serverTimestamp,
+  setDoc, updateDoc,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 
@@ -79,11 +79,9 @@ export async function applyReferral(newUserId, code) {
     return { ok: false, reason: 'already_referred' };
   }
 
+  // The inviter's referrals_count is credited server-side by the
+  // mirrorPublicProfile Cloud Function when referred_by first appears.
   await updateDoc(newRef, { referred_by: inviter.id });
-  await updateDoc(doc(db, 'users', inviter.id), {
-    referrals_count: increment(1),
-    referrals_updated_at: serverTimestamp(),
-  });
   return { ok: true, inviterId: inviter.id };
 }
 
