@@ -12,20 +12,20 @@
 //   https://app.betternatureofficial.org/#/pickup/{id}    (legacy singular from
 //     notifications persisted before the emitter was aligned)
 // We accept both — the singular is only kept for old rows in Firestore.
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import Icon from '../../components/ui/Icon';
 import useNotifStore from '../../store/notifStore';
-import { fetchNotifications, markNotificationRead } from '../../services/database';
-import useAuthStore from '../../store/authStore';
+import { markNotificationRead } from '../../services/database';
 import Screen from '../../components/ui/Screen';
 
 // Icon per notification kind — Icon component for consistency with the
 // rest of the app instead of hand-painted emojis.
 const KIND_ICON = {
   pickup:   { name: 'clipboard', tint: Colors.green },
+  pickup_alert: { name: 'clipboard', tint: Colors.green },
   event:    { name: 'calendar',  tint: Colors.pink },
   volunteer:{ name: 'user',      tint: Colors.sage },
   broadcast:{ name: 'bell',      tint: Colors.skyDark },
@@ -85,18 +85,7 @@ function isActionable(n) {
 }
 
 export default function NotificationsScreen({ navigation }) {
-  const user = useAuthStore((s) => s.user);
-  const { notifications, setNotifications, markRead, markAllRead } = useNotifStore();
-
-  useEffect(() => { loadNotifs(); }, []);
-
-  async function loadNotifs() {
-    if (!user?.id) return;
-    try {
-      const data = await fetchNotifications(user.id);
-      setNotifications(data);
-    } catch (e) { console.error(e); }
-  }
+  const { notifications, markRead, markAllRead } = useNotifStore();
 
   async function handlePress(notif) {
     if (!notif.read) {
@@ -119,7 +108,10 @@ export default function NotificationsScreen({ navigation }) {
           <Text style={styles.back}>{'‹ Back'}</Text>
         </TouchableOpacity>
         {actionable.length > 0 || notifications.some((n) => !n.read) ? (
-          <TouchableOpacity onPress={markAllRead}>
+          <TouchableOpacity onPress={() => {
+            markAllRead();
+            notifications.filter((n) => !n.read).forEach((n) => markNotificationRead(n.id).catch(() => {}));
+          }}>
             <Text style={styles.markAll}>Mark all read</Text>
           </TouchableOpacity>
         ) : null}

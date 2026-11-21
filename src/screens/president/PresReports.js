@@ -32,7 +32,7 @@ export default function PresReports({ navigation }) {
           await Promise.all([
             fetchEvents(chapterId),
             fetchPickups(chapterId),
-            fetchAllMembers(),
+            fetchAllMembers(chapterId),
             fetchAnimalsHelped(chapterId),
             fetchOrgMetrics({ scope: 'chapter', chapterId }),
           ]);

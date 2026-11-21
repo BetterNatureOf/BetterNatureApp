@@ -4,7 +4,7 @@
 // don't fall back unknown paths to index.html, so reloading at /settings
 // returns 404 or redirects to / *before* the app loads. Hash fragments
 // (`/#/settings`) never hit the server, so reload is bulletproof.
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 
 const screens = {
   // Auth flow
@@ -19,13 +19,14 @@ const screens = {
     path: '',
     screens: {
       Dashboard: 'home',   // "Home" tab label; renders role-appropriate dashboard
-      Projects:  'do',     // "Do" tab label
+      Rescue:    'rescue',
+      Projects:  'do',     // Keep the existing Programs link
       Belong:    'belong', // "Belong" tab (Phase 1 slice 3)
-      Donate:    'donate',
       Manage:    'manage', // exec/pres/founder only — surfaces via ManageTab dispatcher
       Profile:   'you',    // "You" tab label
     },
   },
+  Donate: 'donate',
   Leaderboard: 'leaderboard',
   ProjectDetail: 'projects/:project',
   Iris: 'iris',
@@ -40,6 +41,7 @@ const screens = {
   ChangePassword: 'profile/password',
   ConnectedAccounts: 'profile/connected-accounts',
   VerifyId: 'profile/verify',
+  Pickups: 'pickups',
   PickupDetail: 'pickups/:pickupId',
   ChapterChecklist: 'chapter',
   NotificationPreferences: 'notifications/prefs',
@@ -86,11 +88,19 @@ const screens = {
 };
 
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+const nativePrefix = 'betternature://';
+
+function pickupNotificationUrl(response) {
+  const data = response?.notification.request.content.data;
+  if (data?.type !== 'pickup_available' || typeof data.pickupId !== 'string' ||
+      !/^[a-zA-Z0-9_-]+$/.test(data.pickupId)) return null;
+  return `${nativePrefix}pickups/${data.pickupId}`;
+}
 
 // Hash overrides — RN Navigation reads pathname by default, so we hand it the
 // hash value via getInitialURL/subscribe and write to it via getPathFromState.
 const linking = {
-  prefixes: isWeb ? [window.location.origin] : [],
+  prefixes: isWeb ? [window.location.origin] : [nativePrefix],
   config: { screens },
   ...(isWeb
     ? {
@@ -116,7 +126,34 @@ const linking = {
         getStateFromPath: undefined, // use default
         getPathFromState: undefined, // use default
       }
-    : {}),
+    : {
+        async getInitialURL() {
+          const url = await Linking.getInitialURL();
+          if (url) return url;
+          try {
+            const notifications = require('expo-notifications');
+            const target = pickupNotificationUrl(await notifications.getLastNotificationResponseAsync());
+            if (target) notifications.clearLastNotificationResponse();
+            return target;
+          } catch {
+            return null;
+          }
+        },
+        subscribe(listener) {
+          const links = Linking.addEventListener('url', ({ url }) => listener(url));
+          let push;
+          try {
+            const notifications = require('expo-notifications');
+            push = notifications.addNotificationResponseReceivedListener((response) => {
+              const url = pickupNotificationUrl(response);
+              if (!url) return;
+              notifications.clearLastNotificationResponse();
+              listener(url);
+            });
+          } catch {}
+          return () => { links.remove(); push?.remove(); };
+        },
+      }),
 };
 
 // Wire RN Navigation's path → hash. We do this by patching history methods

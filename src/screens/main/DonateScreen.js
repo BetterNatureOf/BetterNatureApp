@@ -7,18 +7,21 @@
 // has effectively zero work in its render path to make sure the
 // failure isn't ours.
 import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, Linking } from 'react-native';
 import { Colors } from '../../config/theme';
+import Button from '../../components/ui/Button';
 import { getZeffyFormUrl } from '../../services/zeffy';
 
-export default function DonateScreen() {
+export default function DonateScreen({ navigation }) {
   const url = getZeffyFormUrl();
+  const goBack = () => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs');
 
   // Web: render an <iframe> directly. We don't pass through any of
   // our wrapper components on this screen — the page is the iframe.
   if (Platform.OS === 'web') {
     return (
       <View style={styles.web}>
+        <Button title="Back" variant="secondary" onPress={goBack} style={styles.back} />
         <Text style={styles.title}>Make a donation</Text>
         <Text style={styles.subtitle}>100% of your gift goes to BetterNature programs. Tax-deductible.</Text>
         {React.createElement('iframe', {
@@ -26,7 +29,7 @@ export default function DonateScreen() {
           title: 'Donate to BetterNature',
           style: {
             width: '100%',
-            height: 'calc(100vh - 150px)',
+            height: 'calc(100dvh - 210px)',
             border: 'none',
             display: 'block',
             background: 'transparent',
@@ -41,9 +44,13 @@ export default function DonateScreen() {
     );
   }
 
-  // Native: external link is handled by ZeffyEmbed elsewhere; this
-  // screen is only used on web in practice.
-  return null;
+  return (
+    <View style={styles.web}>
+      <Button title="Back" variant="secondary" onPress={goBack} style={styles.back} />
+      <Text style={styles.title}>Make a donation</Text>
+      <Button title="Open donation form" onPress={() => Linking.openURL(url)} />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -52,8 +59,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cream,
     padding: 24,
     paddingTop: 60,
-    height: '100vh',
+    ...(Platform.OS === 'web' ? { height: '100vh' } : {}),
   },
+  back: { alignSelf: 'flex-start', marginBottom: 8 },
   title:    { fontSize: 30, fontWeight: '700', color: Colors.green, marginBottom: 6 },
   subtitle: { fontSize: 14, color: Colors.gray, marginBottom: 16 },
 });

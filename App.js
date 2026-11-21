@@ -11,6 +11,8 @@ import RestaurantNavigator from './src/navigation/RestaurantNavigator';
 import LoadingScreen from './src/screens/auth/LoadingScreen';
 import CompleteProfile from './src/screens/auth/CompleteProfile';
 import useAuthStore, { ROLES } from './src/store/authStore';
+import useNotifStore from './src/store/notifStore';
+import { subscribeNotifications } from './src/services/database';
 import useAuth from './src/hooks/useAuth';
 import useFreshAppVersion from './src/hooks/useFreshAppVersion';
 import linking from './src/navigation/linking';
@@ -142,6 +144,15 @@ export default function App() {
     if (isAuthenticated && user?.id) {
       registerForPushNotifications(user.id).catch(() => {});
     }
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    const { setNotifications } = useNotifStore.getState();
+    setNotifications([]);
+    if (!isAuthenticated || !user?.id) return;
+    return subscribeNotifications(user.id, setNotifications, (error) => {
+      console.warn('Could not load notifications', error);
+    });
   }, [isAuthenticated, user?.id]);
 
   if (!fontsLoaded || isLoading) {

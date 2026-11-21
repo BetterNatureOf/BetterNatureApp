@@ -9,36 +9,61 @@
 // pre-picked one. If not, the picker shows once the volunteer is heading
 // out so they can commit to a destination before we mark them en route.
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform, Pressable } from 'react-native';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
+import ActiveRescueMap from '../../components/maps/ActiveRescueMap';
 import PickupCard from '../../components/pickup/PickupCard';
 import PickupTimeline from '../../components/pickup/PickupTimeline';
 import PickupContacts from '../../components/pickup/PickupContacts';
+import { pickupDeadline, rescueOfferDeadline } from '../../services/rescueCells';
 import PickupCountdown from '../../components/pickup/PickupCountdown';
 import FridgePicker from '../../components/ui/FridgePicker';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge, handOffPickup, reportPickupSpoiled } from '../../services/database';
+import { confirmPickupDestination, rerouteHeldPickup, assignPickupReceiver, recordPickupReceipt, claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge, holdPickup, closeHeldPickup, fetchCustodyVolunteers, transferPickupCustody } from '../../services/database';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
 import * as ImagePicker from 'expo-image-picker';
 import { getProfile } from '../../services/auth';
 import { openInMaps, openDirections, getCurrentPosition, milesBetween } from '../../services/maps';
+import { hasRole } from '../../services/roles';
 import { requireVerifiedId } from '../../services/idGate';
 import { notify, notifyThen, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 import { Image, TouchableOpacity } from 'react-native';
 
+const rescueTime = (ms) => new Date(ms).toLocaleString([], {
+  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+});
+
 export default function PickupDetail({ route, navigation }) {
   const pickupId = route?.params?.pickupId;
+  const [receivingSite, setReceivingSite] = useState('');
+  const [receivingAddress, setReceivingAddress] = useState('');
+  const [receivingContact, setReceivingContact] = useState('');
+  const [receiptReceiver, setReceiptReceiver] = useState('');
+  const [receiptWeight, setReceiptWeight] = useState('');
+  const [receiverEmail, setReceiverEmail] = useState('');
+  const [receivingMinutes, setReceivingMinutes] = useState('');
+  const [transferOptions, setTransferOptions] = useState(null);
+  const [volunteerSearch, setVolunteerSearch] = useState('');
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const [pickup, setPickup] = useState(route?.params?.pickup || null);
+  const offerDeadline = pickup?.status === 'available' ? rescueOfferDeadline(pickup) : null;
+  const [, setDeadlineTick] = useState(0);
+  useEffect(() => {
+    const remaining = offerDeadline === null ? 0 : offerDeadline - Date.now();
+    if (remaining <= 0) return;
+    const timeout = setTimeout(() => setDeadlineTick((tick) => tick + 1), remaining);
+    return () => clearTimeout(timeout);
+  }, [offerDeadline]);
   const [busy, setBusy] = useState(false);
   const [chosenFridge, setChosenFridge] = useState(null);
   const [showFridgeChange, setShowFridgeChange] = useState(false);
@@ -77,32 +102,26 @@ export default function PickupDetail({ route, navigation }) {
 
   const [loadError, setLoadError] = useState(null);
 
-  // Re-pull whenever the pickupId in params changes. Previously this
-  // only ran once on mount, so opening a second pickup from the
-  // dashboard kept showing the first one (or got stuck on the
-  // spinner if the initial route had no pickup payload).
+  // Keep the volunteer's view current when a partner confirms handoff
+  // or another volunteer claims the pickup they're previewing.
   useEffect(() => {
     if (!pickupId) {
-      setLoadError('No pickup id was passed to this screen.');
+      setLoadError('No pickup was specified.');
       return;
     }
-    let alive = true;
+    if (!db) {
+      setLoadError('Pickups are unavailable right now.');
+      return;
+    }
     setLoadError(null);
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, 'pickups', pickupId));
-        if (!alive) return;
-        if (snap.exists()) {
-          setPickup({ id: snap.id, ...snap.data() });
-        } else {
-          setLoadError("Couldn't find this pickup — it may have been deleted.");
-        }
-      } catch (e) {
-        console.warn('pickup load', e);
-        if (alive) setLoadError(e?.message || 'Failed to load this pickup.');
+    return onSnapshot(doc(db, 'pickups', pickupId), (snap) => {
+      if (snap.exists()) {
+        setPickup({ ...snap.data(), id: snap.id });
+        setLoadError(null);
+      } else {
+        setLoadError('This pickup is no longer available.');
       }
-    })();
-    return () => { alive = false; };
+    }, () => setLoadError('Couldn’t load this pickup. Go back and try again.'));
   }, [pickupId]);
 
   if (loadError) {
@@ -117,7 +136,7 @@ export default function PickupDetail({ route, navigation }) {
       </View>
     );
   }
-  if (!pickup) {
+  if (!pickup || pickup.id !== pickupId) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={Colors.green} />
@@ -131,6 +150,34 @@ export default function PickupDetail({ route, navigation }) {
       const snap = await getDoc(doc(db, 'pickups', pickup.id));
       if (snap.exists()) setPickup({ id: snap.id, ...snap.data() });
     } catch {}
+  }
+
+  async function handleConfirmDestination(backup = false) {
+    const minutes = Number(receivingMinutes);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080) {
+      notify('Enter the receiving deadline', 'Use minutes from now, up to seven days.');
+      return;
+    }
+    const arrivalBy = Date.now() + minutes * 60_000;
+    const acceptance = `Confirm ${receivingContact.trim()} at ${receivingSite.trim()} can take the full batch by ${new Date(arrivalBy).toLocaleString()}.`;
+    if (!await confirm(backup ? 'Send the volunteer to this backup site?' : 'Open this offer to volunteers?',
+      backup ? `${acceptance} Confirm the volunteer still has the full batch and it is safe to deliver.` : acceptance)) return;
+    setBusy(true);
+    try {
+      const destination = { siteName: receivingSite, address: receivingAddress, contact: receivingContact, arrivalBy };
+      if (backup) {
+        await rerouteHeldPickup(pickup.id, { ...destination, holdReportedAt: pickup.safety_hold.reported_at });
+      } else {
+        await confirmPickupDestination(pickup.id, destination);
+      }
+      setReceivingSite('');
+      setReceivingAddress('');
+      setReceivingContact('');
+      setReceivingMinutes('');
+      await refresh();
+    } catch (e) {
+      notify(backup ? 'Could not confirm the backup site' : 'Could not open the offer', e?.message || 'Try again.');
+    } finally { setBusy(false); }
   }
 
   async function handleClaim() {
@@ -147,20 +194,20 @@ export default function PickupDetail({ route, navigation }) {
     try {
       await claimPickup(pickup.id, user.id);
       await refresh();
-      notify('Claimed', "You're on the hook. Directions and 'On my way' are below.");
+      if (Platform.OS !== 'web') notify('Pickup claimed', 'Your next stop is ready.');
     } catch (e) {
       notify('Could not claim', e?.message || 'Try again.');
     } finally { setBusy(false); }
   }
 
   async function handleEnroute() {
-    if (!pickup.fridge_id && !chosenFridge) {
+    if (!pickup.destination_confirmation && !pickup.fridge_id && !chosenFridge) {
       notify('Pick a drop-off fridge', 'Choose where you’ll bring the food.');
       return;
     }
     setBusy(true);
     try {
-      await setPickupEnroute(pickup.id, { fridgeId: chosenFridge || pickup.fridge_id });
+      await setPickupEnroute(pickup.id, { fridgeId: pickup.destination_confirmation ? undefined : chosenFridge || pickup.fridge_id });
       await refresh();
     } catch (e) {
       notify('Could not update', e?.message || 'Try again.');
@@ -170,7 +217,7 @@ export default function PickupDetail({ route, navigation }) {
   async function handleCancelClaim() {
     const ok = await confirm(
       'Release this pickup?',
-      'It goes back on the board for another volunteer. This costs 5 leaderboard points and gets logged as a drop. Only do this if you truly can\'t make the run.'
+      'The pickup reopens if both windows are still open. Otherwise it closes. Releasing costs 5 leaderboard points and is logged as a drop.'
     );
     if (!ok) return;
     // Ask for the reason on web via prompt; on native we skip
@@ -185,8 +232,10 @@ export default function PickupDetail({ route, navigation }) {
     }
     setBusy(true);
     try {
-      await cancelClaim(pickup.id, reason.trim() || undefined);
-      notifyThen('Released', 'Thanks for letting us know. The pickup is open again.', () => navigation.goBack());
+      const released = await cancelClaim(pickup.id, reason.trim() || undefined);
+      notifyThen('Released', released?.status === 'cancelled'
+        ? 'The pickup window closed, so the offer has ended.'
+        : 'The pickup is open again.', () => navigation.goBack());
     } catch (e) {
       notify('Could not release', e?.message || 'Try again.');
     } finally { setBusy(false); }
@@ -240,77 +289,106 @@ export default function PickupDetail({ route, navigation }) {
     } finally { setUploadingProof(false); }
   }
 
-  // #5 from drop-off audit — volunteer's car broke down, they got
-  // called into work, whatever. Food is in the trunk, no way to
-  // deliver. cancelClaim refuses if enroute; handOff releases the
-  // pickup with a "someone else needs to physically meet me" flag
-  // so the next claimant knows.
-  async function handleHandOff() {
+  async function handleHold(reason) {
     const ok = await confirm(
-      'Hand off this pickup?',
-      "Only pick this if you physically can't finish the run. The pickup goes back on the board with your contact info so the next volunteer can meet you to grab the food. No leaderboard penalty."
+      'Put this pickup on hold?',
+      'This keeps the run assigned to you and flags it for coordinator review. Contact your chapter coordinator directly for next steps.'
     );
     if (!ok) return;
-    let reason = '';
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      reason = window.prompt('What happened? (one sentence — helps the next volunteer)', '') || '';
-    }
     setBusy(true);
     try {
-      await handOffPickup(pickup.id, reason.trim() || undefined);
-      notifyThen('Handed off', 'Someone else can claim it now. Coordinate with them via the app.', () => navigation.goBack());
+      await holdPickup(pickup.id, reason);
+      await refresh();
+      notify('Pickup on hold', 'Contact your chapter coordinator for next steps.');
     } catch (e) {
-      notify('Could not hand off', e?.message || 'Try again.');
+      notify('Could not save the hold', e?.message || 'Contact your chapter coordinator.');
     } finally { setBusy(false); }
   }
 
-  // #6 from drop-off audit — three sub-cases:
-  //   fridge_full   → volunteer tried to change fridge, no others work
-  //   fridge_broken → destination fridge is offline / damaged
-  //   food_spoiled  → food went bad in transit
-  // All three mark the pickup 'completed' but with spoiled === true,
-  // which skips receipt minting + stat bumps. Restaurant gets a
-  // candid "no receipt is coming, here's why" notification.
-  async function handleReportSpoiled() {
-    // Simple picker via web prompt / native alert. Not the polished
-    // modal — that lands with the Approval Inbox in Phase 2 when
-    // execs also review these reports for chapter operations.
-    const kinds = [
-      { key: 'food_spoiled',  label: 'Food spoiled in transit' },
-      { key: 'fridge_full',   label: 'Fridge was full, no alternate' },
-      { key: 'fridge_broken', label: 'Fridge was broken / offline' },
-    ];
-    const picks = kinds.map((k, i) => `${i + 1}. ${k.label}`).join('\n');
-    let chosen = null;
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const raw = window.prompt(`Report a problem — enter 1, 2, or 3:\n\n${picks}`, '1');
-      const idx = parseInt((raw || '').trim(), 10) - 1;
-      chosen = kinds[idx] || null;
-    } else {
-      // Native — default to food_spoiled with a single confirm.
-      const ok = await confirm(
-        'Report as spoiled?',
-        'Marks the pickup complete but skips the tax receipt. Restaurant gets notified. Use this only when the food genuinely didn\'t make it to a fridge.'
-      );
-      chosen = ok ? kinds[0] : null;
-    }
-    if (!chosen) return;
-    let note = '';
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      note = window.prompt('Add a note for the restaurant (optional):', '') || '';
-    }
+  async function handleCloseHold(outcome) {
+    const returned = outcome === 'returned_to_donor';
+    const ok = await confirm(
+      returned ? 'Confirm food was returned?' : 'Confirm food was discarded?',
+      'Record this only after you have verified what happened. Closing the run does not record a delivery.'
+    );
+    if (!ok) return;
     setBusy(true);
     try {
-      await reportPickupSpoiled(pickup.id, { kind: chosen.key, note: note.trim() || undefined });
-      notifyThen('Reported', 'The restaurant has been notified. No tax receipt was issued.', () => navigation.goBack());
+      await closeHeldPickup(pickup.id, outcome);
+      await refresh();
     } catch (e) {
-      notify('Could not report', e?.message || 'Try again.');
+      notify('Could not close the hold', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function loadTransferOptions() {
+    setBusy(true);
+    try {
+      setVolunteerSearch('');
+      setTransferOptions(await fetchCustodyVolunteers(pickup.chapter_id, pickup.claimed_by));
+    } catch (e) {
+      notify('Could not load volunteers', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function handleTransfer(volunteer) {
+    if (!await confirm(
+      `Record handoff to ${volunteer.name}?`,
+      'Confirm both volunteers reported the physical handoff, required food handling checks passed, and the new volunteer can make the receiving deadline.',
+    )) return;
+    setBusy(true);
+    try {
+      await transferPickupCustody(pickup.id, pickup.claimed_by, volunteer.id, pickup.safety_hold.reported_at);
+      setTransferOptions(null);
+      await refresh();
+    } catch (e) {
+      notify('Could not record the handoff', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function handleAssignReceiver() {
+    setBusy(true);
+    try {
+      await assignPickupReceiver(pickup.id, receiverEmail.trim());
+      setReceiverEmail('');
+      await refresh();
+      notify('Receiver assigned', 'Their Better Nature inbox now has the rescue.');
+    } catch (e) {
+      notify('Could not assign the receiver', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function handleRecordReceipt(fromReceivingSite = false) {
+    const actual = Number(receiptWeight);
+    if (!receiptReceiver.trim() || !Number.isFinite(actual) || actual <= 0) {
+      notify('Receipt details required', 'Enter who accepted the food and the actual pounds they received.');
+      return;
+    }
+    if (!await confirm('Confirm the full handoff?',
+      `Record that the site received the full batch, weighing ${actual} lb.`)) return;
+    setBusy(true);
+    try {
+      await recordPickupReceipt(pickup.id, { receiverName: receiptReceiver, weightLbs: actual, fromReceivingSite });
+      await refresh();
+    } catch (e) {
+      notify('Could not record receipt', e?.message || 'Try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function handleReceivingIssue() {
+    if (!await confirm('Pause this delivery?', 'Call your chapter coordinator to agree on what happens to the food before the volunteer leaves.')) return;
+    setBusy(true);
+    try {
+      await holdPickup(pickup.id, 'destination_unavailable');
+      await refresh();
+    } catch (e) {
+      notify('Could not pause delivery', e?.message || 'Call your chapter coordinator.');
     } finally { setBusy(false); }
   }
 
   async function handleDelivered() {
     // Client-side weight check — required now (service enforces too).
-    const w = weight ? parseFloat(weight) : NaN;
+    const w = pickup.destination_confirmation ? pickup.receiving_receipt?.weight_lbs : (weight ? parseFloat(weight) : NaN);
     if (!Number.isFinite(w) || w <= 0) {
       notify('Weight required', 'Enter the actual pounds you delivered — the tax receipt reads from this number.');
       return;
@@ -404,16 +482,101 @@ export default function PickupDetail({ route, navigation }) {
 
   // CTA depends on status. We only render one primary at a time so it's
   // never ambiguous what the volunteer should tap next.
+  const isClaimant = !!user?.id && pickup.claimed_by === user.id;
+  const onHold = !!pickup.safety_hold && ['claimed', 'enroute'].includes(pickup.status);
+  const canCloseHold = onHold && hasRole(user, ['executive', 'admin', 'super_admin']);
+  const waitingForSite = ['pending_destination', 'available'].includes(pickup.status) && !pickup.destination_confirmation;
+  const staff = hasRole(user, ['executive', 'admin', 'super_admin']);
+  const chapterCoordinator = staff || (pickup.chapter_id && pickup.chapter_id === user?.chapter_id &&
+    hasRole(user, ['chapter_president', 'chapter_pres']));
+  const canTransfer = onHold && chapterCoordinator && pickup.status === 'enroute' &&
+    pickup.safety_hold.reason === 'cannot_continue' && pickup.verified_by_restaurant_at &&
+    !pickup.receiving_receipt && (pickupDeadline(pickup.destination_confirmation?.arrival_by) ?? 0) > Date.now();
+  const matchingVolunteers = transferOptions?.filter((volunteer) =>
+    `${volunteer.name} ${volunteer.email}`.toLowerCase().includes(volunteerSearch.trim().toLowerCase()));
+  const canConfirmSite = waitingForSite && staff;
+  const canReroute = staff && onHold && pickup.safety_hold.reason === 'destination_unavailable' &&
+    pickup.status === 'enroute' && !!pickup.claimed_by && !!pickup.destination_confirmation &&
+    !!pickup.verified_by_restaurant_at && !pickup.receiving_receipt;
+  const waitingForReceipt = !onHold && pickup.status === 'enroute' && !!pickup.destination_confirmation && !pickup.receiving_receipt;
+  const canRecordReceipt = waitingForReceipt && staff && !!pickup.verified_by_restaurant_at;
+  const arrivalBy = pickupDeadline(pickup.destination_confirmation?.arrival_by);
+  const pickupBy = pickupDeadline(pickup.destination_confirmation?.pickup_by ?? pickup.pickup_window_until);
+  const isReceiver = !!user?.id && pickup.receiver_uid === user.id;
+  const canAssignReceiver = staff && !!pickup.destination_confirmation && !pickup.receiving_receipt &&
+    !onHold && ['available', 'claimed', 'enroute'].includes(pickup.status);
+  const offerExpired = pickup.status === 'available' && !waitingForSite && (offerDeadline ?? 0) <= Date.now();
   let cta = null;
-  if (pickup.status === 'available') {
-    cta = { label: busy ? 'Claiming…' : 'Claim pickup', onPress: handleClaim, loading: busy };
-  } else if (pickup.status === 'claimed') {
+  if (user?.id && !userIsRestaurant && !isReceiver && pickup.status === 'available' && !waitingForSite && !offerExpired) {
+    cta = { label: busy ? 'Accepting…' : 'Accept pickup', onPress: handleClaim, loading: busy };
+  } else if (isClaimant && pickup.status === 'claimed') {
     cta = { label: busy ? 'Updating…' : 'I’m on my way', onPress: handleEnroute, loading: busy };
-  } else if (pickup.status === 'enroute') {
+  } else if (isClaimant && pickup.status === 'enroute' && !waitingForReceipt) {
     cta = { label: busy ? 'Saving…' : 'Mark delivered', onPress: handleDelivered, loading: busy };
   }
 
-  const needsFridge = pickup.status === 'claimed' && !pickup.fridge_id;
+  const showTripMap = !onHold && isClaimant && ['claimed', 'enroute'].includes(pickup.status);
+  const droppingOff = !!pickup.verified_by_restaurant_at;
+  const nextStop = droppingOff ? {
+    name: pickup.fridge_name || 'Community fridge',
+    address: pickup.fridge_address,
+    lat: pickup.fridge_lat,
+    lng: pickup.fridge_lng,
+  } : {
+    name: pickup.restaurant_name || 'Food partner',
+    address: pickup.restaurant_address,
+    lat: pickup.restaurant_lat,
+    lng: pickup.restaurant_lng,
+  };
+  const needsFridge = !onHold && isClaimant && pickup.status === 'claimed' && !pickup.fridge_id && !pickup.destination_confirmation;
+  const reviewing = cta && pickup.status === 'available' && !staff && !onHold;
+  const nextAction = cta && (
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled: cta.loading, busy: cta.loading }}
+      disabled={cta.loading} onPress={cta.onPress}
+      style={({ pressed }) => [styles.rescueAction, (pressed || cta.loading) && { opacity: 0.75 }]}>
+      <Text style={styles.rescueActionLabel}>{cta.label}</Text>
+    </Pressable>
+  );
+  const actionInTrip = showTripMap && cta && !needsFridge;
+
+  if (isReceiver && !staff) {
+    const canReceive = waitingForReceipt && !!pickup.verified_by_restaurant_at && !isClaimant;
+    return (
+      <Screen contentStyle={styles.content}>
+        <ResponsiveContainer maxWidth={560}>
+          <AnimatedPressable onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Notifications')}
+            style={styles.back} scaleTo={0.97}>
+            <Icon name="back" size={18} color={Colors.green} />
+            <Text style={styles.backText}>Back</Text>
+          </AnimatedPressable>
+          <BrushText variant="screenTitle" style={styles.title}>Receive food</BrushText>
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>{pickup.destination_confirmation?.site_name}</Text>
+            <Text style={styles.sectionHelp}>{pickup.destination_confirmation?.address}</Text>
+            <Text style={styles.sectionHelp}>Expected batch · {pickup.destination_confirmation?.accepted_weight_lbs} lb</Text>
+            {arrivalBy !== null && <Text style={styles.sectionHelp}>Receiving deadline · {new Date(arrivalBy).toLocaleString()}</Text>}
+          </View>
+          {canReceive ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Confirm after the food arrives</Text>
+              <Text style={styles.sectionHelp}>If you can only take part of the batch or need to decline it, report a problem and contact your coordinator before the volunteer leaves.</Text>
+              <Input label="Your name" value={receiptReceiver} onChangeText={setReceiptReceiver} />
+              <Input label="Actual pounds accepted" value={receiptWeight} onChangeText={setReceiptWeight} keyboardType="decimal-pad" />
+              <Button title="Confirm full receipt" loading={busy} onPress={() => handleRecordReceipt(true)} />
+              <Button title="Report a receiving problem" variant="secondary" disabled={busy} onPress={handleReceivingIssue} />
+            </View>
+          ) : (
+            <Text style={styles.sectionHelp} accessibilityRole="alert">
+              {pickup.receiving_receipt ? `Receipt recorded · ${pickup.receiving_receipt.weight_lbs} lb`
+                : onHold ? 'Delivery paused. Contact your chapter coordinator.'
+                : pickup.status === 'cancelled' ? 'This delivery was cancelled.'
+                : 'Waiting for the donor to confirm the pickup.'}
+            </Text>
+          )}
+        </ResponsiveContainer>
+      </Screen>
+    );
+  }
 
   return (
     <Screen contentStyle={styles.content}>
@@ -422,12 +585,122 @@ export default function PickupDetail({ route, navigation }) {
           <Icon name="back" size={18} color={Colors.green} />
           <Text style={styles.backText}>Back</Text>
         </AnimatedPressable>
-        <BrushText variant="screenTitle" style={styles.title}>Pickup</BrushText>
+        {reviewing || showTripMap ? (
+          <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={styles.rescueTitle}>{reviewing ? 'Review pickup' : 'Your rescue'}</Text>
+        ) : <BrushText variant="screenTitle" style={styles.title}>Pickup</BrushText>}
+
+        {(offerExpired || (!isClaimant && !userIsRestaurant && !staff &&
+          ['claimed', 'enroute', 'cancelled', 'completed'].includes(pickup.status))) && (
+          <View style={styles.previewBanner}>
+            <Text style={styles.previewBannerTitle}>This pickup is no longer available</Text>
+            <Button title="Browse open pickups" variant="secondary" onPress={() => navigation.navigate('Pickups')} />
+          </View>
+        )}
+        {waitingForSite && (
+          <View style={styles.previewBanner}>
+            <Text style={styles.previewBannerTitle}>Waiting for a receiving site</Text>
+            <Text style={styles.previewBannerBody}>The offer opens after a coordinator confirms the full batch and receiving deadline.</Text>
+          </View>
+        )}
+        {(canConfirmSite || canReroute) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>{canReroute ? 'Confirm a backup receiving site' : 'Confirm a staffed receiving site'}</Text>
+            {canReroute && <Text style={styles.sectionHelp}>Call the backup site and the assigned volunteer first. If any food has already been accepted or there is a food safety concern, keep the run paused for review.</Text>}
+            <Input label="Receiving site" value={receivingSite} onChangeText={setReceivingSite} />
+            <Input label="Receiving address" value={receivingAddress} onChangeText={setReceivingAddress} />
+            <Input label="Staff member who accepted" value={receivingContact} onChangeText={setReceivingContact} />
+            <Input label="Receiving deadline (minutes from now)" keyboardType="number-pad" value={receivingMinutes} onChangeText={setReceivingMinutes} />
+            <Button title={canReroute ? 'Confirm backup and resume rescue' : 'Confirm destination and open offer'}
+              onPress={() => handleConfirmDestination(canReroute)} loading={busy} />
+          </View>
+        )}
+        {arrivalBy !== null && !reviewing && !showTripMap && (
+          <Text style={styles.sectionHelp}>Confirmed receiving deadline: {new Date(arrivalBy).toLocaleString()}</Text>
+        )}
+        {waitingForReceipt && !showTripMap && (
+          <Text style={styles.sectionHelp}>{pickup.verified_by_restaurant_at
+            ? 'Waiting for the receiving site to confirm the handoff.'
+            : 'Waiting for the donor to confirm collection.'}</Text>
+        )}
+        {canAssignReceiver && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>{pickup.receiver_uid ? 'Change receiving staff' : 'Assign receiving staff'}</Text>
+            <Text style={styles.sectionHelp}>Give a staff member at this site access to confirm this rescue using their verified Better Nature account.</Text>
+            <Input label="Receiving staff account email" value={receiverEmail} onChangeText={setReceiverEmail}
+              keyboardType="email-address" autoCapitalize="none" />
+            <Button title={pickup.receiver_uid ? 'Replace receiver' : 'Assign receiver'} variant="secondary" disabled={!receiverEmail.trim()} loading={busy} onPress={handleAssignReceiver} />
+          </View>
+        )}
+        {canRecordReceipt && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Record what the site received</Text>
+            <Input label="Staff member who received the food" value={receiptReceiver} onChangeText={setReceiptReceiver} />
+            <Input label="Actual pounds accepted" value={receiptWeight} onChangeText={setReceiptWeight} keyboardType="decimal-pad" />
+            <Button title="Record receiving confirmation" loading={busy} onPress={() => handleRecordReceipt(isReceiver)} />
+          </View>
+        )}
+        {pickup.receiving_receipt && (
+          <Text style={styles.sectionHelp}>Receiving site confirmed {pickup.receiving_receipt.weight_lbs} lb.</Text>
+        )}
+        {!!pickup.destination_history?.length && !onHold && (
+          <Text style={styles.sectionHelp} accessibilityRole="alert">The drop-off changed. Use the current address for {pickup.fridge_name}.</Text>
+        )}
+        {onHold && (
+          <View style={styles.previewBanner} accessibilityRole="alert">
+            <Text style={styles.previewBannerTitle}>Pickup on hold</Text>
+            <Text style={styles.previewBannerBody}>The run is still assigned. Contact your chapter coordinator before continuing.</Text>
+          </View>
+        )}
+        {canCloseHold && (
+          <View style={styles.problemRow}>
+            <Button title="Record return" variant="secondary" disabled={busy} onPress={() => handleCloseHold('returned_to_donor')} />
+            <Button title="Record disposal" variant="secondary" disabled={busy} onPress={() => handleCloseHold('discarded')} />
+          </View>
+        )}
+        {canTransfer && (
+          <View style={styles.problemRow}>
+            <Text style={styles.sectionLabel}>Transfer this rescue</Text>
+            <Text style={styles.sectionHelp}>Coordinate the handoff with both volunteers. Record it once the replacement has the food.</Text>
+            {transferOptions === null ? (
+              <Button title="Find a replacement volunteer" variant="secondary" disabled={busy} onPress={loadTransferOptions} />
+            ) : (
+              <>
+                <Input label="Find a volunteer" value={volunteerSearch} onChangeText={setVolunteerSearch} placeholder="Name or email" />
+                {matchingVolunteers.length === 0 && (
+                  <Text style={styles.sectionHelp}>{transferOptions.length ? 'No volunteers match that search.' : 'No eligible replacement volunteers in this chapter.'}</Text>
+                )}
+                {matchingVolunteers.slice(0, 5).map((volunteer) => (
+                  <Button key={volunteer.id} title={volunteer.email ? `${volunteer.name} · ${volunteer.email}` : volunteer.name}
+                    variant="secondary" disabled={busy} onPress={() => handleTransfer(volunteer)} />
+                ))}
+                {matchingVolunteers.length > 5 && <Text style={styles.sectionHelp}>Search by name or email to narrow the list.</Text>}
+              </>
+            )}
+          </View>
+        )}
+        {pickup.custody_transfer && (
+          <Text style={styles.sectionHelp}>Coordinator recorded a volunteer handoff. Current assignment: {pickup.claimant_name || 'Replacement volunteer'}.</Text>
+        )}
+        {showTripMap && <ActiveRescueMap stop={nextStop} droppingOff={droppingOff}
+          action={actionInTrip ? nextAction : null}
+          status={droppingOff
+            ? [arrivalBy !== null ? `Drop off by ${rescueTime(arrivalBy)}` : '',
+              waitingForReceipt ? 'The receiving site confirms the handoff.' : ''].filter(Boolean).join(' · ')
+            : pickup.status === 'enroute' ? 'Ask the donor to confirm collection when you arrive.'
+              : pickupBy !== null ? `Pick up by ${rescueTime(pickupBy)}` : ''} />}
+        {!showTripMap && !onHold && isClaimant && pickup.status === 'enroute' && droppingOff && pickup.destination_confirmation && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>{pickup.fridge_name}</Text>
+            <Text style={styles.sectionHelp} selectable>{pickup.fridge_address}</Text>
+            <Button title="Directions to drop-off" variant="secondary"
+              onPress={() => openDirections({ destination: pickup.fridge_address, label: pickup.fridge_name })} />
+          </View>
+        )}
 
         {/* Countdown — remaining time in the restaurant's window.
             Renders on every state (preview, claimed, enroute) so
             volunteers see urgency BEFORE they claim too. */}
-        <PickupCountdown pickup={pickup} style={{ marginBottom: 12 }} />
+        {!reviewing && !showTripMap && <PickupCountdown pickup={pickup} style={{ marginBottom: 12 }} />}
 
         {/* Timeline — shows where in the flow this run is at a
             glance, on both restaurant and volunteer views. Only
@@ -439,22 +712,31 @@ export default function PickupDetail({ route, navigation }) {
             once claimed; volunteer sees the restaurant's phone
             once claimed. Both sides can call/text the moment
             something goes sideways at the door. */}
-        {pickup.status !== 'available' && pickup.status !== 'completed' && pickup.status !== 'cancelled' ? (
+        {(isClaimant || userIsRestaurant) && ['claimed', 'enroute'].includes(pickup.status) ? (
           userIsRestaurant
             ? <PickupContacts pickup={pickup} side="restaurant" />
             : <PickupContacts pickup={pickup} side="volunteer" />
         ) : null}
 
-        {pickup.status === 'available' ? (
+        {pickup.status === 'available' && !waitingForSite && !offerExpired && !reviewing ? (
           <View style={styles.previewBanner}>
-            <Text style={styles.previewBannerTitle}>Preview · not claimed yet</Text>
+            <Text style={styles.previewBannerTitle}>Review your route</Text>
             <Text style={styles.previewBannerBody}>
-              Look at the photo, address, distance, and notes below. When you're ready, tap “Claim pickup” to commit — releasing a claim later costs leaderboard points.
+              Check both stops and the pickup window before accepting. Releasing an accepted pickup costs leaderboard points.
             </Text>
           </View>
         ) : null}
 
-        <PickupCard pickup={pickup} cta={cta} />
+        <PickupCard pickup={pickup} showPhoto={false} showMapLinks={!reviewing && !showTripMap && !onHold}
+          showCountdown={!reviewing && !showTripMap} />
+        {reviewing && (
+          <View style={styles.reviewActions}>
+            <Text style={styles.reviewTime}>Pick up by {rescueTime(pickupBy)}</Text>
+            <Text style={styles.reviewTime}>Drop off by {rescueTime(arrivalBy)}</Text>
+            <Text style={styles.reviewHint}>Accept if you can make both stops. Releasing a claim costs 5 leaderboard points.</Text>
+            {nextAction}
+          </View>
+        )}
 
         {/* Food photo */}
         {pickup.photo_url ? (
@@ -462,7 +744,7 @@ export default function PickupDetail({ route, navigation }) {
         ) : null}
 
         {/* Address + directions + distance */}
-        {pickup.restaurant_address || restaurantPos ? (
+        {!reviewing && !showTripMap && !onHold && (!isClaimant || !droppingOff) && (pickup.restaurant_address || restaurantPos) ? (
           <View style={styles.locCard}>
             <View style={{ flex: 1 }}>
               <Text style={styles.locLabel}>Pickup location</Text>
@@ -507,7 +789,7 @@ export default function PickupDetail({ route, navigation }) {
         ) : null}
 
         {/* Restaurant-only: verify the volunteer arrived */}
-        {userIsRestaurant && (pickup.status === 'claimed' || pickup.status === 'enroute') && !pickup.verified_by_restaurant_at ? (
+        {!onHold && userIsRestaurant && (pickup.status === 'claimed' || pickup.status === 'enroute') && !pickup.verified_by_restaurant_at ? (
           <TouchableOpacity style={styles.verifyBtn} onPress={handleVerify} disabled={verifying} activeOpacity={0.85}>
             <Text style={styles.verifyBtnText}>{verifying ? 'Verifying…' : 'Verify volunteer is here'}</Text>
           </TouchableOpacity>
@@ -520,7 +802,7 @@ export default function PickupDetail({ route, navigation }) {
         {/* Volunteer-side milestone — once the restaurant confirms,
             the volunteer sees a clear "half-way" banner so they know
             the handoff is proven and only the drop remains. */}
-        {!userIsRestaurant && pickup.verified_by_restaurant_at && pickup.status !== 'completed' ? (
+        {isClaimant && pickup.verified_by_restaurant_at && pickup.status !== 'completed' ? (
           <View style={styles.verifiedNote}>
             <Text style={styles.verifiedText}>
               ✓ {pickup.restaurant_name || 'Restaurant'} confirmed pickup. Head to the drop and mark it delivered.
@@ -547,7 +829,7 @@ export default function PickupDetail({ route, navigation }) {
             gets redirected (fridge full/closed) can update the drop-
             off. The receipt reads from these fields, so this can't
             wait until after completion. #9 from drop-off audit. */}
-        {!userIsRestaurant && pickup.status === 'enroute' ? (
+        {!pickup.destination_confirmation && !onHold && isClaimant && pickup.status === 'enroute' ? (
           <View style={styles.section}>
             <View style={styles.rowBetween}>
               <View style={{ flex: 1 }}>
@@ -591,7 +873,7 @@ export default function PickupDetail({ route, navigation }) {
             handle the food (a kitchen scale, whatever). The
             restaurant estimate is a placeholder; the receipt uses
             what the volunteer confirms. */}
-        {!userIsRestaurant && (pickup.status === 'claimed' || pickup.status === 'enroute') ? (
+        {!pickup.destination_confirmation && !onHold && isClaimant && (pickup.status === 'claimed' || pickup.status === 'enroute') ? (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>
               Actual weight (lbs) <Text style={styles.optional}>· goes on the tax receipt</Text>
@@ -609,7 +891,7 @@ export default function PickupDetail({ route, navigation }) {
             Blueprint values weighed-and-photo'd receipts. Uploaded
             immediately on capture so the completion write only needs
             the URL. #11 from drop-off audit. */}
-        {!userIsRestaurant && pickup.status === 'enroute' ? (
+        {!onHold && isClaimant && pickup.status === 'enroute' ? (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>
               Drop-off proof <Text style={styles.optional}>· optional, shown on the receipt</Text>
@@ -640,31 +922,21 @@ export default function PickupDetail({ route, navigation }) {
           </View>
         ) : null}
 
-        {/* Something-wrong escape hatches — visible while enroute so
-            a volunteer whose run went sideways doesn't have to fake
-            a completion. Hand off gets the food to another volunteer;
-            Report spoiled closes the pickup honestly (no receipt, no
-            hours). #5 + #6 from drop-off audit. */}
-        {!userIsRestaurant && pickup.status === 'enroute' ? (
+        {cta && !onHold && !reviewing && !actionInTrip && (
+          <Button title={cta.label} onPress={cta.onPress} loading={cta.loading} />
+        )}
+
+        {!onHold && isClaimant && ['claimed', 'enroute'].includes(pickup.status) && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>
-              Something not going right?
-            </Text>
-            <Text style={styles.sectionHelp}>
-              Use these only if you can't finish the run — the restaurant sees each one.
-            </Text>
+            <Text style={styles.sectionLabel}>Get help with this pickup</Text>
+            <Text style={styles.sectionHelp}>Put the run on hold and contact your chapter coordinator.</Text>
             <View style={styles.problemRow}>
-              <TouchableOpacity style={styles.problemBtn} onPress={handleHandOff} activeOpacity={0.85}>
-                <Text style={styles.problemBtnText}>Hand off to another volunteer</Text>
-                <Text style={styles.problemBtnHint}>No leaderboard penalty — food just goes back on the board.</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.problemBtn, styles.problemBtnDanger]} onPress={handleReportSpoiled} activeOpacity={0.85}>
-                <Text style={[styles.problemBtnText, styles.problemBtnTextDanger]}>Report spoiled / fridge problem</Text>
-                <Text style={[styles.problemBtnHint, styles.problemBtnHintDanger]}>No tax receipt issued. Restaurant is told what happened.</Text>
-              </TouchableOpacity>
+              <Button title="Can’t continue" variant="secondary" disabled={busy} onPress={() => handleHold('cannot_continue')} />
+              <Button title="Food concern" variant="secondary" disabled={busy} onPress={() => handleHold('food_concern')} />
+              <Button title="Drop-off unavailable" variant="secondary" disabled={busy} onPress={() => handleHold('destination_unavailable')} />
             </View>
           </View>
-        ) : null}
+        )}
 
         {pickup.status === 'completed' ? (
           <View style={[styles.section, styles.doneCard]}>
@@ -702,7 +974,7 @@ export default function PickupDetail({ route, navigation }) {
 
         {/* Secondary action: release a claim. Only shown when the
             volunteer is currently the owner and hasn't started yet. */}
-        {pickup.status === 'claimed' && pickup.claimed_by === user?.id ? (
+        {!onHold && !pickup.verified_by_restaurant_at && pickup.status === 'claimed' && isClaimant ? (
           <AnimatedPressable onPress={handleCancelClaim} style={styles.releaseBtn} scaleTo={0.98}>
             <Text style={styles.releaseText}>Can’t make it? Release this pickup</Text>
           </AnimatedPressable>
@@ -732,6 +1004,13 @@ const styles = StyleSheet.create({
   back: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
   backText: { fontSize: 15, color: Colors.green, fontWeight: '600' },
   title: { color: Colors.green, marginTop: 4, marginBottom: 16 },
+  rescueTitle: { fontSize: 32, fontWeight: '700', letterSpacing: -0.8, color: Colors.dark, marginBottom: 16 },
+  rescueAction: { minHeight: 50, padding: 12, borderRadius: 14, alignItems: 'center',
+    justifyContent: 'center', backgroundColor: Colors.green },
+  rescueActionLabel: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+  reviewActions: { gap: 7, marginTop: 14 },
+  reviewTime: { color: Colors.dark, fontWeight: '600', fontSize: 15 },
+  reviewHint: { color: Colors.gray, fontSize: 14, lineHeight: 20, marginBottom: 4 },
   section: { marginTop: 22 },
   sectionLabel: { fontSize: 14, fontWeight: '700', color: Colors.dark, marginBottom: 6 },
   sectionHelp: { ...Type.caption, marginBottom: 12 },
@@ -775,19 +1054,6 @@ const styles = StyleSheet.create({
 
   // Something-wrong escape hatches
   problemRow: { gap: 8 },
-  problemBtn: {
-    paddingVertical: 12, paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.glassBorder,
-    backgroundColor: Colors.white,
-  },
-  problemBtnDanger: {
-    borderColor: '#F5B5B5',
-    backgroundColor: '#FCE3E3',
-  },
-  problemBtnText: { fontSize: 14, fontWeight: '700', color: Colors.dark },
-  problemBtnTextDanger: { color: '#8E1B1B' },
-  problemBtnHint: { fontSize: 12, color: Colors.gray, marginTop: 4, lineHeight: 17 },
   problemBtnHintDanger: { color: '#8E1B1B' },
   optional: { fontWeight: '500', color: Colors.gray },
   doneCard: {

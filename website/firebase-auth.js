@@ -24,7 +24,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, getDoc, updateDoc, addDoc, collection,
-  serverTimestamp, query, where, getDocs, orderBy, limit, increment,
+  serverTimestamp, query, where, getDocs, orderBy, limit,
   arrayUnion,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
@@ -213,18 +213,8 @@ export async function ensureUserDoc(user, extra = {}) {
   };
   await setDoc(ref, data);
 
-  // Bump the org-wide volunteer counter. Only count actual member-role
-  // accounts (not partners or admins). Best-effort — never blocks signup.
-  // Mirrors src/services/authFirebase.js so the app + website touch the
-  // same Firestore doc the marketing-site ticker reads from.
-  if (data.role === 'member') {
-    try {
-      const statsRef = doc(db, 'org_stats', 'global');
-      await setDoc(statsRef, { volunteers: increment(1), updated_at: serverTimestamp() }, { merge: true });
-    } catch (e) {
-      console.warn('volunteer counter bump failed', e);
-    }
-  }
+  // The org-wide volunteer counter is bumped server-side by the
+  // countVolunteerSignup Cloud Function — clients can't write org_stats.
 
   return data;
 }
@@ -236,8 +226,9 @@ function generateReferralCode(len = 7) {
   for (let i = 0; i < len; i++) s += REF_ALPHABET[Math.floor(Math.random() * REF_ALPHABET.length)];
   return s;
 }
+// Reads the public mirror — other members' /users docs are private.
 async function findUserByReferralCode(code) {
-  const q = query(collection(db, 'users'), where('referral_code', '==', code), limit(1));
+  const q = query(collection(db, 'public_profiles'), where('referral_code', '==', code), limit(1));
   const snap = await getDocs(q);
   if (snap.empty) return null;
   const d = snap.docs[0];
@@ -246,11 +237,9 @@ async function findUserByReferralCode(code) {
 async function applyReferralCode(newUserId, code) {
   const inviter = await findUserByReferralCode(code);
   if (!inviter || inviter.id === newUserId) return;
+  // The inviter's referrals_count is credited server-side by the
+  // mirrorPublicProfile Cloud Function when referred_by first appears.
   await updateDoc(doc(db, 'users', newUserId), { referred_by: inviter.id });
-  await updateDoc(doc(db, 'users', inviter.id), {
-    referrals_count: increment(1),
-    referrals_updated_at: serverTimestamp(),
-  });
 }
 
 export async function getProfile(uid) {

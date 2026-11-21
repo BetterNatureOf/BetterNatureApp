@@ -8,32 +8,21 @@
 // Modular contract for the future React Native client: this file
 // is platform-agnostic; native imports it unchanged and gets the
 // same per-user routing without any extra plumbing.
-import { collection, addDoc, doc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
-import { prefKeyForKind } from '../config/notifications';
 
-// Pulls a user doc once, then decides which channels are eligible
-// for the given notification kind based on the user's preferences.
-async function resolveChannels(uid, kind) {
-  if (!uid) return { push: false, email: false, profile: null };
-  const snap = await getDoc(doc(db, 'users', uid));
-  if (!snap.exists()) return { push: false, email: false, profile: null };
-  const p = snap.data();
-  const prefKey = prefKeyForKind(kind);
-  const wantsKind = p[prefKey] !== false; // default true
-  return {
-    push:  wantsKind && p.push_enabled === true && !!p.onesignal_player_id,
-    email: wantsKind && p.email_consent !== false && !!p.email,
-    profile: p,
-  };
-}
-
+// Channel routing (push vs email, per-kind preferences) happens in the
+// dispatcher worker, which reads the recipient's private profile with
+// its service account. Clients can't read other members' profiles, and
+// the rules stop a client from supplying an email / push id for a
+// member — so every member-addressed outbox doc is channel 'auto'.
+//
 // Drop one outbox doc per channel per recipient. Worker picks them up
 // in batches and flips status to 'sent' / 'failed'.
 async function dropOutbox({ uid, channel, payload }) {
   await addDoc(collection(db, 'notifications_outbox'), {
     user_id: uid,
-    channel,                      // 'push' | 'email' | 'inapp'
+    channel,                      // 'auto' — dispatcher picks push and/or email
     status: 'queued',
     attempts: 0,
     ...payload,
@@ -73,7 +62,7 @@ export async function enqueueNotification(opts) {
   if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
   if (!title || !body) return { ok: false, reason: 'missing_content' };
 
-  let push = 0, email = 0, inapp = 0, skipped = 0;
+  let queued = 0, inapp = 0;
 
   for (const uid of recipients) {
     try {
@@ -81,36 +70,16 @@ export async function enqueueNotification(opts) {
         await dropInApp({ uid, kind, title, body, url });
         inapp += 1;
       }
-      const ch = await resolveChannels(uid, kind);
-      if (ch.push) {
-        await dropOutbox({
-          uid, channel: 'push',
-          payload: {
-            kind, title, body, url: url || null,
-            data,
-            target: 'onesignal',
-            player_id: ch.profile.onesignal_player_id,
-          },
-        });
-        push += 1;
-      }
-      if (ch.email) {
-        await dropOutbox({
-          uid, channel: 'email',
-          payload: {
-            kind, title, body, url: url || null,
-            email: ch.profile.email,
-            name: ch.profile.name || '',
-          },
-        });
-        email += 1;
-      }
-      if (!ch.push && !ch.email && !skipInApp) skipped += 1;
+      await dropOutbox({
+        uid, channel: 'auto',
+        payload: { kind, title, body, url: url || null, data },
+      });
+      queued += 1;
     } catch (e) {
       console.warn('enqueueNotification per-user failure', uid, e);
     }
   }
-  return { ok: true, push, email, inapp, skipped, total: recipients.length };
+  return { ok: true, queued, inapp, total: recipients.length };
 }
 
 // Convenience: pull every uid matching a target audience and queue.

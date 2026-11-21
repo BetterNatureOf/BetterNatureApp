@@ -52,7 +52,7 @@ export default function PresFinance({ navigation }) {
     try {
       const [ch, mAll, dAll, ev] = await Promise.all([
         fetchChapterById(user.chapter_id),
-        fetchAllMembers(),
+        fetchAllMembers(user.chapter_id),
         fetchAllDonations(),
         fetchEvents(user.chapter_id),
       ]);

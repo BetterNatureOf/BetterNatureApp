@@ -70,6 +70,7 @@ service cloud.firestore {
     function isFounderToken() {
       return request.auth != null
         && request.auth.token.email != null
+        && request.auth.token.email_verified == true
         && request.auth.token.email.lower() in [
              'satvik.koya@betternatureofficial.org',
            ];
@@ -78,18 +79,46 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasAny(['role','roles','member_status','verification_status','restaurant_status','disabled','disabled_at']);
     }
+    // Chapter staff (president / volunteer coordinator) of a chapter.
+    function isChapterStaffOf(chapterId) {
+      return isPresOfChapter(chapterId)
+        || (isSignedIn() && hasAnyRole(['chapter_vol_coord'])
+            && chapterId != null && chapterId == myChapterId());
+    }
     match /users/{uid} {
-      allow read: if isSignedIn();
-      allow create: if isSelf(uid);
+      // Private profile (phone, address, email, push tokens, prefs).
+      // Only the member, execs, and their own chapter's staff can read
+      // it. Everyone else reads /public_profiles/{uid}, a server-side
+      // mirror of the safe fields (name, avatar, chapter, stats).
+      allow read: if isSelf(uid) || isExec()
+        || isChapterStaffOf(resource.data.get('chapter_id', null));
+      allow create: if isSelf(uid)
+        && ((request.resource.data.get('role', 'member') in ['member', 'volunteer', 'restaurant', 'partner']
+            && request.resource.data.get('verification_status', null) in [null, 'pending'])
+          || isFounderToken())
+        && request.resource.data.get('roles', []).size() == 0;
       // Anyone can edit their own non-privileged fields (name, phone,
       // address, prefs). Privileged fields (role, member_status, etc.)
       // require an exec, OR the writer being a founder editing their
       // own doc. Non-founder members literally cannot escalate
       // themselves no matter what JS they run.
       allow update: if isExec()
-        || (isSelf(uid) && !touchesPrivilegedFields())
+        || (isSelf(uid) && !touchesPrivilegedFields()
+          // A member may pick their FIRST chapter (CompleteProfile).
+          // Switching chapters goes through chapter_join_requests and
+          // an exec approval — otherwise an approved volunteer could
+          // hop chapters and claim another chapter's pickups.
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['chapter_id'])
+            || resource.data.get('chapter_id', null) in [null, '']))
         || (isSelf(uid) && isFounderToken());
       allow delete: if isAdmin();
+    }
+
+    // ── public_profiles ──
+    // Written only by the mirrorPublicProfile Cloud Function.
+    match /public_profiles/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     // ── chapters ──
@@ -169,7 +198,7 @@ service cloud.firestore {
     function pickupRid() { return request.resource.data.restaurant_id; }
     function existingRid() { return resource.data.restaurant_id; }
     function userRid() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.restaurant_id;
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('restaurant_id', null);
     }
     match /pickups/{id} {
       allow read: if isSignedIn();
@@ -179,18 +208,267 @@ service cloud.firestore {
       // We deliberately don't require role=='restaurant' on the rule
       // — the role string can drift during signup (member ->
       // restaurant migration etc.). The id-match is the real check.
-      allow create: if isExec() || (
-        isSignedIn() && pickupRid() != null
-        && (pickupRid() == request.auth.uid || pickupRid() == userRid())
-      );
+      allow create: if isSignedIn()
+        && request.resource.data.status == 'pending_destination'
+        && request.resource.data.get('destination_confirmation', null) == null
+        && request.resource.data.get('receiving_receipt', null) == null
+        && request.resource.data.get('verified_by_restaurant_at', null) == null
+        && !request.resource.data.keys().hasAny(['custody_transfer', 'custody_transfer_history'])
+        && !request.resource.data.keys().hasAny(['destination_history'])
+        && !request.resource.data.keys().hasAny(['receiver_uid', 'receiver_assigned_at', 'receiver_assigned_by'])
+        && request.resource.data.get('claimed_by', null) == null
+        && (isExec() || (pickupRid() != null
+          && (pickupRid() == request.auth.uid || pickupRid() == userRid())));
 
-      // Update: exec, original poster, or the volunteer who's
-      // currently claimed the pickup.
-      allow update: if isExec()
-        || (isSignedIn() && existingRid() != null
-            && (existingRid() == request.auth.uid || existingRid() == userRid()))
-        || (isSignedIn() && resource.data.claimed_by == request.auth.uid)
-        || (isSignedIn() && request.resource.data.claimed_by == request.auth.uid);
+      function hasHold(data) {
+        return data.get('safety_hold', null) != null;
+      }
+
+      function reportsHold() {
+        let hold = request.resource.data.safety_hold;
+        return resource.data.get('claimed_by', null) == request.auth.uid
+          && resource.data.status in ['claimed', 'enroute']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['safety_hold'])
+          && hold is map
+          && hold.keys().hasAll(['reason', 'reported_by', 'reported_at'])
+          && hold.keys().hasOnly(['reason', 'reported_by', 'reported_at'])
+          && hold.reason in ['cannot_continue', 'food_concern', 'destination_unavailable']
+          && hold.reported_by == request.auth.uid
+          && hold.reported_at == request.time;
+      }
+
+      function canOpenOffer() {
+        return request.resource.data.status != 'available'
+          || (resource.data.status in ['available', 'claimed']
+            && resource.data.get('destination_confirmation', null) != null
+            && resource.data.destination_confirmation.arrival_by > request.time
+            && resource.data.get('verified_by_restaurant_at', null) == null
+            && resource.data.get('handoff_from_uid', null) == null
+            && request.resource.data.get('handoff_from_uid', null) == null
+            && request.resource.data.get('verified_by_restaurant_at', null) == null);
+      }
+
+      function claimsOpenOffer() {
+        return resource.data.status == 'available'
+          && resource.data.get('receiver_uid', null) != request.auth.uid
+          && hasOpenClaimWindow()
+          && resource.data.get('claimed_by', null) == null
+          && resource.data.get('verified_by_restaurant_at', null) == null
+          && resource.data.get('handoff_from_uid', null) == null
+          && resource.data.get('chapter_id', null) != null
+          && resource.data.chapter_id == myChapterId()
+          && request.resource.data.status == 'claimed'
+          && request.resource.data.claimed_by == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'claimed_by', 'claimed_at', 'claimant_name', 'claimant_phone']);
+      }
+
+      function hasOpenClaimWindow() {
+        let destination = resource.data.get('destination_confirmation', null);
+        return destination != null && destination.arrival_by > request.time
+          && destination.get('pickup_by', destination.arrival_by) > request.time;
+      }
+
+      function hasValidNewPickupWindow() {
+        let previous = resource.data.get('destination_confirmation', null);
+        let destination = request.resource.data.get('destination_confirmation', null);
+        return previous != null || destination == null || (
+          destination.pickup_by is timestamp && destination.arrival_by is timestamp
+          && destination.pickup_by > request.time && destination.pickup_by < destination.arrival_by);
+      }
+
+      function hasReceiptForCompletion() {
+        return resource.data.get('destination_confirmation', null) == null
+          || request.resource.data.status != 'completed'
+          || resource.data.status == 'completed'
+          || (!hasHold(resource.data)
+            && resource.data.get('receiving_receipt', null) != null
+            && resource.data.get('verified_by_restaurant_at', null) != null
+            && request.resource.data.actual_weight_lbs == resource.data.receiving_receipt.weight_lbs);
+      }
+
+      function eligibleCustodian(uid, chapterId) {
+        let member = get(/databases/$(database)/documents/users/$(uid)).data;
+        return member.get('chapter_id', null) == chapterId
+          && member.get('disabled', false) == false && member.get('deleted_at', null) == null
+          && !(member.get('member_status', null) in ['pending', 'rejected'])
+          && member.get('verification_status', null) == 'approved'
+          && member.get('contract_volunteer_signed', false) == true
+          && !(member.get('role', null) in ['restaurant', 'partner'])
+          && !member.get('roles', []).hasAny(['restaurant', 'partner']);
+      }
+
+      function transfersCustody() {
+        let next = request.resource.data;
+        let old = resource.data;
+        let transfer = next.get('custody_transfer', null);
+        let history = old.get('custody_transfer_history', []);
+        let last = old.get('custody_transfer', null);
+        return transfer != null && old.get('chapter_id', null) != null && isPresOfChapter(old.chapter_id)
+          && old.status == 'enroute' && hasHold(old) && old.safety_hold.reason == 'cannot_continue'
+          && old.safety_hold.reported_by == old.claimed_by && old.safety_hold.reported_at is timestamp
+          && old.get('verified_by_restaurant_at', null) != null
+          && old.get('receiving_receipt', null) == null
+          && old.get('destination_confirmation', null) != null
+          && old.destination_confirmation.arrival_by > request.time
+          && !hasHold(next) && next.claimed_by is string && next.claimed_by != old.claimed_by
+          && next.claimed_by != old.get('receiver_uid', null)
+          && next.diff(old).affectedKeys().hasOnly(['claimed_by', 'claimant_name', 'claimant_phone',
+            'safety_hold', 'custody_transfer', 'custody_transfer_history'])
+          && transfer == {'from_uid': old.claimed_by, 'to_uid': next.claimed_by,
+            'recorded_by': request.auth.uid, 'recorded_at': request.time, 'hold': old.safety_hold}
+          && next.get('custody_transfer_history', []) == (last == null ? history : history.concat([last]))
+          && eligibleCustodian(next.claimed_by, old.chapter_id);
+      }
+
+      function keepsCustody() {
+        let changes = request.resource.data.diff(resource.data).affectedKeys();
+        return !changes.hasAny(['custody_transfer', 'custody_transfer_history'])
+          && ((resource.data.get('custody_transfer', null) == null
+              && resource.data.get('verified_by_restaurant_at', null) == null)
+            || !changes.hasAny(['claimed_by', 'claimant_name', 'claimant_phone', 'claimed_at']));
+      }
+
+      function respectsDonorHandoff() {
+        let changes = request.resource.data.diff(resource.data).affectedKeys();
+        let rid = existingRid();
+        return !changes.hasAny(['restaurant_id'])
+          && (!changes.hasAny(['verified_by_restaurant_at', 'verified_by_restaurant_uid'])
+            || (rid != null
+              && (rid == request.auth.uid
+                || get(/databases/$(database)/documents/restaurants/$(rid)).data.user_id == request.auth.uid)
+              && resource.data.status in ['claimed', 'enroute']
+              && resource.data.get('verified_by_restaurant_at', null) == null
+              && request.resource.data.verified_by_restaurant_at == request.time
+              && request.resource.data.verified_by_restaurant_uid == request.auth.uid
+              && changes.hasOnly(['verified_by_restaurant_at', 'verified_by_restaurant_uid'])));
+      }
+
+      function isPickupDonor() {
+        let rid = existingRid();
+        return rid != null && (rid == request.auth.uid
+          || get(/databases/$(database)/documents/restaurants/$(rid)).data.get('user_id', null) == request.auth.uid);
+      }
+
+      function updatesConfirmedPickup() {
+        let old = resource.data;
+        let next = request.resource.data;
+        let changes = next.diff(old).affectedKeys();
+        let collected = old.get('verified_by_restaurant_at', null) != null;
+        let driver = old.get('claimed_by', null) == request.auth.uid;
+        return (claimsOpenOffer() && eligibleCustodian(request.auth.uid, old.chapter_id))
+          || (driver && (
+            (old.status == 'claimed' && next.status == 'enroute' && changes.hasOnly(['status', 'enroute_at']))
+            || (old.status == 'claimed' && !collected
+              && next.get('claimed_by', null) == null && next.get('claimed_at', null) == null
+              && ((next.status == 'available' && hasOpenClaimWindow() && canOpenOffer())
+                || (next.status == 'cancelled' && next.get('cancel_reason', null) == 'Pickup window expired'
+                  && (!hasOpenClaimWindow() || old.destination_confirmation.get('pickup_by', null) == null)))
+              && changes.hasOnly(['status', 'claimed_by', 'claimed_at', 'claimant_name', 'claimant_phone',
+                'cancel_reason', 'cancelled_at', 'abandoned_at', 'abandoned_reason', 'abandoned_prior_claimant']))
+            || (old.status == 'enroute' && next.status == 'completed' && hasReceiptForCompletion()
+              && changes.hasOnly(['status', 'actual_weight_lbs', 'completed_at', 'hours_earned', 'dropoff_photo_url']))
+            || (old.status == 'completed' && changes.hasOnly(['tax_receipt_id', 'tax_receipt_url', 'delivered_visible_to_restaurant']))
+          ))
+          || (isPickupDonor() && (
+            (!collected && old.status in ['available', 'claimed'] && next.status == 'cancelled'
+              && changes.hasOnly(['status', 'cancel_reason', 'cancelled_at']))
+            || (changes.hasAny(['verified_by_restaurant_at']) && respectsDonorHandoff())
+          ));
+      }
+
+      function canConfirmReceiving() {
+        let profile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+        return isSignedIn() && request.auth.token.get('email_verified', false) == true
+          && resource.data.get('receiver_uid', null) == request.auth.uid
+          && resource.data.get('claimed_by', null) != request.auth.uid
+          && resource.data.status == 'enroute' && !hasHold(resource.data)
+          && resource.data.get('destination_confirmation', null) != null
+          && resource.data.get('verified_by_restaurant_at', null) != null
+          && resource.data.get('receiving_receipt', null) == null
+          && profile.get('disabled', false) == false && profile.get('deleted_at', null) == null
+          && profile.get('member_status', null) != 'rejected';
+      }
+
+      function confirmsReceiving() {
+        let receipt = request.resource.data.get('receiving_receipt', null);
+        return receipt is map && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['receiving_receipt'])
+          && canConfirmReceiving()
+          && receipt.keys().hasOnly(['receiver_name', 'weight_lbs', 'recorded_by', 'recorded_at', 'source'])
+          && receipt.receiver_name is string && receipt.receiver_name.size() > 0 && receipt.receiver_name.size() <= 200
+          && receipt.weight_lbs is number && receipt.weight_lbs > 0 && receipt.weight_lbs <= 100000
+          && receipt.recorded_by == request.auth.uid && receipt.recorded_at == request.time
+          && receipt.source == 'receiving_site';
+      }
+
+      function reportsReceivingIssue() {
+        let hold = request.resource.data.get('safety_hold', null);
+        return hold is map && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['safety_hold'])
+          && canConfirmReceiving()
+          && hold == {'reason': 'destination_unavailable', 'reported_by': request.auth.uid, 'reported_at': request.time};
+      }
+
+      function reroutesHeldPickup() {
+        let old = resource.data;
+        let next = request.resource.data;
+        let backup = next.get('destination_confirmation', null);
+        let previous = old.get('destination_confirmation', null);
+        return isExec() && old.status == 'enroute' && old.get('claimed_by', null) != null
+          && old.get('verified_by_restaurant_at', null) != null && old.get('receiving_receipt', null) == null
+          && hasHold(old) && old.safety_hold.reason == 'destination_unavailable' && !hasHold(next)
+          && previous is map && backup is map
+          && next.diff(old).affectedKeys().hasOnly(['safety_hold', 'receiver_uid', 'receiver_assigned_at',
+            'receiver_assigned_by', 'fridge_id', 'fridge_name', 'fridge_address', 'fridge_lat', 'fridge_lng',
+            'fridge_h3', 'destination_confirmation', 'destination_history'])
+          && backup.keys().hasOnly(['site_name', 'address', 'contact', 'confirmed_by', 'confirmed_at',
+            'accepted_weight_lbs', 'pickup_by', 'arrival_by'])
+          && backup.site_name is string && backup.site_name.size() > 0 && backup.site_name.size() <= 200
+          && backup.address is string && backup.address.size() > 0 && backup.address.size() <= 200
+          && backup.address != previous.address
+          && backup.contact is string && backup.contact.size() > 0 && backup.contact.size() <= 200
+          && backup.confirmed_by == request.auth.uid && backup.confirmed_at == request.time
+          && backup.arrival_by is timestamp && backup.arrival_by > request.time
+          && backup.get('pickup_by', null) == previous.get('pickup_by', null)
+          && backup.accepted_weight_lbs is number && backup.accepted_weight_lbs > 0
+          && backup.accepted_weight_lbs == previous.accepted_weight_lbs
+          && next.fridge_name == backup.site_name && next.fridge_address == backup.address
+          && next.get('fridge_id', null) == null && next.get('fridge_lat', null) == null
+          && next.get('fridge_lng', null) == null && next.get('fridge_h3', null) == null
+          && next.get('receiver_uid', null) == null && next.get('receiver_assigned_at', null) == null
+          && next.get('receiver_assigned_by', null) == null
+          && next.destination_history == old.get('destination_history', []).concat([
+            {'destination': previous, 'hold': old.safety_hold}]);
+      }
+
+      allow update: if confirmsReceiving() || reportsReceivingIssue();
+      allow update: if isSignedIn() && !hasHold(resource.data) && hasHold(request.resource.data) && reportsHold();
+      allow update: if transfersCustody();
+      allow update: if reroutesHeldPickup();
+      allow update: if isExec() && keepsCustody() && hasReceiptForCompletion()
+        && hasValidNewPickupWindow()
+        && (resource.data.status != 'available' || request.resource.data.status != 'claimed' || hasOpenClaimWindow())
+        && (resource.data.status != 'claimed' || request.resource.data.status != 'available'
+          || resource.data.get('destination_confirmation', null) == null || hasOpenClaimWindow())
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['receiver_uid', 'receiver_assigned_at',
+          'receiver_assigned_by', 'destination_history'])
+        && (resource.data.get('destination_confirmation', null) == null ||
+          (request.resource.data.get('destination_confirmation', null) == resource.data.destination_confirmation
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fridge_id', 'fridge_name',
+              'fridge_address', 'fridge_lat', 'fridge_lng', 'fridge_h3', 'pickup_window_until'])
+            && (!hasHold(resource.data) || hasHold(request.resource.data))))
+        && (resource.data.get('receiving_receipt', null) == null
+          || request.resource.data.get('receiving_receipt', null) == resource.data.receiving_receipt);
+      allow update: if isSignedIn() && !hasHold(resource.data)
+        && resource.data.get('destination_confirmation', null) != null && updatesConfirmedPickup();
+      allow update: if isSignedIn() && !hasHold(resource.data) && !hasHold(request.resource.data)
+        && resource.data.get('destination_confirmation', null) == null && canOpenOffer() && respectsDonorHandoff()
+        && (resource.data.status != 'pending_destination' || request.resource.data.status in ['pending_destination', 'cancelled'])
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['spoiled', 'spoiled_kind', 'spoiled_note',
+          'handoff_from_uid', 'safety_resolution', 'destination_confirmation', 'receiving_receipt', 'receiver_uid',
+          'receiver_assigned_at', 'receiver_assigned_by', 'destination_history'])
+        && keepsCustody() && (resource.data.status == 'pending_destination' ? isPickupDonor()
+          : ((existingRid() != null && (existingRid() == request.auth.uid || existingRid() == userRid()))
+            || resource.data.get('claimed_by', null) == request.auth.uid));
 
       allow delete: if isAdmin();
     }
@@ -236,7 +514,7 @@ service cloud.firestore {
     // another, which we accept for now and can rate-limit later if needed.
     match /notifications/{id} {
       allow read, update: if isSignedIn() && resource.data.user_id == request.auth.uid;
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.get('kind', '') != 'pickup_alert';
       allow delete: if isSelf(resource.data.user_id) || isAdmin();
     }
 
@@ -247,13 +525,35 @@ service cloud.firestore {
     // receipt; read/delete reserved for the dispatcher's service
     // account and execs.
     match /notifications_outbox/{id} {
-      allow create: if true;
+      // A doc addressed to a member (user_id) is routed by the
+      // dispatcher from that member's own profile and preferences,
+      // so the client can't supply an email address or push id.
+      allow create: if request.resource.data.get('kind', '') != 'pickup_alert'
+        && (request.resource.data.get('user_id', null) == null
+          || (request.resource.data.get('channel', null) == 'auto'
+              && !request.resource.data.keys().hasAny(['email', 'player_id', 'name'])));
       allow read, update, delete: if isExec();
     }
 
     // ── member_activity ──
     match /member_activity/{id} {
+      function recordsCompletedPickup() {
+        let row = request.resource.data;
+        let pickupPath = /databases/$(database)/documents/pickups/$(row.source_id);
+        let pickup = getAfter(pickupPath).data;
+        let meals = math.round(pickup.actual_weight_lbs * 1.2);
+        return id == 'pickup_' + row.source_id && row.source_type == 'pickup_complete'
+          && pickup.status == 'completed' && get(pickupPath).data.status != 'completed'
+          && pickup.claimed_by == request.auth.uid && row.user_id == request.auth.uid
+          && row.lbs == pickup.actual_weight_lbs && row.hours == pickup.hours_earned
+          && row.date == pickup.completed_at.split('T')[0]
+          && row.project == 'iris' && row.meals == meals && row.events == 1 && row.raised == 0
+          && row.points == 10 + (meals > 50 ? 50 : meals) && row.created_at == request.time
+          && row.keys().hasOnly(['user_id', 'date', 'project', 'meals', 'lbs', 'hours', 'events',
+            'points', 'raised', 'source_type', 'source_id', 'created_at']);
+      }
       allow read: if isSignedIn();
+      allow create: if isSignedIn() && recordsCompletedPickup();
       allow write: if isExec();
     }
 
@@ -293,11 +593,10 @@ service cloud.firestore {
       // console, restrict writes to ONLY the known counter fields
       // (no arbitrary keys) and gate destructive resets behind
       // exec. Any signed-in user can bump; only an exec can clear.
-      allow update: if isSignedIn()
-        && request.resource.data.keys().hasOnly(
-             ['meals','lbs','individuals','co2','water','events','hours','volunteers','chapters','updated_at']
-           );
-      allow create, delete: if isExec();
+      // Counters are bumped server-side by the bumpImpactCounters
+      // Cloud Functions from completed pickups, event check-ins and
+      // signups. Clients never write them; execs can correct them.
+      allow write: if isExec();
     }
 
     // ── animals_helped, badges, user_badges, member_of_month, checklist_progress ──
@@ -400,9 +699,15 @@ service cloud.firestore {
     // partner OrgUnit for their own restaurant/church.
     match /org_units/{unit_id} {
       allow read: if true;
-      allow create, update: if isExec()
-        || (isSignedIn() && request.resource.data.type == 'chapter')
-        || (isSignedIn() && request.resource.data.type == 'partner');
+      // Members may only create the shadow row for a chapter that
+      // exists, or for a partner they own. Nobody but an exec edits
+      // an existing row.
+      allow create: if isExec()
+        || (isSignedIn() && request.resource.data.type == 'chapter'
+            && exists(/databases/$(database)/documents/chapters/$(unit_id)))
+        || (isSignedIn() && request.resource.data.type == 'partner'
+            && get(/databases/$(database)/documents/restaurants/$(unit_id)).data.get('user_id', null) == request.auth.uid);
+      allow update: if isExec();
       allow delete: if isAdmin();
     }
 
@@ -442,11 +747,26 @@ service cloud.firestore {
     // Nobody deletes — ended assignments carry status:ended.
     match /role_assignments/{id} {
       allow read: if isExec() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      // Self-writes are limited to non-privileged roles so a member
+      // can't mint themselves an executive or officer assignment.
       allow create: if isExec()
-        || (isSignedIn() && request.resource.data.user_id == request.auth.uid);
+        || (isSignedIn() && request.resource.data.user_id == request.auth.uid
+            && request.resource.data.role_key in ['member', 'volunteer', 'restaurant', 'partner']);
       allow update: if isExec()
-        || (isSignedIn() && resource.data.user_id == request.auth.uid);
+        || (isSignedIn() && resource.data.user_id == request.auth.uid
+            && resource.data.role_key in ['member', 'volunteer', 'restaurant', 'partner']
+            && request.resource.data.user_id == resource.data.user_id
+            && request.resource.data.role_key == resource.data.role_key);
       allow delete: if false;
+    }
+
+    match /rescue_availability/{uid} {
+      allow get, delete: if isSelf(uid);
+      allow create, update: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(['cell', 'updated_at'])
+        && request.resource.data.cell is string
+        && request.resource.data.cell.matches('87[0-9a-f]{13}')
+        && request.resource.data.updated_at == request.time;
     }
 
     // Deny-by-default for anything else

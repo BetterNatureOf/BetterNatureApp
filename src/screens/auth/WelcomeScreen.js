@@ -9,7 +9,7 @@ import Logo from '../../components/ui/Logo';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import { getOrgStats } from '../../services/orgStats';
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
-import { fetchAllMembers, fetchChapters } from '../../services/database';
+import { fetchPublicProfiles, fetchChapters } from '../../services/database';
 import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
@@ -23,7 +23,7 @@ export default function WelcomeScreen({ navigation }) {
     function refresh() {
       if (!alive) return;
       getOrgStats().then((s) => alive && setStats(s)).catch(() => {});
-      fetchAllMembers().then((m) => alive && setVolunteers(m.length)).catch(() => {});
+      fetchPublicProfiles().then((m) => alive && setVolunteers(m.length)).catch(() => {});
       fetchChapters().then((c) => alive && setChapters(c.length)).catch(() => {});
     }
     refresh();

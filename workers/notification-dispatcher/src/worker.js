@@ -90,6 +90,7 @@ function unwrapFields(fields) {
   const out = {};
   for (const [k, v] of Object.entries(fields)) {
     if (v.stringValue !== undefined) out[k] = v.stringValue;
+    else if (v.timestampValue !== undefined) out[k] = v.timestampValue;
     else if (v.integerValue !== undefined) out[k] = parseInt(v.integerValue, 10);
     else if (v.booleanValue !== undefined) out[k] = v.booleanValue;
     else if (v.mapValue) out[k] = unwrapFields(v.mapValue.fields || {});
@@ -113,7 +114,21 @@ async function patchStatus(env, token, name, status, error) {
 }
 
 // ---- Senders ----
-async function sendPush(env, doc) {
+async function pickupAlertTtl(env, token, pickupId) {
+  if (typeof pickupId !== 'string' || !pickupId || pickupId.includes('/')) return 0;
+  const url = `${FS_BASE(env.FIRESTORE_PROJECT_ID)}/pickups/${encodeURIComponent(pickupId)}`;
+  const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+  if (res.status === 404) return 0;
+  if (!res.ok) throw new Error(`Could not check rescue availability (${res.status})`);
+  const pickup = unwrapFields((await res.json()).fields || {});
+  if (pickup.status !== 'available' || pickup.claimed_by || pickup.safety_hold ||
+      pickup.verified_by_restaurant_at || pickup.handoff_from_uid) return 0;
+  const cutoff = Math.min(Date.parse(pickup.destination_confirmation?.pickup_by ?? pickup.pickup_window_until),
+    Date.parse(pickup.destination_confirmation?.arrival_by));
+  return Math.min(3600, Math.floor((cutoff - Date.now()) / 1000));
+}
+
+async function sendPush(env, doc, ttl) {
   const body = {
     app_id: env.ONESIGNAL_APP_ID,
     include_player_ids: [doc.fields.player_id],
@@ -121,6 +136,7 @@ async function sendPush(env, doc) {
     contents: { en: doc.fields.body || '' },
     url: doc.fields.url || undefined,
     data: doc.fields.data || {},
+    ...(ttl ? { ttl, idempotency_key: doc.fields.idempotency_key } : {}),
   };
   const r = await fetch('https://onesignal.com/api/v1/notifications', {
     method: 'POST',
@@ -188,13 +204,63 @@ function parseFrom(raw) {
   return m ? { name: m[1], email: m[2] } : { email: raw };
 }
 
+// ---- Recipient routing ----
+// Member-addressed docs arrive as channel 'auto' with only a user_id.
+// The client can't read other members' profiles, so routing lives
+// here: load the recipient's private profile and honor their prefs.
+// Mirrors KIND_PREF in src/config/notifications.js.
+const KIND_PREF = {
+  volunteer: 'notif_volunteer',
+  pickup: 'notif_pickup',
+  pickup_alert: 'notif_pickup',
+  general: 'notif_general',
+  broadcast: 'notif_general',
+  welcome: 'notif_general',
+};
+async function loadRecipient(env, token, uid) {
+  if (typeof uid !== 'string' || !uid || uid.includes('/')) return null;
+  const url = `${FS_BASE(env.FIRESTORE_PROJECT_ID)}/users/${encodeURIComponent(uid)}`;
+  const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Could not load recipient (${res.status})`);
+  return unwrapFields((await res.json()).fields || {});
+}
+async function sendAuto(env, token, doc) {
+  const p = await loadRecipient(env, token, doc.fields.user_id);
+  if (!p || p.deleted_at || p.disabled) return 'skipped';
+  const wantsKind = p[KIND_PREF[doc.fields.kind] || 'notif_general'] !== false;
+  if (!wantsKind) return 'skipped';
+  let sent = false;
+  if (p.push_enabled === true && p.onesignal_player_id) {
+    await sendPush(env, { ...doc, fields: { ...doc.fields, player_id: p.onesignal_player_id } });
+    sent = true;
+  }
+  if (p.email_consent !== false && p.email) {
+    await sendEmail(env, { ...doc, fields: { ...doc.fields, email: p.email, name: p.name || '' } });
+    sent = true;
+  }
+  return sent ? 'sent' : 'skipped';
+}
+
 // ---- Worker entry points ----
 async function tick(env) {
   const token = await getAccessToken(env);
   const queued = await listQueued(env, token);
   for (const doc of queued) {
     try {
-      if (doc.fields.channel === 'push')  await sendPush(env, doc);
+      let ttl;
+      if (doc.fields.kind === 'pickup_alert' && doc.fields.channel === 'push') {
+        ttl = await pickupAlertTtl(env, token, doc.fields.data?.pickupId);
+        if (!(ttl > 0)) {
+          await patchStatus(env, token, doc.name, 'skipped');
+          continue;
+        }
+      }
+      if (doc.fields.channel === 'auto') {
+        await patchStatus(env, token, doc.name, await sendAuto(env, token, doc));
+        continue;
+      }
+      if (doc.fields.channel === 'push')  await sendPush(env, doc, ttl);
       if (doc.fields.channel === 'email') await sendEmail(env, doc);
       await patchStatus(env, token, doc.name, 'sent');
     } catch (e) {

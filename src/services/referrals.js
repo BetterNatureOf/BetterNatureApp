@@ -9,7 +9,7 @@
 //   users/{uid}.referred_by     — the inviter's uid, set once on the new user
 import {
   collection, doc, getDoc, getDocs, query, where, limit,
-  setDoc, updateDoc, increment, serverTimestamp,
+  setDoc, updateDoc,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 
@@ -30,10 +30,11 @@ export function referralLink(code) {
 }
 
 // Look up the user that owns a given code. Returns null if not found.
+// Reads the public mirror — other members' /users docs are private.
 export async function findUserByReferralCode(code) {
   if (!isFirebaseConfigured || !code) return null;
   const q = query(
-    collection(db, 'users'),
+    collection(db, 'public_profiles'),
     where('referral_code', '==', String(code).trim().toUpperCase()),
     limit(1),
   );
@@ -76,11 +77,9 @@ export async function applyReferral(newUserId, code) {
     return { ok: false, reason: 'already_referred' };
   }
 
+  // The inviter's referrals_count is credited server-side by the
+  // mirrorPublicProfile Cloud Function when referred_by first appears.
   await updateDoc(newRef, { referred_by: inviter.id });
-  await updateDoc(doc(db, 'users', inviter.id), {
-    referrals_count: increment(1),
-    referrals_updated_at: serverTimestamp(),
-  });
   return { ok: true, inviterId: inviter.id };
 }
 
