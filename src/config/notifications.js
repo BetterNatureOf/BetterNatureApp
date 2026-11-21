@@ -22,13 +22,18 @@ export const NOTIFY_PROVIDER =
 // Notification "kinds" — must match the toggles on the user doc:
 //   notif_volunteer, notif_pickup, notif_general
 // Any kind not in this map falls back to notif_general.
+// R11 — this map MUST stay in lock-step with
+// workers/notification-dispatcher/src/worker.js `prefKeyForKind()`.
+// Adding a kind here requires a matching change in the worker.
 export const KIND_PREF = {
-  volunteer:    'notif_volunteer',
-  pickup:       'notif_pickup',
-  pickup_alert: 'notif_pickup',
-  general:      'notif_general',
-  broadcast:    'notif_general',
-  welcome:      'notif_general',
+  volunteer:        'notif_volunteer',
+  event:            'notif_volunteer',
+  pickup:           'notif_pickup',
+  pickup_alert:     'notif_pickup',
+  pickup_reminder:  'notif_pickup',
+  general:          'notif_general',
+  broadcast:        'notif_general',
+  welcome:          'notif_general',
 };
 
 export function prefKeyForKind(kind) {

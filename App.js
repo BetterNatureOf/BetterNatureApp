@@ -11,9 +11,11 @@ import RestaurantNavigator from './src/navigation/RestaurantNavigator';
 import LoadingScreen from './src/screens/auth/LoadingScreen';
 import CompleteProfile from './src/screens/auth/CompleteProfile';
 import useAuthStore, { ROLES } from './src/store/authStore';
+import useNotifStore from './src/store/notifStore';
+import { subscribeNotifications } from './src/services/database';
 import useAuth from './src/hooks/useAuth';
 import useFreshAppVersion from './src/hooks/useFreshAppVersion';
-import linking from './src/navigation/linking';
+import linking, { restoreBootDeepLink } from './src/navigation/linking';
 import { injectWebFonts } from './src/config/webFonts';
 import ErrorBoundary from './src/components/ui/ErrorBoundary';
 import PasswordConfirmHost from './src/components/ui/PasswordConfirmHost';
@@ -144,14 +146,30 @@ export default function App() {
     }
   }, [isAuthenticated, user?.id]);
 
+  useEffect(() => {
+    const { setNotifications } = useNotifStore.getState();
+    setNotifications([]);
+    if (!isAuthenticated || !user?.id) return;
+    return subscribeNotifications(user.id, setNotifications, (error) => {
+      console.warn('Could not load notifications', error);
+    });
+  }, [isAuthenticated, user?.id]);
+
   if (!fontsLoaded || isLoading) {
     return <LoadingScreen />;
   }
+
+  // Each branch gets its own NavigationContainer so linking re-reads the
+  // URL when the signed-in app first appears; restore the link the page
+  // was opened with (e.g. a rescue alert) before that happens.
+  const branch = !isAuthenticated ? 'auth' : needsProfile ? 'profile' : `app-${role || 'member'}`;
+  if (branch.startsWith('app-')) restoreBootDeepLink();
 
   return (
     <ErrorBoundary>
       <StatusBar style="dark" />
       <NavigationContainer
+        key={branch}
         linking={linking}
         fallback={<LoadingScreen />}
       >

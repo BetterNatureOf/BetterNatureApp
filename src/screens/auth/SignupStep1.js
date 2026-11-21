@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { Colors, Type, Spacing } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import AuthScaffold from '../../components/ui/AuthScaffold';
+import { getSignupDraft, updateSignupDraft } from '../../services/signupDraft';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -25,16 +27,21 @@ import { validateDob, dobToIso, ageBandFor, guardianRequired } from '../../servi
 export default function SignupStep1({ navigation }) {
   const { contentStyle } = useResponsiveLayout();
   const [checking, setChecking] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
-  const [dob, setDob] = useState(null); // JS Date instance from DatePicker
-  const [scope, setScope] = useState('national'); // 'national' | 'international'
-  const [city, setCity] = useState('');
-  const [state, setStateVal] = useState('');
-  const [country, setCountry] = useState('USA');
-  const [zip, setZip] = useState('');
+  // Coming back from step 2 keeps what was already typed.
+  const saved = getSignupDraft() || {};
+  const [name, setName] = useState(saved.name || '');
+  const [email, setEmail] = useState(saved.email || '');
+  const [password, setPassword] = useState(saved.password || '');
+  const [phone, setPhone] = useState(saved.phone || '');
+  const [dob, setDob] = useState(() => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(saved.dob || '');
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }); // JS Date instance from DatePicker
+  const [scope, setScope] = useState(saved.country && !['US', 'USA'].includes(saved.country) ? 'international' : 'national');
+  const [city, setCity] = useState(saved.city || '');
+  const [state, setStateVal] = useState(saved.state || '');
+  const [country, setCountry] = useState(saved.country || 'USA');
+  const [zip, setZip] = useState(saved.zip || '');
   const [errors, setErrors] = useState({});
 
   // Top-of-form banner message. We surface validation + duplicate errors
@@ -122,20 +129,15 @@ export default function SignupStep1({ navigation }) {
       age_band: ageBandFor(dob),
       guardian_required: guardianRequired(dob),
     };
-    navigation.navigate('SignupStep2', payload);
+    // Kept in memory only — never in route params (they become the URL on web).
+    updateSignupDraft(payload);
+    navigation.navigate('SignupStep2');
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Screen contentStyle={contentStyle} keyboardShouldPersistTaps="handled">
-       <ResponsiveContainer maxWidth={520}>
-        <BrushText variant="screenTitle" style={styles.title}>
-          Join BetterNature
-        </BrushText>
-        <Text style={styles.subtitle}>Tell us about yourself</Text>
+    <AuthScaffold title="Join BetterNature" subtitle="Tell us about yourself. It takes about three minutes."
+      step={1} steps={['About you', 'Your chapter', 'Verify your ID']} kicker="For volunteers" headline={'Rescue food.\nRestore nature.'}
+      onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Welcome'))}>
 
         {banner ? (
           <View style={styles.banner}>
@@ -186,6 +188,8 @@ export default function SignupStep1({ navigation }) {
           value={dob}
           onChange={setDob}
           placeholder="MM / DD / YYYY"
+          accessibilityLabel="Date of birth"
+          invalid={!!errors.dob}
         />
         {errors.dob ? <Text style={styles.dobError}>{errors.dob}</Text> : null}
         {dob && guardianRequired(dob) ? (
@@ -199,7 +203,7 @@ export default function SignupStep1({ navigation }) {
             fields; International opens it world-wide and shows the
             Country chip with a free-form state/region. */}
         <Text style={styles.label}>Where are you?</Text>
-        <View style={styles.scopeRow}>
+        <View style={styles.scopeRow} accessibilityRole="radiogroup" accessibilityLabel="Where are you?">
           {[
             { key: 'national',      label: 'United States' },
             { key: 'international', label: 'International' },
@@ -217,6 +221,9 @@ export default function SignupStep1({ navigation }) {
                   setCountry(opt.key === 'national' ? 'USA' : '');
                 }}
                 activeOpacity={0.85}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: active }}
+                accessibilityLabel={opt.label}
               >
                 <Text style={[styles.scopeChipText, active && styles.scopeChipTextActive]}>
                   {opt.label}
@@ -282,9 +289,7 @@ export default function SignupStep1({ navigation }) {
         <Text style={styles.loginLink} onPress={() => navigation.navigate('Login')}>
           Already have an account? <Text style={styles.loginBold}>Sign in</Text>
         </Text>
-       </ResponsiveContainer>
-      </Screen>
-    </KeyboardAvoidingView>
+    </AuthScaffold>
   );
 }
 
@@ -300,8 +305,8 @@ const styles = StyleSheet.create({
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 4, marginBottom: 24 },
   row: { flexDirection: 'row', gap: 12 },
   halfInput: { flex: 1 },
-  label: { ...Type.label, color: Colors.dark, marginBottom: 6, marginTop: 4 },
-  dobError: { color: '#B91C3D', fontSize: 12.5, marginTop: 6, fontWeight: '600' },
+  label: { fontSize: 14, fontWeight: '600', color: Colors.dark, marginBottom: 8, marginTop: 10, letterSpacing: 0.2 },
+  dobError: { color: '#B42318', fontSize: 13, marginTop: 6, fontWeight: '500' },
   dobHint: { color: Colors.gray, fontSize: 12.5, marginTop: 6, lineHeight: 18, fontStyle: 'italic' },
   scopeRow: { flexDirection: 'row', gap: 8, marginBottom: 14, backgroundColor: '#F7F5EF', padding: 4, borderRadius: 999 },
   scopeChip: { flex: 1, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999, alignItems: 'center' },
@@ -309,8 +314,8 @@ const styles = StyleSheet.create({
   scopeChipText: { fontSize: 13, fontWeight: '700', color: Colors.gray, letterSpacing: 0.3 },
   scopeChipTextActive: { color: Colors.green },
   btn: { marginTop: 8 },
-  loginLink: { textAlign: 'center', marginTop: 20, ...Type.caption },
-  loginBold: { color: Colors.pink, fontWeight: '600' },
+  loginLink: { textAlign: 'center', marginTop: 22, fontSize: 15, color: Colors.gray, lineHeight: 44 },
+  loginBold: { color: Colors.pink, fontWeight: '700' },
   banner: {
     backgroundColor: '#FFE5EE',
     borderLeftWidth: 4,

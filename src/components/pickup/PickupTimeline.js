@@ -81,7 +81,7 @@ function hintFor(key, pickup) {
   if (key === 'posted') return 'Waiting for a volunteer.';
   if (key === 'claimed') return 'Volunteer heading to the restaurant.';
   if (key === 'confirmed') return 'Volunteer has the food, on their way to the drop.';
-  if (key === 'enroute') return 'Almost done — mark delivered when the food is in the fridge.';
+  if (key === 'enroute') return 'Almost done — mark delivered once the receiving site has the food.';
   return '';
 }
 

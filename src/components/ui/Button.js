@@ -16,7 +16,15 @@ export default function Button({
   loading = false,
   disabled = false,
   style,
+  accessibilityLabel,
 }) {
+  // Every variant is announced as a button with its title, and as busy /
+  // disabled while it can't be pressed.
+  const a11y = {
+    accessibilityRole: 'button',
+    accessibilityLabel: accessibilityLabel || title,
+    accessibilityState: { disabled: disabled || loading, busy: loading },
+  };
   const isPrimary = variant === 'primary';
   const isSmall = variant === 'small';
 
@@ -26,6 +34,7 @@ export default function Button({
         onPress={onPress}
         disabled={disabled || loading}
         activeOpacity={0.85}
+        {...a11y}
         style={[
           (disabled || loading) && styles.disabled,
           style,
@@ -58,6 +67,7 @@ export default function Button({
       onPress={onPress}
       disabled={disabled || loading}
       activeOpacity={0.85}
+      {...a11y}
       style={[
         styles.base,
         styles.secondary,

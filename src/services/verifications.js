@@ -24,28 +24,27 @@ export async function setVerificationStatus(uid, status) {
 // touching unrelated profile fields.
 export async function saveDriverSetup(uid, {
   type,
-  licenseUrl,             // back-compat: equals front URL
-  licenseFrontUrl,
-  licenseBackUrl,
   holderName,
   holderRelationship,
   holderPhone,
   consentSignedName,
 }) {
   if (!isFirebaseConfigured || !uid) return;
+  // F2 — driver evidence (license_url/front/back) now lives on
+  // /id_reviews/{uid}, written by submitIdReview(kind:'driver').
+  // This path persists only non-sensitive driver METADATA on the
+  // user doc. Firestore rules deny self-writes to the nested
+  // driver.license_* fields anyway.
   await updateDoc(doc(db, 'users', uid), {
     driver: {
-      type,                                                  // 'self' | 'other'
-      license_url: licenseUrl || licenseFrontUrl,            // legacy single thumbnail
-      license_front_url: licenseFrontUrl || licenseUrl || null,
-      license_back_url: licenseBackUrl || null,
+      type,                               // 'self' | 'other'
       holder_name: holderName || '',
       holder_relationship: holderRelationship || '',
       holder_phone: holderPhone || '',
       consent_signed: type === 'other' ? !!consentSignedName : null,
       consent_signed_name: type === 'other' ? consentSignedName : null,
       consent_signed_at: type === 'other' ? new Date().toISOString() : null,
-      reviewed_status: 'pending',                            // admin flips later
+      reviewed_status: 'pending',
     },
     driver_setup_complete: true,
   });

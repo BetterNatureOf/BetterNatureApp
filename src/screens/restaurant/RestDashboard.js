@@ -46,15 +46,21 @@ const SERIF = Platform.select({
 });
 
 const STATUS_TONE = {
+  pending_destination: { bg: '#FFF2CF', fg: '#7A5400', label: 'Waiting for a receiving site' },
   available: { bg: '#FFF2CF', fg: '#7A5400', label: 'Waiting on a volunteer' },
   claimed:   { bg: '#E5F2EC', fg: '#1B5E3F', label: 'Volunteer claimed' },
-  enroute:   { bg: '#E1EDFA', fg: '#1565C0', label: 'On the way to fridge' },
+  enroute:   { bg: '#E1EDFA', fg: '#1565C0', label: 'On the way to drop-off' },
   completed: { bg: '#DFF1E2', fg: '#2E7D32', label: 'Delivered' },
   cancelled: { bg: '#F8DADA', fg: '#8E1B1B', label: 'Cancelled' },
 };
 const VERIFIED_TONE = { bg: '#E8E1F4', fg: '#5B3A8E', label: '✓ Picked up — heading to drop-off' };
 function toneFor(p) {
+  if (p.status === 'cancelled' && p.cancel_reason === 'Pickup window expired') {
+    return { ...STATUS_TONE.cancelled, label: 'Expired' };
+  }
   if (p.status === 'completed' || p.status === 'cancelled') return STATUS_TONE[p.status];
+  if (p.safety_hold) return { bg: '#F8DADA', fg: '#8E1F2A', label: 'Pickup on hold' };
+  if (p.status === 'available' && !p.destination_confirmation) return STATUS_TONE.pending_destination;
   if (p.verified_by_restaurant_at) return VERIFIED_TONE;
   return STATUS_TONE[p.status] || STATUS_TONE.available;
 }
@@ -187,7 +193,7 @@ export default function RestDashboard({ navigation }) {
           />
         )}
         {state === 'brandnew' && (
-          <HeroFirstPost partnerType={partnerType} onPost={goPost} />
+          <HeroFirstPost onPost={goPost} />
         )}
         {state === 'ready' && (
           <HeroPost
@@ -302,17 +308,16 @@ function HeroConfirm({ pickup, moreCount, busy, onConfirm }) {
 }
 
 // ── Hero: first post welcome ───────────────────────────────────────
-function HeroFirstPost({ partnerType, onPost }) {
+function HeroFirstPost({ onPost }) {
   return (
     <View style={[styles.hero, styles.heroWelcome]}>
       <Text style={styles.heroQuietEyebrow}>Ready when you are</Text>
-      <Text style={styles.heroQuietNum}>Post your first surplus.</Text>
+      <Text style={styles.heroQuietNum}>Offer your first donation.</Text>
       <Text style={styles.heroQuietBody}>
-        Snap a photo, pick a weight, pick a window. A volunteer at the nearest chapter claims it and comes
-        to pick it up — free, weighed, and tax-receipted for your {partnerType.possessive}.
+        Add the food, estimated weight, and pickup window. Your dashboard shows when a volunteer accepts.
       </Text>
       <TouchableOpacity style={styles.btnWarm} onPress={onPost} activeOpacity={0.88}>
-        <Text style={styles.btnWarmText}>Post surplus →</Text>
+        <Text style={styles.btnWarmText}>Offer food →</Text>
       </TouchableOpacity>
     </View>
   );
@@ -325,7 +330,7 @@ function HeroPost({ totalLbs, historyCount, activeCount, onPost }) {
       <View style={styles.heroEyebrowRow}>
         <View style={[styles.chip, styles.chipProgress]}>
           <View style={styles.chipDot} />
-          <Text style={styles.chipTextProgress}>Post surplus</Text>
+          <Text style={styles.chipTextProgress}>Food donations</Text>
         </View>
         {activeCount > 0 && (
           <Text style={styles.heroMeta}>
@@ -341,10 +346,10 @@ function HeroPost({ totalLbs, historyCount, activeCount, onPost }) {
       <Text style={styles.heroSecondary}>
         {totalLbs > 0
           ? `That's about ${mealsFromLbs(totalLbs).toLocaleString('en-US')} meals across ${historyCount || pluralize(historyCount, 'post', 'posts')} — post the next one when you're ready.`
-          : 'Post surplus in about a minute and a volunteer picks it up. Every pound is weighed and receipted.'}
+          : 'Offer food and track who’s picking it up here.'}
       </Text>
       <TouchableOpacity style={styles.btnPrimary} onPress={onPost} activeOpacity={0.88}>
-        <Text style={styles.btnPrimaryText}>Post surplus →</Text>
+        <Text style={styles.btnPrimaryText}>Offer food →</Text>
       </TouchableOpacity>
     </View>
   );

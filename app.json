@@ -19,6 +19,7 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "org.betternature.app",
       "buildNumber": "1",
       "infoPlist": {
@@ -78,7 +79,8 @@
         }
       ],
       "expo-image-picker",
-      "expo-asset"
+      "expo-asset",
+      "expo-apple-authentication"
     ],
     "updates": {
       "url": "https://u.expo.dev/REPLACE_AFTER_EAS_INIT"

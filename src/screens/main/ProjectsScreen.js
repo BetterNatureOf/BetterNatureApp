@@ -6,6 +6,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import { getOrgStats } from '../../services/orgStats';
 import ProjectLogo from '../../components/ui/ProjectLogo';
+import Button from '../../components/ui/Button';
 import Screen from '../../components/ui/Screen';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
@@ -65,7 +66,7 @@ export default function ProjectsScreen({ navigation }) {
     <Screen contentStyle={contentStyle}>
       <ResponsiveContainer maxWidth={1200}>
         <BrushText variant="screenTitle" style={styles.title}>
-          Our Projects
+          Programs
         </BrushText>
         <Text style={styles.subtitle}>
           Three initiatives, one mission: a better world.
@@ -92,6 +93,7 @@ export default function ProjectsScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
+        <Button title="Support Better Nature" variant="secondary" onPress={() => navigation.navigate('Donate')} />
       </ResponsiveContainer>
     </Screen>
   );

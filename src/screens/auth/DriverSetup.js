@@ -36,8 +36,9 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
-import { uploadIdImage, getProfile } from '../../services/auth';
+import { getProfile } from '../../services/auth';
 import { saveDriverSetup } from '../../services/verifications';
+import { submitIdReview } from '../../services/idReview';
 import { notify, notifyThen } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
@@ -100,22 +101,20 @@ export default function DriverSetup({ navigation }) {
     if (!user?.id) return notify('Not signed in');
     setSaving(true);
     try {
-      // 1. Upload both license images. We file them under a driver
-      // namespace so they don't get confused with the volunteer's
-      // personal-ID images in Firebase Storage.
-      const [licenseFrontUrl, licenseBackUrl] = await Promise.all([
-        uploadIdImage(user.id, licenseFrontUri, { kind: 'driver', side: 'front' }),
-        uploadIdImage(user.id, licenseBackUri,  { kind: 'driver', side: 'back' }),
-      ]);
+      // F2 — license evidence now goes through the A2 /id_reviews
+      // pipeline (owner-only read, exec reviewer, viewed through
+      // the protected signed-URL callable). The user doc keeps only
+      // non-sensitive driver METADATA (type, holder name/phone,
+      // consent-signed name). No bearer URL ever lands on /users
+      // again.
+      await submitIdReview(user.id, {
+        frontUri: licenseFrontUri,
+        backUri:  licenseBackUri,
+        kind: 'driver',
+      });
 
-      // 2. Save the structured driver block on the user doc. We pass
-      // licenseUrl pointing at the front for back-compat with admin
-      // surfaces that only render a single thumbnail.
       await saveDriverSetup(user.id, {
         type,
-        licenseUrl: licenseFrontUrl,
-        licenseFrontUrl,
-        licenseBackUrl,
         holderName:         type === 'other' ? holderName.trim() : (user.name || ''),
         holderRelationship: type === 'other' ? relationship : 'self',
         holderPhone:        type === 'other' ? holderPhone.trim() : (user.phone || ''),
@@ -344,7 +343,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: 14,
-    borderWidth: 1.5, borderColor: Colors.glassBorder,
+    borderWidth: 1.5, borderColor: Colors.grayLight,
     ...Shadows.soft,
   },
   toggleCardOn: { borderColor: Colors.green, backgroundColor: Colors.greenLight },
@@ -382,7 +381,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8, paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: Colors.white,
-    borderWidth: 1.5, borderColor: Colors.glassBorder,
+    borderWidth: 1.5, borderColor: Colors.grayLight,
   },
   relPillOn: { backgroundColor: Colors.green, borderColor: Colors.green },
   relText: { fontSize: 13, fontWeight: '600', color: Colors.dark },
@@ -393,7 +392,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: 16,
-    borderWidth: 1, borderColor: Colors.glassBorder,
+    borderWidth: 1, borderColor: Colors.grayLight,
     ...Shadows.soft,
   },
   consentTitle: { fontSize: 14, fontWeight: '800', color: Colors.dark, marginBottom: 6, letterSpacing: -0.2 },
@@ -403,7 +402,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 12,
     borderRadius: Radius.md,
-    borderWidth: 1.5, borderColor: Colors.glassBorder,
+    borderWidth: 1.5, borderColor: Colors.grayLight,
   },
   agreeRowOn: { borderColor: Colors.green, backgroundColor: Colors.greenLight },
   checkbox: {

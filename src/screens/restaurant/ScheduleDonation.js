@@ -24,8 +24,8 @@ import { notify, notifyThen, confirm } from '../../services/ui';
 import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
-import FridgePicker from '../../components/ui/FridgePicker';
 import Screen from '../../components/ui/Screen';
+import { FOOD_CATEGORIES } from '../../../functions/lib/rescueCargo';
 
 const WEIGHT_CHIPS = [5, 10, 20, 50, 100];
 
@@ -52,11 +52,13 @@ export default function ScheduleDonation({ navigation }) {
   const [timingMode, setTimingMode] = useState('window'); // 'window' | 'date'
   const [scheduledFor, setScheduledFor] = useState(null);
   const [notes, setNotes] = useState('');
+  // Load details volunteers and receiving sites match against. Optional:
+  // blank stays unknown rather than defaulting to something that may be wrong.
+  const [foodCategory, setFoodCategory] = useState(null);
+  const [packages, setPackages] = useState('');
   const [posting, setPosting] = useState(false);
   // Volunteer-friendly drop-off destination. The restaurant can pre-pick
   // a fridge, and if they don't, the volunteer chooses when claiming.
-  const [fridgeId, setFridgeId] = useState(null);
-  const [fridgeName, setFridgeName] = useState('');
 
   async function snapPhoto() {
     // Camera-first; fall back to library if user denies camera.
@@ -186,15 +188,15 @@ export default function ScheduleDonation({ navigation }) {
         pickup_window_until: until,
         scheduled_for: useDate ? scheduledFor.toISOString() : null,
         timing_mode: useDate ? 'date' : 'window',
-        fridge_id: fridgeId || null,
-        fridge_name: fridgeName || '',
         notes: notes.trim(),
+        food_category: foodCategory,
+        packages: /^\d+$/.test(packages.trim()) && parseInt(packages, 10) > 0 ? parseInt(packages, 10) : null,
       });
 
       // Toast and dismiss right away.
       notifyThen(
-        'Posted!',
-        `Volunteers nearby just got notified. ~${Math.round(weight * 1.2)} meals worth — pickup ${useDate ? 'on the scheduled date' : 'window ' + w.label.toLowerCase()}.`,
+        'Offer saved',
+        'The offer is waiting for a receiving site. Volunteers can see it after a coordinator confirms the destination.',
         () => navigation.goBack(),
       );
 
@@ -304,6 +306,34 @@ export default function ScheduleDonation({ navigation }) {
           ) : null}
         </View>
 
+        <Text style={styles.sectionLabel}>What kind of food?</Text>
+        <View style={styles.chipsRow}>
+          {FOOD_CATEGORIES.map((c) => (
+            <TouchableOpacity
+              key={c.key}
+              style={[styles.chip, foodCategory === c.key && styles.chipOn]}
+              onPress={() => setFoodCategory(foodCategory === c.key ? null : c.key)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: foodCategory === c.key }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.chipText, foodCategory === c.key && styles.chipTextOn]}>{c.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.sectionLabel}>How many boxes, trays or bags?</Text>
+        <View style={styles.weightRow}>
+          <Input
+            value={packages}
+            onChangeText={(v) => setPackages(v.replace(/[^\d]/g, ''))}
+            keyboardType="number-pad"
+            placeholder="e.g. 3"
+            style={styles.weightInput}
+            accessibilityLabel="Number of boxes, trays or bags"
+          />
+          <Text style={styles.weightUnit}>items</Text>
+        </View>
+
         {/* Pickup timing — mutually exclusive modes */}
         <Text style={styles.sectionLabel}>When can volunteers pick this up?</Text>
         <View style={styles.modeToggle}>
@@ -359,16 +389,8 @@ export default function ScheduleDonation({ navigation }) {
           </>
         )}
 
-        {/* Drop-off destination — community fridge network */}
-        <Text style={styles.sectionLabel}>
-          Drop off at <Text style={styles.optional}>(optional — volunteer can also choose)</Text>
-        </Text>
-        <FridgePicker
-          value={fridgeId}
-          onChange={(id, f) => { setFridgeId(id); setFridgeName(f?.name || ''); }}
-          chapterId={user?.chapter_id}
-          emptyHint="No community fridges in your chapter yet. The volunteer who claims this pickup will choose where to drop off."
-        />
+        <Text style={styles.sectionLabel}>Receiving site</Text>
+        <Text style={styles.optional}>A coordinator confirms where the food can go before volunteers see this offer.</Text>
 
         {/* Notes (optional) */}
         <Text style={styles.sectionLabel}>Notes <Text style={styles.optional}>(optional)</Text></Text>
@@ -381,7 +403,7 @@ export default function ScheduleDonation({ navigation }) {
         />
 
         <Button
-          title={posting ? 'Posting…' : 'Post pickup'}
+          title={posting ? 'Saving…' : 'Submit food offer'}
           onPress={handlePost}
           loading={posting}
           style={styles.submit}

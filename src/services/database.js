@@ -1,3 +1,4 @@
+import { pickupDeadline, rescueCell, rescueOfferDeadline } from './rescueCells';
 // Firestore data layer — same exports as the old Supabase version so all
 // screens keep working. When Firebase isn't configured (or a collection is
 // empty) we fall back to mock data so the app demos cleanly.
@@ -6,6 +7,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   addDoc,
   setDoc,
   updateDoc,
@@ -17,9 +19,11 @@ import {
   serverTimestamp,
   runTransaction,
   arrayUnion,
+  Timestamp,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../config/firebase';
-import { bumpOrgStats } from './orgStats';
+import { auth, db, firebaseApp, isFirebaseConfigured } from '../config/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import pickupEligibility from '../../functions/lib/pickupEligibility';
 import {
   mockChapters,
   mockEvents,
@@ -260,16 +264,17 @@ export async function fetchEventSignups(eventId) {
     query(collection(db, 'event_signups'), where('event_id', '==', eventId))
   );
   const rows = snapToList(snap).filter((s) => s.status !== 'cancelled');
-  // Hydrate user names
-  const out = [];
-  for (const r of rows) {
-    let user_name = 'Volunteer';
-    try {
-      const u = await getDoc(doc(db, 'users', r.user_id));
-      if (u.exists()) user_name = u.data().name || 'Volunteer';
-    } catch {}
-    out.push({ ...r, user_name });
-  }
+  // A2 — hydrate names from /public_profiles. Attendee lists are
+  // read by presidents/execs (for check-in) and sometimes by other
+  // signed-up volunteers (to see who else is coming). Both legit
+  // paths work against the public mirror; neither needs email/phone
+  // from the private /users doc.
+  const { fetchPublicProfiles } = await import('./publicProfiles');
+  const profMap = await fetchPublicProfiles(rows.map((r) => r.user_id));
+  const out = rows.map((r) => ({
+    ...r,
+    user_name: profMap.get(r.user_id)?.display_name || 'Volunteer',
+  }));
   return out;
 }
 
@@ -322,38 +327,29 @@ export async function checkInVolunteer({
     });
   }
 
-  // 2. Insert activity row
-  await addDoc(collection(db, 'member_activity'), {
-    user_id: userId,
-    date: now.split('T')[0],
-    project,
-    meals,
-    hours,
-    events: 1,
-    raised: 0,
-    source_type: 'event_checkin',
-    source_id: eventId,
-    created_at: serverTimestamp(),
+  // 2. One activity row per event per volunteer. A repeated check-in
+  // (double tap, two coordinators) is a no-op. Profile counters and
+  // org_stats are applied server-side from this row (impactCounters).
+  const activityRef = doc(db, 'member_activity', `checkin_${eventId}_${userId}`);
+  await runTransaction(db, async (tx) => {
+    if ((await tx.get(activityRef)).exists()) return;
+    tx.set(activityRef, {
+      user_id: userId,
+      date: now.split('T')[0],
+      project,
+      meals,
+      hours,
+      events: 1,
+      raised: 0,
+      source_type: 'event_checkin',
+      source_id: eventId,
+      checked_in_by: checkedInBy || null,
+      created_at: serverTimestamp(),
+    });
   });
 
-  // 3. Bump user running totals
-  try {
-    const userRef = doc(db, 'users', userId);
-    const profile = await getDoc(userRef);
-    if (profile.exists()) {
-      const p = profile.data();
-      await updateDoc(userRef, {
-        events_attended: (p.events_attended || 0) + 1,
-        hours_logged: (p.hours_logged || 0) + hours,
-        meals_rescued: (p.meals_rescued || 0) + meals,
-      });
-    }
-  } catch (e) { console.warn('user stats bump failed', e); }
-
-  // 3b. Bump the org-wide live counters
-  try {
-    await bumpOrgStats({ events: 1, hours, meals });
-  } catch (e) { console.warn('org stats bump (checkin)', e); }
+  // 3b. Org-wide live counters are bumped server-side by the
+  // countEventCheckin Cloud Function from the activity row above.
 
   // 4. Notification — via enqueueNotification so push + email fire
   //    alongside the in-app row (volunteers often want the check-in
@@ -406,25 +402,10 @@ export async function createPickup(pickup) {
   if (useMock()) {
     const newPk = {
       id: `pk-mock-${Date.now()}`,
-      status: 'available',
       ...pickup,
+      status: 'pending_destination',
     };
     mockPickups.push(newPk);
-    const chapterMembers = mockMembers.filter(
-      (m) =>
-        (m.chapters?.name || '').toLowerCase().includes('memphis') &&
-        m.role !== 'chapter_pres'
-    );
-    chapterMembers.forEach((m) => {
-      mockNotifications.unshift({
-        id: `n-pk-${Date.now()}-${m.id}`,
-        user_id: m.id,
-        title: 'New pickup available!',
-        body: `${pickup.restaurant_name} has food ready for rescue.`,
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-    });
     return newPk;
   }
 
@@ -491,47 +472,190 @@ export async function createPickup(pickup) {
   }
 
   const enriched = {
-    status: 'available',
     ...pickup,
+    estimated_weight_lbs: w,
+    status: 'pending_destination',
     restaurant_address: address,
     restaurant_lat: restLat ?? null,
     restaurant_lng: restLng ?? null,
+    restaurant_h3: rescueCell(restLat, restLng),
     restaurant_phone: restPhone,
     restaurant_contact_name: restContact,
     fridge_address: fridgeAddr,
     fridge_lat: fridgeLat ?? null,
     fridge_lng: fridgeLng ?? null,
+    fridge_h3: rescueCell(fridgeLat, fridgeLng),
     fridge_name: fridgeName,
     created_at: serverTimestamp(),
   };
   const ref = await addDoc(collection(db, 'pickups'), enriched);
   const newPk = { id: ref.id, ...enriched };
 
-  // Notify chapter members
-  if (pickup.chapter_id) {
+  return newPk;
+}
+
+// The coordinator records a receiving site's agreement before opening
+// the offer. All quantities are for the full batch shown to volunteers.
+export async function confirmPickupDestination(pickupId, { siteName, address, contact, arrivalBy }) {
+  const uid = auth?.currentUser?.uid;
+  const name = siteName.trim();
+  const siteAddress = address.trim();
+  const receiver = contact.trim();
+  if (!uid || !pickupId) throw new Error('Sign in to confirm a destination.');
+  if (!name || !siteAddress || !receiver || [name, siteAddress, receiver].some((v) => v.length > 200)) {
+    throw new Error('Enter the site name, address, and confirming contact.');
+  }
+  if (!Number.isFinite(arrivalBy)) throw new Error('Enter a valid receiving deadline.');
+  const ref = doc(db, 'pickups', pickupId);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Offer not found.');
+    const pickup = snap.data();
+    if (pickup.status === 'available' && pickup.destination_confirmation) return;
+    const now = Date.now();
+    if (!['pending_destination', 'available'].includes(pickup.status) ||
+        pickup.claimed_by || pickup.safety_hold || pickup.verified_by_restaurant_at || pickup.handoff_from_uid) {
+      throw new Error('This offer can’t be opened for volunteers.');
+    }
+    const pickupBy = pickupDeadline(pickup.pickup_window_until);
+    if (!pickupBy || pickupBy <= now || arrivalBy <= pickupBy) {
+      throw new Error('Confirm a receiving deadline after the donor’s pickup cutoff. Expired offers need a new pickup window.');
+    }
+    if (!Number.isFinite(pickup.estimated_weight_lbs) || pickup.estimated_weight_lbs <= 0) {
+      throw new Error('Confirm the batch weight with the donor before opening this offer.');
+    }
+    tx.update(ref, {
+      status: 'available',
+      fridge_id: null,
+      fridge_name: name,
+      fridge_address: siteAddress,
+      fridge_lat: null,
+      fridge_lng: null,
+      fridge_h3: null,
+      destination_confirmation: {
+        site_name: name, address: siteAddress, contact: receiver,
+        confirmed_by: uid, confirmed_at: serverTimestamp(),
+        accepted_weight_lbs: pickup.estimated_weight_lbs,
+        pickup_by: Timestamp.fromMillis(pickupBy),
+        arrival_by: Timestamp.fromMillis(arrivalBy),
+      },
+    });
+  });
+}
+
+// Staff record the receiving site's actual acceptance separately from
+// the destination reservation and the volunteer's delivery action.
+export async function assignPickupReceiver(pickupId, email) {
+  await httpsCallable(getFunctions(firebaseApp), 'assignRescueReceiver')({ pickupId, email });
+}
+
+export async function rerouteHeldPickup(pickupId, { siteName, address, contact, arrivalBy, holdReportedAt }) {
+  const uid = auth?.currentUser?.uid;
+  const name = siteName.trim();
+  const siteAddress = address.trim();
+  const receiver = contact.trim();
+  if (!uid || !pickupId || !holdReportedAt) throw new Error('Reload the held pickup and try again.');
+  if ([name, siteAddress, receiver].some((value) => !value || value.length > 200) ||
+      !Number.isFinite(arrivalBy) || arrivalBy <= Date.now()) {
+    throw new Error('Enter the backup site, address, confirming contact, and future deadline.');
+  }
+  const ref = doc(db, 'pickups', pickupId);
+  const volunteerId = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const pickup = snap.data();
+    const previous = pickup?.destination_confirmation;
+    const hold = pickup?.safety_hold;
+    if (!hold && pickup?.destination_history?.at(-1)?.hold?.reported_at?.isEqual(holdReportedAt) &&
+        previous?.address === siteAddress && previous?.site_name === name &&
+        previous?.contact === receiver && previous?.arrival_by?.toMillis() === arrivalBy) return null;
+    if (pickup?.status !== 'enroute' || !pickup.claimed_by || !pickup.verified_by_restaurant_at ||
+        pickup.receiving_receipt || hold?.reason !== 'destination_unavailable' ||
+        !hold.reported_at?.isEqual(holdReportedAt) || !previous ||
+        !Number.isFinite(previous.accepted_weight_lbs) || previous.accepted_weight_lbs <= 0 ||
+        arrivalBy <= Date.now()) {
+      throw new Error('The rescue changed. Review the current hold before confirming a backup site.');
+    }
+    if (previous.address.trim().toLowerCase() === siteAddress.toLowerCase()) {
+      throw new Error('Enter a different receiving address.');
+    }
+    tx.update(ref, {
+      safety_hold: null,
+      receiver_uid: null,
+      receiver_assigned_by: null,
+      receiver_assigned_at: null,
+      fridge_id: null,
+      fridge_name: name,
+      fridge_address: siteAddress,
+      fridge_lat: null,
+      fridge_lng: null,
+      fridge_h3: null,
+      destination_confirmation: {
+        site_name: name, address: siteAddress, contact: receiver, confirmed_by: uid,
+        confirmed_at: serverTimestamp(), accepted_weight_lbs: previous.accepted_weight_lbs,
+        ...(previous.pickup_by ? { pickup_by: previous.pickup_by } : {}),
+        arrival_by: Timestamp.fromMillis(arrivalBy),
+      },
+      destination_history: arrayUnion({ destination: previous, hold }),
+    });
+    return pickup.claimed_by;
+  });
+  if (volunteerId) {
     try {
-      const memSnap = await getDocs(
-        query(
-          collection(db, 'users'),
-          where('chapter_id', '==', pickup.chapter_id)
-        )
-      );
-      const targets = snapToList(memSnap)
-        .filter((m) => ['member', 'chapter_president', 'volunteer'].includes(m.role))
-        .map((m) => m.id);
       const { enqueueNotification } = await import('./notify');
       await enqueueNotification({
-        recipients: targets,
-        kind: 'pickup',
-        title: 'New pickup available!',
-        body: `${pickup.restaurant_name || 'A partner restaurant'} has food ready for rescue${pickup.address ? ' at ' + pickup.address : ''}.`,
-        url: `https://app.betternatureofficial.org/#/pickups/${ref.id}`,
-        data: { type: 'new_pickup', pickupId: ref.id },
-        skipInApp: false,
+        recipients: [volunteerId], kind: 'pickup', title: 'Your rescue has a new drop-off',
+        body: 'Open Better Nature for the confirmed destination and receiving deadline.',
+        url: `https://app.betternatureofficial.org/#/pickups/${encodeURIComponent(pickupId)}`,
+        data: { type: 'pickup_destination_changed', pickupId },
       });
-    } catch (e) { console.warn('pickup notify failed', e); }
+    } catch (error) {
+      console.warn('Could not queue the updated destination alert', error);
+    }
   }
-  return newPk;
+}
+
+export async function recordPickupReceipt(pickupId, { receiverName, weightLbs, fromReceivingSite = false, rejectedLbs = 0, rejectionReason = '' }) {
+  const uid = auth?.currentUser?.uid;
+  const name = receiverName.trim();
+  if (!uid || !pickupId) throw new Error('Sign in to record receipt.');
+  if (!name || name.length > 200 || !Number.isFinite(weightLbs) || weightLbs <= 0 || weightLbs > 100000) {
+    throw new Error('Enter the receiver’s name and the actual weight accepted.');
+  }
+  const ref = doc(db, 'pickups', pickupId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Pickup not found.');
+    const pickup = snap.data();
+    if (fromReceivingSite && (pickup.receiver_uid !== uid || pickup.claimed_by === uid)) {
+      throw new Error('This rescue is assigned to another receiver.');
+    }
+    if (pickup.receiving_receipt) {
+      if (pickup.receiving_receipt.receiver_name === name && pickup.receiving_receipt.weight_lbs === weightLbs) return;
+      throw new Error('Receipt already recorded. Ask a coordinator to review the difference.');
+    }
+    if (!pickup.destination_confirmation || !pickup.verified_by_restaurant_at ||
+        pickup.safety_hold || pickup.status !== 'enroute') {
+      throw new Error('This pickup is not ready for receiving confirmation.');
+    }
+    // Partial acceptance: what the site turned away keeps the run open
+    // until a coordinator records where it went.
+    const rejected = Number.isFinite(rejectedLbs) && rejectedLbs > 0 ? rejectedLbs : 0;
+    tx.update(ref, {
+      receiving_receipt: { receiver_name: name, weight_lbs: weightLbs, recorded_by: uid,
+        recorded_at: serverTimestamp(), source: fromReceivingSite ? 'receiving_site' : 'coordinator',
+        ...(rejected ? { rejected_weight_lbs: rejected, rejection_reason: String(rejectionReason || '').trim().slice(0, 200) } : {}) },
+    });
+  });
+}
+
+export async function fetchPickupsAwaitingDestination(chapterId) {
+  if (useMock()) return [];
+  const filters = [where('status', 'in', ['pending_destination', 'available'])];
+  if (chapterId) filters.push(where('chapter_id', '==', chapterId));
+  const snap = await getDocs(query(collection(db, 'pickups'), ...filters));
+  return snapToList(snap).filter((p) => !p.destination_confirmation && !p.claimed_by &&
+    !p.verified_by_restaurant_at && !p.handoff_from_uid && !p.safety_hold &&
+    (pickupDeadline(p.pickup_window_until) ?? 0) > Date.now());
 }
 
 export async function fetchPickups(chapterId) {
@@ -541,7 +665,9 @@ export async function fetchPickups(chapterId) {
   const constraints = [where('status', '==', 'available')];
   if (chapterId) constraints.push(where('chapter_id', '==', chapterId));
   const snap = await getDocs(query(collection(db, 'pickups'), ...constraints));
-  return snapToList(snap);
+  const now = Date.now();
+  return snapToList(snap).filter((p) => p.destination_confirmation && !p.safety_hold && !p.handoff_from_uid &&
+    !p.verified_by_restaurant_at && (rescueOfferDeadline(p) ?? 0) > now);
 }
 
 // The signed-in volunteer's own claimed + enroute pickups. fetchPickups
@@ -555,19 +681,11 @@ export async function fetchMyActivePickups(userId) {
       (p) => p.claimed_by === userId && ['claimed', 'enroute'].includes(p.status)
     );
   }
-  try {
-    // Single-key where + client filter — avoids the
-    // composite-index requirement of (claimed_by, status) which
-    // would silently return [] in prod until the index was built.
-    const snap = await getDocs(query(
-      collection(db, 'pickups'),
-      where('claimed_by', '==', userId)
-    ));
-    return snapToList(snap).filter((p) => ['claimed', 'enroute'].includes(p.status));
-  } catch (e) {
-    console.warn('fetchMyActivePickups failed', e);
-    return [];
-  }
+  const snap = await getDocs(query(
+    collection(db, 'pickups'),
+    where('claimed_by', '==', userId)
+  ));
+  return snapToList(snap).filter((p) => ['claimed', 'enroute'].includes(p.status));
 }
 
 // All in-flight pickups org-wide (or scoped to a chapter). "In-flight"
@@ -661,38 +779,55 @@ export async function claimPickup(pickupId, userId) {
     return pk ? { ...pk, status: 'claimed', claimed_by: userId } : null;
   }
   const ref = doc(db, 'pickups', pickupId);
-  const claimedAt = new Date().toISOString();
+  if (!auth?.currentUser || auth.currentUser.uid !== userId) {
+    throw new Error('Sign in as the volunteer claiming this pickup.');
+  }
+  const claimedAt = serverTimestamp();
   // ATOMIC claim — without this, two volunteers tapping "Claim" at
   // the same moment both succeed; both drive to the restaurant; the
   // restaurant fields two confused volunteers. A Firestore
   // transaction reads + writes in one round-trip, so the second
   // claimant lands in the `pk.status !== 'available'` branch and
   // gets a friendly error instead of stomping the first volunteer.
-  // Snapshot the volunteer's contact so the restaurant can call
-  // them if they don't show up. Reads from the user doc outside
-  // the transaction because get() inside a transaction on a
-  // different doc requires read+write pairs and complicates
-  // things — the volunteer's phone/name is a snapshot, not a
-  // race-sensitive value.
+  // Read eligibility and the contact snapshot inside the same transaction.
+  // Rules independently enforce eligibility and the server claim timestamp.
   let claimantPhone = '';
   let claimantName = '';
-  try {
-    const uSnap = await getDoc(doc(db, 'users', userId));
-    if (uSnap.exists()) {
-      const u = uSnap.data();
-      claimantPhone = u.phone || '';
-      claimantName = u.name || u.full_name || '';
-    }
-  } catch {}
   const pk = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    const uSnap = await tx.get(doc(db, 'users', userId));
+    if (!uSnap.exists() || !pickupEligibility.pickupEligible(uSnap.data())) {
+      throw new Error('An approved account, ID, volunteer agreement, and driver setup are required to claim.');
+    }
+    const u = uSnap.data();
+    claimantPhone = u.phone || '';
+    claimantName = u.name || u.full_name || '';
+    if (['claimed', 'enroute'].includes(data.status) && data.claimed_by === userId) {
+      return { id: snap.id, ...data, cached: true };
+    }
     if (data.status === 'claimed' && data.claimed_by && data.claimed_by !== userId) {
       throw new Error('Another volunteer just claimed this pickup. Try a different one.');
     }
+    if (data.receiver_uid === userId) throw new Error('You are assigned to receive this rescue.');
+    if (data.chapter_id && u.chapter_id !== data.chapter_id) {
+      throw new Error('This rescue belongs to another chapter.');
+    }
+    if (!data.destination_confirmation) throw new Error('This offer is waiting for a receiving site.');
+    if ((pickupDeadline(data.destination_confirmation.arrival_by) ?? 0) <= Date.now()) {
+      throw new Error('The receiving window has closed.');
+    }
+    if (data.safety_hold || data.handoff_from_uid || data.verified_by_restaurant_at) throw new Error('This pickup needs coordinator review.');
     if (data.status === 'completed') throw new Error('That pickup has already been delivered.');
-    if (data.status === 'cancelled') throw new Error('That pickup was cancelled by the restaurant.');
+    if (data.status === 'cancelled') throw new Error('That pickup was cancelled.');
+    if (data.status !== 'available' || data.claimed_by) {
+      throw new Error('This pickup is already assigned. Return to Food pickups to see open routes.');
+    }
+    const deadline = pickupDeadline(data.destination_confirmation.pickup_by ?? data.pickup_window_until);
+    if ((deadline ?? 0) <= Date.now()) {
+      throw new Error('The pickup window has closed. Return to Food pickups to see open routes.');
+    }
     tx.update(ref, {
       status: 'claimed',
       claimed_by: userId,
@@ -706,6 +841,8 @@ export async function claimPickup(pickupId, userId) {
       claimant_phone: claimantPhone, claimant_name: claimantName,
     };
   });
+
+  if (pk.cached) return pk; // A repeated tap neither resets the clock nor queues duplicate notices.
 
   // Smart reminder: confirmation push + email so the volunteer has
   // the pickup details in their inbox. Pre-arrival scheduled reminders
@@ -724,18 +861,15 @@ export async function claimPickup(pickupId, userId) {
   } catch (e) { console.warn('claim notify', e); }
 
   // #10 from drop-off audit — also push the restaurant so they know
-  // someone's coming from the moment of claim, not when the volunteer
-  // eventually taps "on my way". The gap between claim and enroute
-  // could be hours in real life; the restaurant deserves to know a
-  // volunteer accepted the job as soon as it happens.
+  // someone's coming. A2 R-followup #3: routed through the server-
+  // side queueBusinessNotification callable because the volunteer
+  // isn't the pickup's partner and can't direct-write outbox docs
+  // for them under the new self-only rule.
   try {
     if (pk.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
+      const { queuePickupToPartner } = await import('./notify');
       const who = claimantName || 'A volunteer';
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      await queuePickupToPartner(pickupId, 'claim', {
         title: 'Your donation was claimed',
         body: `${who} is on the way. You'll get another ping when they mark en route — tap Confirm the moment they arrive.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -747,12 +881,39 @@ export async function claimPickup(pickupId, userId) {
   return pk;
 }
 
-// Volunteer changes their mind after claiming. Pickup goes back to
-// 'available' and clears the assignment so another volunteer can grab
-// it. Restaurant gets notified that they need someone else. We don't
-// allow cancel after 'enroute' — at that point the food is already
-// out of the kitchen and the restaurant needs a human conversation,
-// not a tap.
+function releasedPickupStatus(pickup, now = Date.now()) {
+  const destination = pickup.destination_confirmation;
+  if (!destination) return 'available';
+  const pickupBy = pickupDeadline(destination.pickup_by ?? pickup.pickup_window_until) ?? 0;
+  const arrivalBy = pickupDeadline(destination.arrival_by) ?? 0;
+  return Math.min(pickupBy, arrivalBy) <= now ? 'cancelled' : 'available';
+}
+
+async function notifyDonorOfRelease(pickupId, pickup, status, reason = '') {
+  let donor = pickup.restaurant_user_id || pickup.restaurant_id;
+  if (pickup.restaurant_id && !pickup.restaurant_user_id) {
+    try {
+      const restaurant = await getDoc(doc(db, 'restaurants', pickup.restaurant_id));
+      donor = restaurant.data()?.user_id || donor;
+    } catch (error) { console.warn('Could not resolve pickup donor account', error); }
+  }
+  if (!donor) return;
+  try {
+    const { enqueueNotification } = await import('./notify');
+    const expired = status === 'cancelled';
+    await enqueueNotification({
+      recipients: [donor],
+      kind: 'pickup',
+      title: expired ? 'Pickup window expired' : 'Pickup released',
+      body: expired ? 'The rescue closed without a pickup. Open Better Nature to review the offer.'
+        : `Your pickup is back on the board for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
+      url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
+      data: { type: expired ? 'pickup_window_expired' : 'pickup_released', pickupId },
+    });
+  } catch (e) { console.warn('pickup release notification failed', e); }
+}
+
+// Release an uncollected pickup. Only reopen it while both windows are open.
 export async function cancelClaim(pickupId, reason = '') {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
@@ -761,77 +922,41 @@ export async function cancelClaim(pickupId, reason = '') {
   }
   const ref = doc(db, 'pickups', pickupId);
   // Atomic release — refuses to revert anything past 'claimed' and
-  // returns the previous claimant id + restaurant id so downstream
-  // penalty / notification target the right users.
-  const { releasedBy, pk } = await runTransaction(db, async (tx) => {
+  // returns the pickup and the status it lands in (available, or
+  // cancelled when the pickup window has already closed).
+  const { pk, status } = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    if (!auth?.currentUser?.uid || data.claimed_by !== auth.currentUser.uid) {
+      throw new Error('Only the assigned volunteer can release this pickup.');
+    }
+    if (data.safety_hold || data.verified_by_restaurant_at) throw new Error('This run needs coordinator help. It cannot be released.');
     if (data.status !== 'claimed') {
       throw new Error('You can only release a pickup before you’ve hit the road.');
     }
+    const status = releasedPickupStatus(data);
     tx.update(ref, {
-      status: 'available',
+      status,
       claimed_by: null,
       claimed_at: null,
-      cancel_reason: reason || null,
-      cancelled_at: new Date().toISOString(),
+      claimant_name: null,
+      claimant_phone: null,
+      cancel_reason: status === 'cancelled' ? 'Pickup window expired' : reason || null,
+      cancelled_at: status === 'cancelled' ? serverTimestamp() : new Date().toISOString(),
+      // B4 + F9 + G2 — authorized breadcrumb that is TIME-BOXED,
+      // with the stamp coming from the server (request.time ==
+      // serverTimestamp). The rule rejects any other value so a
+      // client cannot submit a future timestamp to extend
+      // former-claimant authority.
+      released_by: data.claimed_by || null,
+      released_at: serverTimestamp(),
     });
-    return { releasedBy: data.claimed_by || null, pk: data };
+    return { pk: data, status };
   });
-  // Reliability penalty — dropping a claimed pickup costs the
-  // volunteer 5 leaderboard points and bumps a `pickups_dropped`
-  // counter so chapters can see who keeps abandoning runs. We use
-  // a delta so concurrent score updates from event check-ins don't
-  // race with this one.
-  if (releasedBy) {
-    try {
-      const uRef = doc(db, 'users', releasedBy);
-      const uSnap = await getDoc(uRef);
-      if (uSnap.exists()) {
-        const u = uSnap.data();
-        await updateDoc(uRef, {
-          leaderboard_score: Math.max(0, (u.leaderboard_score || 0) - 5),
-          pickups_dropped:   (u.pickups_dropped || 0) + 1,
-          last_drop_at:      serverTimestamp(),
-        });
-      }
-      // Audit row for transparency (the volunteer can see this
-      // when we surface a 'dropped runs' tab on the profile).
-      await addDoc(collection(db, 'member_activity'), {
-        user_id:     releasedBy,
-        date:        new Date().toISOString().split('T')[0],
-        project:     'iris',
-        meals:       0,
-        hours:       0,
-        events:      0,
-        points:      -5,
-        raised:      0,
-        source_type: 'pickup_dropped',
-        source_id:   pickupId,
-        notes:       reason || null,
-        created_at:  serverTimestamp(),
-      });
-    } catch (e) { console.warn('drop penalty failed', e); }
-  }
-  // Tell the restaurant — via enqueueNotification so push + email fire.
-  // Best-effort. Restaurant needs a real ping here so they know their
-  // food is unclaimed and might not get picked up in time.
-  try {
-    if (pk.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
-        title: 'Pickup released',
-        body: `Your pickup is back on the board — looking for another volunteer.${reason ? ' Reason: ' + reason : ''}`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_released', pickupId },
-      });
-    }
-  } catch (e) { console.warn('cancel-claim notify', e); }
-  return { ...pk, status: 'available' };
+  // recordPickupRelease owns accounting atomically and retries server-side.
+  // dispatchPickupTransition persists and delivers the partner notification server-side.
+  return { ...pk, status, claimed_by: null, claimed_at: null, claimant_name: null, claimant_phone: null };
 }
 
 // Restaurant cancels a pickup they posted (e.g. surplus got eaten, no
@@ -854,13 +979,13 @@ export async function cancelPickup(pickupId, reason = '') {
     const data = snap.data();
     if (data.status === 'completed') throw new Error('That pickup is already delivered.');
     if (data.status === 'cancelled') return data; // idempotent
-    if (data.status === 'enroute') {
+    if (data.status === 'enroute' || data.verified_by_restaurant_at || !['available', 'claimed'].includes(data.status)) {
       throw new Error('A volunteer already picked up the food. Call them on the contact in the app — don\'t cancel here.');
     }
     tx.update(ref, {
       status: 'cancelled',
       cancel_reason: reason || null,
-      cancelled_at: new Date().toISOString(),
+      cancelled_at: serverTimestamp(),
     });
     return data;
   });
@@ -870,10 +995,9 @@ export async function cancelPickup(pickupId, reason = '') {
   // flow.
   try {
     if (pk.claimed_by) {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
+      // A2 R-followup #3 — restaurant → claimant via callable.
+      const { queuePickupToClaimant } = await import('./notify');
+      await queuePickupToClaimant(pickupId, 'cancel', {
         title: 'Pickup cancelled',
         body: `${pk.restaurant_name || 'The restaurant'} cancelled their pickup.${reason ? ' Reason: ' + reason : ''} Don't drive out.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -894,6 +1018,9 @@ export async function cancelPickup(pickupId, reason = '') {
 // the volunteer arrives.
 export async function verifyPickupByRestaurant(pickupId, verifierUid) {
   if (useMock()) return;
+  if (!auth?.currentUser || auth.currentUser.uid !== verifierUid) {
+    throw new Error('Sign in as the food partner confirming this pickup.');
+  }
   const ref = doc(db, 'pickups', pickupId);
   // Guard: only verifiable when a volunteer has actually claimed
   // and not yet delivered. Stops accidental re-verifies on a
@@ -903,8 +1030,13 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
-    if (!['claimed', 'enroute'].includes(data.status)) {
+    if (data.safety_hold) throw new Error('This pickup is on hold.');
+    if (!['claimed', 'enroute'].includes(data.status) || !data.claimed_by) {
       throw new Error('This pickup can only be confirmed while a volunteer is on the way.');
+    }
+    const restaurant = await tx.get(doc(db, 'restaurants', data.restaurant_id));
+    if (!restaurant.exists() || restaurant.data().user_id !== verifierUid) {
+      throw new Error('Only the owner of this food partner can confirm handoff.');
     }
     if (data.verified_by_restaurant_at) {
       // Already verified — silent no-op so a double-tap doesn't
@@ -926,10 +1058,9 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
     const snap = await getDoc(ref);
     const pk = snap.exists() ? snap.data() : null;
     if (pk?.claimed_by) {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
+      // A2 R-followup #3 — restaurant → claimant via callable.
+      const { queuePickupToClaimant } = await import('./notify');
+      await queuePickupToClaimant(pickupId, 'verify', {
         title: 'Pickup confirmed by restaurant',
         body: `${pk.restaurant_name || 'The restaurant'} just confirmed you picked up the food. Drop it off to finish the run.`,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -950,7 +1081,7 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
   const ref = doc(db, 'pickups', pickupId);
   const updates = {
     status: 'enroute',
-    enroute_at: new Date().toISOString(),
+    enroute_at: serverTimestamp(),
   };
   if (fridgeId) {
     try {
@@ -963,6 +1094,7 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
           [f.city, f.state].filter(Boolean).join(', ');
         updates.fridge_lat = f.lat ?? null;
         updates.fridge_lng = f.lng ?? null;
+        updates.fridge_h3 = rescueCell(f.lat, f.lng);
       }
     } catch (e) { console.warn('enroute fridge enrich', e); }
   }
@@ -974,6 +1106,11 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    if (data.claimed_by !== auth?.currentUser?.uid) {
+      throw new Error('Only the current volunteer can start this pickup.');
+    }
+    if (data.destination_confirmation && fridgeId) throw new Error('Use the confirmed destination.');
+    if (data.safety_hold) throw new Error('This pickup is on hold.');
     if (data.status === 'enroute') return { id: snap.id, ...data }; // idempotent
     if (data.status !== 'claimed') {
       throw new Error('This pickup isn\'t in a claimed state — nothing to mark en route.');
@@ -989,11 +1126,16 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
   try {
     const pk = fresh || {};
     if (pk.restaurant_id) {
+      // A2 — read volunteer display name from /public_profiles. The
+      // writer here is the volunteer themselves (self-read of
+      // /users would work), but the restaurant may also trigger this
+      // path on confirm, and public_profiles works for both.
       let volunteerName = '';
       if (pk.claimed_by) {
         try {
-          const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
-          if (vSnap.exists()) volunteerName = vSnap.data().name || '';
+          const { fetchPublicProfile } = await import('./publicProfiles');
+          const vp = await fetchPublicProfile(pk.claimed_by);
+          volunteerName = vp?.display_name || '';
         } catch {}
       }
       const dropOff = pk.fridge_name ? ` to ${pk.fridge_name}` : '';
@@ -1009,9 +1151,9 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
       const body = wasHandedOff
         ? `${volunteerName || 'A volunteer'} just left with your donation${dropOff}.`
         : `${volunteerName || 'A volunteer'} is on the way${dropOff ? '' : ' to pick up your donation'}. Tap Confirm when they arrive.`;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
+      // A2 R-followup #3 — claimant → partner via callable.
+      const { queuePickupToPartner } = await import('./notify');
+      await queuePickupToPartner(pickupId, 'enroute', {
         title: wasHandedOff ? 'Your donation is on the move' : 'Volunteer is on the way',
         body,
         url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
@@ -1054,27 +1196,33 @@ export async function releaseAbandonedPickup(pickupId, { reason = 'no_show_timeo
   if (useMock() || !isFirebaseConfigured) return;
   if (!pickupId) return;
   const ref = doc(db, 'pickups', pickupId);
-  let prevClaimant = null;
-  await runTransaction(db, async (tx) => {
+  const release = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    if (data.safety_hold || data.handoff_from_uid) throw new Error('This pickup needs coordinator review.');
     if (data.status !== 'claimed') return; // idempotent no-op
     if (data.verified_by_restaurant_at) {
       throw new Error('Restaurant confirmed handoff — this isn\'t a no-show, needs a different resolution.');
     }
-    prevClaimant = data.claimed_by || null;
+    const status = releasedPickupStatus(data);
     tx.update(ref, {
-      status: 'available',
+      status,
       claimed_by: null,
       claimed_at: null,
       claimant_name: null,
       claimant_phone: null,
-      abandoned_at: new Date().toISOString(),
+      abandoned_at: serverTimestamp(),
+      abandoned_by: auth?.currentUser?.uid || null,
       abandoned_reason: reason,
-      abandoned_prior_claimant: prevClaimant,
+      abandoned_prior_claimant: data.claimed_by || null,
+      ...(status === 'cancelled' ? { cancel_reason: 'Pickup window expired', cancelled_at: new Date().toISOString() } : {}),
     });
+    return { pickup: data, status };
   });
+  if (!release) return false;
+  const { pickup, status } = release;
+  const prevClaimant = pickup.claimed_by;
   // Notify the abandoned claimant — soft touch, no penalty (this
   // could be a network dropout, phone dead, real emergency). The
   // pickups_dropped counter isn't bumped here; that's for the
@@ -1086,11 +1234,14 @@ export async function releaseAbandonedPickup(pickupId, { reason = 'no_show_timeo
         recipients: [prevClaimant],
         kind: 'pickup',
         title: 'Your claim was auto-released',
-        body: "You'd claimed a pickup a while ago and hadn't marked en route — we put it back on the board so someone else could grab it. No penalty. Try again next time!",
+        body: status === 'cancelled' ? 'The pickup window expired and your claim was cleared. No penalty.'
+          : 'Your claim was cleared and the pickup is open again. No penalty.',
         data: { type: 'pickup_auto_released', pickupId },
       });
     } catch (e) { console.warn('release notify', e?.message); }
   }
+  if (status === 'cancelled') await notifyDonorOfRelease(pickupId, pickup, status);
+  return true;
 }
 
 // Chapter-scoped sweep. Returns { released, checked } so callers can
@@ -1108,7 +1259,8 @@ export async function sweepAbandonedPickups({ chapterId, maxAgeHours = 4 } = {})
   let released = 0;
   const stale = snap.docs.filter((d) => {
     const data = d.data();
-    if (data.verified_by_restaurant_at) return false;
+    if (data.verified_by_restaurant_at || data.safety_hold || data.handoff_from_uid) return false;
+    if (releasedPickupStatus(data) === 'cancelled') return true;
     const claimedMs = data.claimed_at?.toDate
       ? data.claimed_at.toDate().getTime()
       : data.claimed_at ? new Date(data.claimed_at).getTime() : 0;
@@ -1116,120 +1268,113 @@ export async function sweepAbandonedPickups({ chapterId, maxAgeHours = 4 } = {})
   });
   for (const d of stale) {
     try {
-      await releaseAbandonedPickup(d.id, { reason: 'no_show_timeout' });
-      released += 1;
+      if (await releaseAbandonedPickup(d.id, { reason: 'no_show_timeout' })) released += 1;
     } catch (e) { console.warn('sweep release', d.id, e?.message); }
   }
   return { released, checked: snap.docs.length };
 }
 
-// #5 from drop-off audit — a volunteer's car breaks down mid-run.
-// Their pickup is currently 'enroute' with the food IN THEIR CAR,
-// so cancelClaim's usual refusal ("you can only release before you
-// hit the road") is the wrong answer — the food will spoil sitting
-// in their trunk. handOffPickup releases the run back to the board
-// as 'available' with a handoff_from_uid marker so the next claimant
-// knows to coordinate a physical hand-off with the original volunteer.
-// No leaderboard penalty — this isn't flaky behavior.
-export async function handOffPickup(pickupId, reason = '') {
-  if (useMock() || !isFirebaseConfigured) return;
-  if (!pickupId) return;
+// Keep the current assignment until a coordinator resolves the issue.
+// Reporting never reopens the offer, completes the run, or issues a receipt.
+export async function holdPickup(pickupId, reason) {
+  const uid = auth?.currentUser?.uid;
+  if (!uid || !pickupId) throw new Error('Sign in to report an issue.');
+  if (!['cannot_continue', 'food_concern', 'destination_unavailable'].includes(reason)) {
+    throw new Error('Choose a reason for the hold.');
+  }
   const ref = doc(db, 'pickups', pickupId);
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Pickup not found');
-    const data = snap.data();
-    if (data.status !== 'enroute' && data.status !== 'claimed') {
-      throw new Error('Only an in-progress pickup can be handed off.');
+    if (!snap.exists()) throw new Error('Pickup not found.');
+    const pickup = snap.data();
+    const assignedVolunteer = pickup.claimed_by === uid && ['claimed', 'enroute'].includes(pickup.status);
+    const assignedReceiver = pickup.receiver_uid === uid && pickup.status === 'enroute' &&
+      reason === 'destination_unavailable' && pickup.verified_by_restaurant_at && !pickup.receiving_receipt;
+    if (!assignedVolunteer && !assignedReceiver) {
+      throw new Error('You can’t report an issue for this rescue.');
     }
-    tx.update(ref, {
-      status: 'available',
-      handoff_from_uid: data.claimed_by || null,
-      handoff_from_name: data.claimant_name || null,
-      handoff_from_phone: data.claimant_phone || null,
-      handoff_reason: reason || null,
-      handoff_at: new Date().toISOString(),
-      claimed_by: null,
-      claimed_at: null,
-      claimant_name: null,
-      claimant_phone: null,
-      // Keep fridge choice + verified_by_restaurant_at so the next
-      // claimant inherits the state — the food's already been picked
-      // up from the restaurant, just needs to get to the fridge.
-    });
-    return data;
+    if (pickup.safety_hold) return;
+    tx.update(ref, { safety_hold: { reason, reported_by: uid, reported_at: serverTimestamp() } });
   });
-  // Notify the restaurant so they know a different volunteer will
-  // arrive at the fridge (or need to be re-briefed if the first
-  // volunteer never even got there).
-  try {
-    const snap = await getDoc(ref);
-    const pk = snap.exists() ? snap.data() : null;
-    if (pk?.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'pickup',
-        title: 'Volunteer handoff in progress',
-        body: `${pk.handoff_from_name || 'The volunteer'} needs to hand off your pickup. It's back on the board for another volunteer to claim.${reason ? ' Reason: ' + reason : ''}`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_handoff', pickupId },
-      });
-    }
-  } catch (e) { console.warn('handoff notify', e?.message); }
 }
 
-// #6 from drop-off audit — food went bad in transit or the fridge
-// was full/broken. Marks the pickup as completed-but-spoiled so it
-// exits the active-runs list, but skips every stat bump and DOESN'T
-// mint a tax receipt (the IRS doesn't recognize spoiled donations,
-// and receipts for undelivered food would destroy partner trust).
-// spoiled === true is the flag downstream stat/receipt code reads.
-export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', note = '' } = {}) {
-  if (useMock() || !isFirebaseConfigured) return;
-  if (!pickupId) return;
+// Executives record a disposition after confirming what physically happened.
+export async function closeHeldPickup(pickupId, outcome) {
+  const uid = auth?.currentUser?.uid;
+  if (!uid || !pickupId) throw new Error('Sign in to close the hold.');
+  if (!['returned_to_donor', 'discarded'].includes(outcome)) throw new Error('Choose a resolution.');
   const ref = doc(db, 'pickups', pickupId);
-  const now = new Date().toISOString();
-  let pk;
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Pickup not found');
-    const data = snap.data();
-    if (data.status === 'completed' || data.status === 'cancelled') {
-      throw new Error('This pickup is already closed.');
-    }
-    if (data.status !== 'enroute' && data.status !== 'claimed') {
-      throw new Error('Only an in-progress pickup can be marked spoiled.');
+    if (!snap.exists()) throw new Error('Pickup not found.');
+    const pickup = snap.data();
+    if (pickup.safety_resolution?.outcome === outcome && pickup.status === 'cancelled') return;
+    if (!pickup.safety_hold || !['claimed', 'enroute'].includes(pickup.status)) {
+      throw new Error('This pickup is no longer on hold.');
     }
     tx.update(ref, {
-      status: 'completed',
-      spoiled: true,
-      spoiled_kind: kind,           // 'food_spoiled' | 'fridge_full' | 'fridge_broken'
-      spoiled_note: note || null,
-      completed_at: now,
-      actual_weight_lbs: 0,
-      hours_earned: 0,
+      status: 'cancelled',
+      cancel_reason: outcome === 'returned_to_donor' ? 'Food returned to donor' : 'Food discarded',
+      cancelled_at: serverTimestamp(),
+      safety_resolution: { outcome, resolved_by: uid, resolved_at: serverTimestamp() },
     });
-    pk = data;
   });
-  // Restaurant gets a candid explainer — no receipt is coming.
-  try {
-    if (pk?.restaurant_id) {
-      const { enqueueNotification } = await import('./notify');
-      const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-      const explain = kind === 'fridge_full' ? 'the fridge was full and the volunteer couldn\'t find another in time'
-                    : kind === 'fridge_broken' ? 'the drop-off fridge was broken'
-                    : 'the food had spoiled in transit';
-      await enqueueNotification({
-        recipients: [linkedUid],
-        kind: 'general',
-        title: 'Pickup didn\'t make it',
-        body: `Your donation couldn't be delivered — ${explain}. No tax receipt will be issued for this run.${note ? ' Note from volunteer: ' + note : ''}`,
-        data: { type: 'pickup_spoiled', pickupId, kind },
-      });
+}
+
+function canTakeCustody(member, chapterId) {
+  return chapterId && member.chapter_id === chapterId && !member.disabled && !member.deleted_at &&
+    !['pending', 'rejected'].includes(member.member_status) &&
+    member.verification_status === 'approved' && member.contract_volunteer_signed && member.driver_setup_complete === true &&
+    ![member.role, ...(member.roles || [])].some((role) => ['restaurant', 'partner'].includes(role));
+}
+
+// Presidents can't list private profiles (A2), so the server returns the
+// eligible volunteers (functions/custodyCandidates.js). `pickupId` scopes
+// the check to that rescue's chapter and current assignment.
+export async function fetchCustodyVolunteers(chapterId, currentVolunteerId, pickupId) {
+  if (!chapterId || useMock() || !pickupId) return [];
+  const { candidates } = (await httpsCallable(getFunctions(firebaseApp), 'listCustodyCandidates')({ pickupId })).data;
+  return candidates.filter((c) => c.id !== currentVolunteerId);
+}
+
+// Record the physical handoff after the coordinator has heard from both volunteers.
+export async function transferPickupCustody(pickupId, fromUid, toUid, reportedAt) {
+  const uid = auth?.currentUser?.uid;
+  if (!uid || !pickupId || !fromUid || !toUid || fromUid === toUid || !reportedAt) {
+    throw new Error('Choose a different volunteer.');
+  }
+  const ref = doc(db, 'pickups', pickupId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Pickup not found.');
+    const pickup = snap.data();
+    const last = pickup.custody_transfer;
+    if (!pickup.safety_hold && pickup.claimed_by === toUid && last?.from_uid === fromUid &&
+        last.to_uid === toUid && last.recorded_by === uid && last.hold.reported_at.isEqual(reportedAt)) return;
+    if (pickup.claimed_by !== fromUid || pickup.receiver_uid === toUid || pickup.status !== 'enroute' ||
+        pickup.safety_hold?.reported_by !== fromUid ||
+        pickup.safety_hold?.reason !== 'cannot_continue' || !pickup.verified_by_restaurant_at ||
+        !pickup.safety_hold.reported_at?.isEqual?.(reportedAt) ||
+        pickup.receiving_receipt || (pickupDeadline(pickup.destination_confirmation?.arrival_by) ?? 0) <= Date.now()) {
+      throw new Error('This run cannot transfer. Check the hold and receiving deadline with your coordinator.');
     }
-  } catch (e) { console.warn('spoiled notify', e?.message); }
+    const target = await tx.get(doc(db, 'users', toUid));
+    if (!target.exists() || !canTakeCustody(target.data(), pickup.chapter_id)) {
+      throw new Error('This volunteer is no longer eligible. Choose another volunteer.');
+    }
+    const member = target.data();
+    tx.update(ref, {
+      claimed_by: toUid,
+      claimant_name: member.name || 'Volunteer',
+      claimant_phone: member.phone || '',
+      safety_hold: null,
+      custody_transfer: {
+        from_uid: fromUid, to_uid: toUid, recorded_by: uid, recorded_at: serverTimestamp(),
+        hold: pickup.safety_hold,
+      },
+      ...(last ? { custody_transfer_history: arrayUnion(last) } : {}),
+    });
+  });
 }
 
 // #9 from drop-off audit — allow the fridge choice to change between
@@ -1250,6 +1395,8 @@ export async function updatePickupFridge(pickupId, fridgeId) {
     const snap = await tx.get(pkRef);
     if (!snap.exists()) throw new Error('Pickup not found');
     const data = snap.data();
+    if (data.destination_confirmation) throw new Error('Ask your coordinator to change the confirmed destination.');
+    if (data.safety_hold) throw new Error('This pickup is on hold.');
     if (data.status !== 'enroute') {
       throw new Error('You can only change the fridge while a pickup is in progress.');
     }
@@ -1259,7 +1406,8 @@ export async function updatePickupFridge(pickupId, fridgeId) {
       fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
       fridge_lat: f.lat ?? null,
       fridge_lng: f.lng ?? null,
-      fridge_changed_at: new Date().toISOString(),
+      fridge_h3: rescueCell(f.lat, f.lng),
+      fridge_changed_at: serverTimestamp(),
     });
   });
 }
@@ -1277,7 +1425,29 @@ export async function updatePickupFridge(pickupId, fridgeId) {
 // but stamp handoff_unverified: true + handoff_unverified_note on the
 // pickup so the receipt page + exec review can see it happened. Trust
 // preserved via audit trail, not blocking.
-export async function completePickup(pickupId, actualWeightLbs, { override = false, dropoffPhotoUrl = null, fridgeId = null, unverifiedNote = null } = {}) {
+// Server error reasons preserve the screen's existing recovery prompts.
+// Notification work is server-owned; no post-completion client queue is needed.
+async function invokePickupCompletion(payload) {
+  const { getFunctions, httpsCallable } = await import('firebase/functions');
+  try {
+    return (await httpsCallable(getFunctions(), 'completePickupOperation')(payload)).data;
+  } catch (error) {
+    if (error?.details?.reason) error.code = error.details.reason;
+    throw error;
+  }
+}
+
+// Food that went bad before receiving is closed through the same
+// server completion path (no receipt, no impact credit).
+export async function reportPickupSpoiled(pickupId, { kind = 'food_spoiled', note = '' } = {}) {
+  if (useMock() || !isFirebaseConfigured) return;
+  if (!pickupId) return;
+  return invokePickupCompletion({
+    pickup_id: pickupId, spoiled: true, spoiled_kind: kind, spoiled_note: note || null,
+  });
+}
+
+export async function completePickup(pickupId, actualWeightLbs, { override = false, overrideReason = null, dropoffPhotoUrl = null, fridgeId = null, unverifiedNote = null } = {}) {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     if (pk) {
@@ -1311,318 +1481,15 @@ export async function completePickup(pickupId, actualWeightLbs, { override = fal
     return;
   }
 
-  const pkRef = doc(db, 'pickups', pickupId);
-
-  // If the caller passed a fridgeId override, pre-fetch the fridge
-  // doc so the transaction has name / address / coords to stamp. Done
-  // outside the tx because fridge docs are stable enough that a race
-  // between this read and the completion write is a non-issue.
-  let fridgeOverride = null;
-  if (fridgeId) {
-    try {
-      const fSnap = await getDoc(doc(db, 'fridges', fridgeId));
-      if (fSnap.exists()) {
-        const f = fSnap.data();
-        fridgeOverride = {
-          fridge_id: fridgeId,
-          fridge_name: f.name || '',
-          fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
-          fridge_lat: f.lat ?? null,
-          fridge_lng: f.lng ?? null,
-        };
-      }
-    } catch (e) { console.warn('completePickup fridge lookup', e?.message); }
-  }
-
-  // IDEMPOTENT completion via transaction. Without this, a flaky
-  // connection or fast double-tap can trigger completePickup twice:
-  // two member_activity rows, doubled user stats, doubled org_stats,
-  // and TWO tax receipts to the partner — which destroys partner
-  // trust. The transaction reads first and bails if the doc is
-  // already 'completed', so concurrent calls produce one bump max.
-  const now = new Date().toISOString();
-  let pk;
-  let hoursEarned;
-  let weight;
-  try {
-    pk = await runTransaction(db, async (tx) => {
-      const snap = await tx.get(pkRef);
-      if (!snap.exists()) throw new Error('Pickup not found');
-      const data = snap.data();
-      if (data.status === 'completed') {
-        const err = new Error('ALREADY_COMPLETED');
-        err.code = 'already_completed';
-        throw err;
-      }
-      if (data.status === 'cancelled') throw new Error('That pickup was cancelled.');
-
-      // Gate #2 — status must be 'enroute' (volunteer has actually
-      // hit the road with the food). Skipping this let a volunteer
-      // go claimed → completed directly, bypassing the on-the-way
-      // step the restaurant is waiting on.
-      if (!override && data.status !== 'enroute') {
-        const err = new Error('NOT_ENROUTE');
-        err.code = 'not_enroute';
-        throw err;
-      }
-
-      // Gate #1 — restaurant must have physically confirmed the
-      // handoff via verifyPickupByRestaurant, UNLESS the volunteer
-      // attests via unverifiedNote. Strict blocking stranded
-      // volunteers when a restaurant wasn't watching their phone
-      // during handoff — the trust-preserving escape is an audit
-      // flag (handoff_unverified + note), not a hard refusal.
-      if (!override && !data.verified_by_restaurant_at && !unverifiedNote) {
-        const err = new Error('HANDOFF_NOT_CONFIRMED');
-        err.code = 'handoff_not_confirmed';
-        throw err;
-      }
-
-      // Gate #3 — a real weight is required. Silent fallback to
-      // estimated_weight_lbs meant every partner tax receipt could
-      // be an estimate, not a measurement. Restaurants trust the
-      // receipt number; it has to be real.
-      const parsed = Number(actualWeightLbs);
-      if (!override && (!Number.isFinite(parsed) || parsed <= 0)) {
-        const err = new Error('WEIGHT_REQUIRED');
-        err.code = 'weight_required';
-        throw err;
-      }
-
-      // Gate #8 — soft-deleted volunteer can't complete pickups.
-      // We snapshot their user doc inside the tx so the disabled
-      // check is atomic with the pickup write. Skipping the check
-      // let a disabled account still bump hours + collect a receipt
-      // on a pickup they had claimed before the disable.
-      if (!override && data.claimed_by) {
-        const uSnap = await tx.get(doc(db, 'users', data.claimed_by));
-        if (uSnap.exists() && uSnap.data().disabled === true) {
-          const err = new Error('CLAIMANT_DISABLED');
-          err.code = 'claimant_disabled';
-          throw err;
-        }
-      }
-
-      // #12 from drop-off audit — anchor hours on enroute_at, not
-      // claimed_at. Claim-to-enroute can be the whole afternoon
-      // (volunteer accepts the run and doesn't leave the couch for
-      // hours); only counting from when they actually started driving
-      // is closer to reality. Falls back to claimed_at if enroute_at
-      // is missing (legacy pickups written before setPickupEnroute
-      // stamped the field).
-      const toMs = (v) => v?.toDate ? v.toDate().getTime()
-                       : v ? new Date(v).getTime() : null;
-      const anchorMs = toMs(data.enroute_at) || toMs(data.claimed_at) || Date.now();
-      const elapsedH = (Date.now() - anchorMs) / 3600000;
-      hoursEarned = Math.max(0.25, Math.min(3, +elapsedH.toFixed(2)));
-      weight = override
-        ? (actualWeightLbs || data.estimated_weight_lbs || 0)
-        : parsed;
-      const updates = {
-        status: 'completed',
-        actual_weight_lbs: weight,
-        completed_at: now,
-        hours_earned: hoursEarned,
-      };
-      if (dropoffPhotoUrl) updates.dropoff_photo_url = dropoffPhotoUrl;
-      // Late fridge change (see updatePickupFridge). fridgeOverride
-      // carries the enriched name / address / coords we pre-fetched
-      // outside the tx so the receipt reads correctly.
-      if (fridgeOverride && fridgeOverride.fridge_id !== data.fridge_id) {
-        Object.assign(updates, fridgeOverride, { fridge_changed_at: now });
-      }
-      // Attest-and-continue path when the restaurant never confirmed —
-      // stamp the audit flag so the receipt page + exec review can
-      // surface it. Partner trust preserved via visibility, not by
-      // blocking the volunteer's legitimate completion.
-      if (!data.verified_by_restaurant_at && unverifiedNote) {
-        updates.handoff_unverified = true;
-        updates.handoff_unverified_note = unverifiedNote;
-        updates.handoff_unverified_at = now;
-      }
-      tx.update(pkRef, updates);
-      return data;
-    });
-  } catch (e) {
-    if (e?.code === 'already_completed') return; // silent no-op
-    throw e;
-  }
-  const meals = Math.round(weight * 1.2);
-
-  if (pk.claimed_by) {
-    const mealBonusForLog = Math.min(50, meals);
-    await addDoc(collection(db, 'member_activity'), {
-      user_id: pk.claimed_by,
-      date: now.split('T')[0],
-      project: 'iris',
-      meals,
-      lbs: weight,
-      hours: hoursEarned,
-      events: 1, // a completed pickup counts as an activity event
-      points: 10 + mealBonusForLog,
-      raised: 0,
-      source_type: 'pickup_complete',
-      source_id: pickupId,
-      created_at: serverTimestamp(),
-    });
-
-    try {
-      const userRef = doc(db, 'users', pk.claimed_by);
-      const profile = await getDoc(userRef);
-      if (profile.exists()) {
-        const p = profile.data();
-        // Award 10 leaderboard points per completed pickup, plus
-        // a 1-point-per-meal bonus capped at 50. So a tiny salad
-        // is +10 and a 50lb load of produce is +60 — proportionate
-        // to impact without snowballing into runaway leaders.
-        const mealBonus = Math.min(50, meals);
-        const points = 10 + mealBonus;
-        await updateDoc(userRef, {
-          meals_rescued: (p.meals_rescued || 0) + meals,
-          lbs_rescued:   (p.lbs_rescued   || 0) + weight,
-          hours_logged:  (p.hours_logged  || 0) + hoursEarned,
-          events_attended: (p.events_attended || 0) + 1,
-          leaderboard_score: (p.leaderboard_score || 0) + points,
-          pickups_completed: (p.pickups_completed || 0) + 1,
-        });
-        // Mirror the points into the activity row so the
-        // leaderboard's points view picks them up too.
-      }
-    } catch (e) { console.warn('user stat bump', e); }
-
-    // Bump the org-wide live counters that drive the website ticker,
-    // the Welcome screen on the app, and the Exec dashboard.
-    // bumpOrgStats derives meals/co2/water from lbs automatically, so
-    // every completed pickup propagates everywhere those numbers are
-    // read. We also bump events:1 so the 'events run' counter ticks
-    // forward per rescue.
-    try {
-      await bumpOrgStats({ lbs: weight, hours: hoursEarned, events: 1 });
-    } catch (e) { console.warn('org stats bump (pickup)', e); }
-
-    // Volunteer celebration — via enqueueNotification so push + email
-    // fire alongside the in-app row. This is often the moment they
-    // decide whether to do a second pickup that day.
-    try {
-      const { enqueueNotification } = await import('./notify');
-      await enqueueNotification({
-        recipients: [pk.claimed_by],
-        kind: 'pickup',
-        title: 'Pickup complete!',
-        body: `You rescued ~${meals} meals from ${pk.restaurant_name}. Amazing work!`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_complete', pickupId },
-      });
-    } catch (e) { console.warn('volunteer complete notify', e); }
-
-    // Mirror the win to the restaurant so they see real-time proof
-    // their surplus made it to a fridge. Best-effort — never blocks
-    // completion. Single enqueueNotification call: the earlier code
-    // wrote BOTH a raw addDoc AND an enqueueNotification, producing
-    // two duplicate rows in the restaurant's inbox for every rescue.
-    if (pk.restaurant_id) {
-      try {
-        const dropOff = pk.fridge_name ? ` at ${pk.fridge_name}` : '';
-        const { enqueueNotification } = await import('./notify');
-        const linkedUid = pk.restaurant_user_id || pk.restaurant_id;
-        await enqueueNotification({
-          recipients: [linkedUid],
-          kind: 'general',
-          title: 'Your surplus made it',
-          body: `Your donation is delivered${dropOff}. ~${meals} meals (${weight} lbs). Your tax receipt is on the way.`,
-          url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-          data: { type: 'pickup_delivered_restaurant', pickupId, meals, lbs: weight },
-        });
-      } catch (e) { console.warn('restaurant delivered notify', e); }
-    }
-
-    // Mint the restaurant's tax receipt and surface the link to them
-    // through every channel: app bell, push, email. Never blocks
-    // completion if any one channel fails.
-    try {
-      const { issueReceiptForPickup, receiptUrl } = await import('./taxReceipts');
-      // Pull volunteer name for the receipt body.
-      let volunteerName = '';
-      try {
-        const vSnap = await getDoc(doc(db, 'users', pk.claimed_by));
-        if (vSnap.exists()) volunteerName = vSnap.data().name || '';
-      } catch {}
-      // Resolve the restaurant email + linked user uid. Try the
-      // restaurants doc first; fall back to the linked user's email
-      // if the restaurants doc has no email field.
-      let restaurantEmail = '';
-      let restaurantUserUid = pk.restaurant_user_id || null;
-      if (pk.restaurant_id) {
-        try {
-          const rSnap = await getDoc(doc(db, 'restaurants', pk.restaurant_id));
-          if (rSnap.exists()) {
-            const r = rSnap.data();
-            restaurantEmail = r.email || r.contact_email || '';
-            restaurantUserUid = restaurantUserUid || r.user_id || null;
-          }
-        } catch {}
-      }
-      if (!restaurantEmail && restaurantUserUid) {
-        try {
-          const uSnap = await getDoc(doc(db, 'users', restaurantUserUid));
-          if (uSnap.exists()) restaurantEmail = uSnap.data().email || '';
-        } catch {}
-      }
-
-      const receipt = await issueReceiptForPickup({
-        pickupId,
-        restaurantId: pk.restaurant_id || null,
-        restaurantName: pk.restaurant_name || '',
-        restaurantEmail,
-        weightLbs: weight,
-        mealsEquivalent: meals,
-        pickedUpAt: now,
-        volunteerName,
-        chapterName: pk.chapter_name || '',
-        // Drop-off audit follow-up — carry the proof photo + final
-        // fridge choice into the receipt doc so receipt.html can
-        // render them. pk is the pre-write snapshot; the URL and
-        // fridge override came in via the completePickup args, and
-        // the fridge fallback reads the pickup's own record.
-        dropoffPhotoUrl: dropoffPhotoUrl
-          || (fridgeOverride ? null : pk.dropoff_photo_url) || null,
-        fridgeName: (fridgeOverride && fridgeOverride.fridge_name)
-          || pk.fridge_name || null,
-        fridgeAddress: (fridgeOverride && fridgeOverride.fridge_address)
-          || pk.fridge_address || null,
-      });
-
-      // Stamp the receipt id back onto the pickup doc so the
-      // restaurant dashboard can deep-link without a join.
-      if (receipt?.id) {
-        try {
-          await updateDoc(doc(db, 'pickups', pickupId), {
-            tax_receipt_id: receipt.id,
-            tax_receipt_url: receiptUrl(receipt.id),
-            delivered_visible_to_restaurant: true,
-          });
-        } catch {}
-      }
-
-      // Send the receipt through the unified notification dispatcher.
-      // Drops an in-app bell + queues an email via Resend (once the
-      // dispatcher worker is deployed). Replaces the old FormSubmit
-      // hop, which was rate-limited and silently failing.
-      if (receipt?.id && restaurantUserUid) {
-        try {
-          const { enqueueNotification } = await import('./notify');
-          await enqueueNotification({
-            recipients: [restaurantUserUid],
-            kind: 'general',
-            title: `Your tax receipt for ${weight} lbs is ready`,
-            body: `BetterNature has minted receipt #${receipt.receipt_no || '0001'} for your donation. Open it to print or save as PDF for your records.`,
-            url: receiptUrl(receipt.id),
-            data: { type: 'tax_receipt', pickupId, receiptId: receipt.id },
-          });
-        } catch (e) { console.warn('receipt notify failed', e); }
-      }
-    } catch (e) { console.warn('tax receipt issue failed', e); }
-  }
+  return invokePickupCompletion({
+    pickup_id: pickupId,
+    actual_weight_lbs: actualWeightLbs,
+    override: !!override,
+    override_reason: overrideReason || null,
+    dropoff_photo_url: dropoffPhotoUrl || null,
+    fridge_id: fridgeId || null,
+    unverified_note: unverifiedNote || null,
+  });
 }
 
 // ── Restaurants ──
@@ -1913,20 +1780,19 @@ export async function fetchAllDonations() {
 }
 
 // ── Notifications ──
-export async function fetchNotifications(userId) {
-  if (useMock()) return mockNotifications;
+export function subscribeNotifications(userId, onChange, onError) {
+  if (useMock()) {
+    onChange(mockNotifications);
+    return () => {};
+  }
   // where()+orderBy() needs composite index; do single-field where
   // and sort + slice client-side.
-  const snap = await getDocs(
-    query(collection(db, 'notifications'), where('user_id', '==', userId))
-  );
-  let list = snapToList(snap);
-  list.sort((a, b) => {
-    const ta = a.created_at?.toMillis?.() || 0;
-    const tb = b.created_at?.toMillis?.() || 0;
-    return tb - ta;
-  });
-  return withMockFallback(list.slice(0, 50), mockNotifications);
+  const feed = query(collection(db, 'notifications'), where('user_id', '==', userId));
+  return onSnapshot(feed, (snap) => {
+    const list = snapToList(snap);
+    list.sort((a, b) => (b.created_at?.toMillis?.() || 0) - (a.created_at?.toMillis?.() || 0));
+    onChange(list.slice(0, 50));
+  }, onError);
 }
 
 export async function markNotificationRead(notifId) {
@@ -1961,11 +1827,10 @@ export async function fetchMemberOfMonth(chapterId) {
     if (!list.length) return null;
     const row = list[0];
     if (row.user_id) {
-      const u = await getDoc(doc(db, 'users', row.user_id));
-      if (u.exists()) {
-        const ud = u.data();
-        row.users = { name: ud.name, avatar_url: ud.avatar_url };
-      }
+      // A2 — public roster surface; read the mirror, not /users.
+      const { fetchPublicProfile } = await import('./publicProfiles');
+      const p = await fetchPublicProfile(row.user_id);
+      if (p) row.users = { name: p.display_name, avatar_url: p.avatar_url || null };
     }
     return row;
   } catch {
@@ -2244,8 +2109,24 @@ export async function fetchLeaderboard({
     byUser.set(a.user_id, cur);
   }
 
-  const members = await fetchAllMembers();
-  const memberMap = new Map(members.map((m) => [m.id, m]));
+  // A2 — read the public mirror, not /users. Leaderboards never
+  // need the private profile (email, phone, consent, verification);
+  // public_profiles has the display name, avatar, chapter_id and
+  // the totals we rank on, nothing more.
+  const { fetchAllPublicProfiles } = await import('./publicProfiles');
+  const members = await fetchAllPublicProfiles({ chapterId });
+
+  // Hydrate chapter name once; the public mirror only carries chapter_id.
+  const chapIds = [...new Set(members.map((m) => m.chapter_id).filter(Boolean))];
+  const chapMap = new Map();
+  await Promise.all(chapIds.map(async (cid) => {
+    try {
+      const c = await getDoc(doc(db, 'chapters', cid));
+      if (c.exists()) chapMap.set(cid, c.data().name || '');
+    } catch {}
+  }));
+
+  const memberMap = new Map(members.map((m) => [m.uid || m.id, m]));
 
   const rows = [];
   for (const stats of byUser.values()) {
@@ -2259,10 +2140,10 @@ export async function fetchLeaderboard({
       stats.raised * SCORE_WEIGHTS.raised;
     rows.push({
       ...stats,
-      name: member.name,
+      name: member.display_name || '—',
       avatar_url: member.avatar_url || null,
-      chapter: member.chapters?.name || '—',
-      role: member.role,
+      chapter: chapMap.get(member.chapter_id) || '—',
+      role: member.role_label || 'member',
       score,
     });
   }
@@ -2313,6 +2194,68 @@ export async function fetchAllMembers() {
     chapters: u.chapter_id ? { name: chapMap.get(u.chapter_id) || '' } : null,
   }));
   return list;
+}
+
+// ── Receiving sites ──
+export async function listReceivingSites(chapterId) {
+  if (useMock() || !chapterId) return [];
+  const snap = await getDocs(query(collection(db, 'receiving_sites'), where('chapter_id', '==', chapterId)));
+  return snapToList(snap).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+export async function saveReceivingSite(siteId, site) {
+  const data = { ...site, updated_at: serverTimestamp() };
+  if (siteId) { await updateDoc(doc(db, 'receiving_sites', siteId), data); return siteId; }
+  const ref = await addDoc(collection(db, 'receiving_sites'), { status: 'active', ...data, created_at: serverTimestamp() });
+  return ref.id;
+}
+
+// Saved sites go through the server so hours, pause, food types and
+// remaining capacity are checked and reserved in one transaction.
+export async function confirmRescueDestination(pickupId, siteId, arrivalBy) {
+  try {
+    return (await httpsCallable(getFunctions(firebaseApp), 'confirmRescueDestination')({ pickupId, siteId, arrivalBy })).data;
+  } catch (e) {
+    if (e?.details?.reasons) e.reasons = e.details.reasons;
+    throw e;
+  }
+}
+
+export async function recordRescueRemainder(pickupId, { outcome, note, siteName, acceptedLbs }) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'recordRescueRemainder')({ pickupId, outcome, note, siteName, acceptedLbs })).data;
+}
+
+// What the volunteer can carry (functions/lib/rescueCargo.js reads it).
+export async function saveVehicle(userId, { type, packageCapacity, weightCapacityLbs, equipment }) {
+  if (!userId || useMock()) return null;
+  const vehicle = {
+    type,
+    package_capacity: Number.isInteger(packageCapacity) && packageCapacity > 0 ? packageCapacity : null,
+    weight_capacity_lbs: Number.isFinite(weightCapacityLbs) && weightCapacityLbs > 0 ? weightCapacityLbs : null,
+    equipment: Array.isArray(equipment) ? equipment : [],
+    updated_at: serverTimestamp(),
+  };
+  await updateDoc(doc(db, 'users', userId), { vehicle });
+  return vehicle;
+}
+
+// Coordinator-only ranked list of nearby volunteers for a rescue.
+export async function suggestRescueVolunteers(pickupId) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'suggestRescueVolunteers')({ pickupId })).data;
+}
+
+// Verified impact from the activity ledger, with legacy profile
+// differences explained (functions/impactReports.js).
+export async function fetchVolunteerImpact(memberId) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'volunteerImpact')({ memberId })).data;
+}
+export async function fetchChapterImpact(chapterId) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'chapterImpact')({ chapterId })).data;
+}
+
+export async function manageVolunteerHistory(memberId, entry, change) {
+  const manage = httpsCallable(getFunctions(firebaseApp), 'manageVolunteerHistory');
+  return (await manage({ memberId, ...(entry ? { entry } : {}), ...(change ? { change } : {}) })).data;
 }
 
 // Idempotent: ensure a user has a /restaurants/{id} doc so they

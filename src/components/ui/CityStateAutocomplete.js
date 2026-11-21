@@ -142,18 +142,18 @@ export default function CityStateAutocomplete({
 
 const styles = StyleSheet.create({
   wrap: { marginBottom: 16, position: 'relative' },
-  label: { ...Type.label, color: Colors.dark, marginBottom: 6 },
+  label: { fontSize: 14, fontWeight: '600', color: Colors.dark, marginBottom: 8, letterSpacing: 0.2 },
   input: {
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.glassBorder,
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.grayLight,
+    borderRadius: 12, paddingHorizontal: 16, minHeight: 52,
     fontSize: 16, color: Colors.dark,
   },
-  inputError: { borderColor: '#EF4444' },
-  errText: { fontSize: 12, color: '#EF4444', marginTop: 4 },
+  inputError: { borderColor: '#B42318' },
+  errText: { fontSize: 13, color: '#B42318', marginTop: 6, fontWeight: '500' },
   spin: { position: 'absolute', right: 12, top: 12 },
   dropdown: {
     backgroundColor: Colors.white, borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.glassBorder, marginTop: 4,
+    borderWidth: 1, borderColor: Colors.grayLight, marginTop: 4,
     overflow: 'hidden',
   },
   option: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.grayLight },

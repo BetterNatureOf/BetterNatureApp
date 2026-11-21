@@ -13,7 +13,8 @@ import Button from '../../components/ui/Button';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import useAuthStore from '../../store/authStore';
-import { fetchAllDonations, fetchAllMembers, fetchChapterById, fetchEvents } from '../../services/database';
+import { fetchAllDonations, fetchChapterById, fetchEvents } from '../../services/database';
+import { fetchAllPublicProfiles } from '../../services/publicProfiles';
 import { notify } from '../../services/ui';
 
 function fmtMoney(n) {
@@ -50,18 +51,30 @@ export default function PresFinance({ navigation }) {
   const load = useCallback(async () => {
     if (!user?.chapter_id) return;
     try {
-      const [ch, mAll, dAll, ev] = await Promise.all([
+      // R7 — pres roster through /public_profiles (chapter-scoped).
+      // R-followup #7 — fetchAllDonations is exec-only; isolate its
+      // failure so pres sees roster + events even when the donations
+      // read is denied (rules enforce exec OR donor). An exec-only
+      // "pres donations endpoint" is tracked for a follow-up; until
+      // then the pres finance screen shows an empty donations panel
+      // with an inline notice instead of blank-screening the whole
+      // page via Promise.all throwing.
+      const [chRes, membersRes, evRes, donRes] = await Promise.allSettled([
         fetchChapterById(user.chapter_id),
-        fetchAllMembers(),
-        fetchAllDonations(),
+        fetchAllPublicProfiles({ chapterId: user.chapter_id }),
         fetchEvents(user.chapter_id),
+        fetchAllDonations(),
       ]);
-      setChapter(ch);
-      setMembers(mAll.filter((u) => u.chapter_id === user.chapter_id && (u.role || 'member') !== 'restaurant'));
-      // Match donations both by chapter_id (clean stamp) and by
-      // donor's chapter_id (best-effort attribution).
-      setDonations(dAll.filter((d) => d.chapter_id === user.chapter_id || mAll.find((u) => u.id === d.user_id)?.chapter_id === user.chapter_id));
-      setEvents(ev || []);
+      const chapterMembers = membersRes.status === 'fulfilled' ? membersRes.value : [];
+      const dAll           = donRes.status     === 'fulfilled' ? donRes.value     : [];
+      setChapter(chRes.status === 'fulfilled' ? chRes.value : null);
+      setMembers(chapterMembers.filter((u) => (u.role_label || 'member') !== 'partner'));
+      const chapterUids = new Set(chapterMembers.map((u) => u.uid || u.id));
+      setDonations(dAll.filter((d) => d.chapter_id === user.chapter_id || chapterUids.has(d.user_id)));
+      setEvents(evRes.status === 'fulfilled' ? (evRes.value || []) : []);
+      if (donRes.status === 'rejected') {
+        console.warn('PresFinance donations denied — pending exec-scoped endpoint:', donRes.reason?.message);
+      }
     } catch (e) {
       console.warn('PresFinance load', e);
     }

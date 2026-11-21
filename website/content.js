@@ -61,8 +61,8 @@ window.CONTENT = {
   getApp: {
     eyebrow: "Take it with you",
     title: "The BetterNature app.",
-    body: "Claim shifts, log pickups, track your impact, and connect with your chapter — wherever you are. Scan the code or grab it from your store.",
-    qrNote: "Scan to download",
+    body: "Claim shifts, log pickups, track your impact, and connect with your chapter — wherever you are. Open the web app here, or scan the code to open it on your phone.",
+    qrNote: "Scan to open the web app",
   },
 
   // ── SIGNUP ────────────────────────────────────────────────────────────

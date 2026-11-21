@@ -19,6 +19,7 @@
 // log a warning. Once you `expo install expo-notifications expo-device`,
 // the import succeeds and registration runs.
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 
@@ -27,20 +28,18 @@ let attempted = false;
 export async function registerForPushNotifications(uid) {
   if (Platform.OS === 'web') return null;
   if (!uid || !isFirebaseConfigured) return null;
+  const projectId = Constants.easConfig?.projectId || Constants.expoConfig?.extra?.eas?.projectId;
+  if (!projectId || projectId === 'REPLACE_AFTER_EAS_INIT') return null;
   if (attempted) return null; // only on first authed mount per session
   attempted = true;
 
-  let Notifications, Device;
+  let Notifications;
   try {
     Notifications = require('expo-notifications');
-    Device = require('expo-device');
   } catch {
     console.info('expo-notifications not installed yet — skipping push registration');
     return null;
   }
-
-  // Real-device only. Simulators don't get push tokens.
-  if (Device.isDevice === false) return null;
 
   // Ask. If denied, bail quietly — the user can re-enable in OS settings.
   const settings = await Notifications.getPermissionsAsync();
@@ -64,7 +63,7 @@ export async function registerForPushNotifications(uid) {
 
   let token;
   try {
-    const res = await Notifications.getExpoPushTokenAsync();
+    const res = await Notifications.getExpoPushTokenAsync({ projectId });
     token = res.data;
   } catch (e) {
     console.warn('expo push token error', e);

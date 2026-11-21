@@ -4,7 +4,8 @@
 // don't fall back unknown paths to index.html, so reloading at /settings
 // returns 404 or redirects to / *before* the app loads. Hash fragments
 // (`/#/settings`) never hit the server, so reload is bulletproof.
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import { getStateFromPath as defaultGetStateFromPath, getPathFromState as defaultGetPathFromState } from '@react-navigation/native';
 
 const screens = {
   // Auth flow
@@ -19,13 +20,14 @@ const screens = {
     path: '',
     screens: {
       Dashboard: 'home',   // "Home" tab label; renders role-appropriate dashboard
-      Projects:  'do',     // "Do" tab label
+      Rescue:    'rescue',
+      Projects:  'do',     // Keep the existing Programs link
       Belong:    'belong', // "Belong" tab (Phase 1 slice 3)
-      Donate:    'donate',
       Manage:    'manage', // exec/pres/founder only — surfaces via ManageTab dispatcher
       Profile:   'you',    // "You" tab label
     },
   },
+  Donate: 'donate',
   Leaderboard: 'leaderboard',
   ProjectDetail: 'projects/:project',
   Iris: 'iris',
@@ -40,9 +42,13 @@ const screens = {
   ChangePassword: 'profile/password',
   ConnectedAccounts: 'profile/connected-accounts',
   VerifyId: 'profile/verify',
+  Pickups: 'pickups',
   PickupDetail: 'pickups/:pickupId',
   ChapterChecklist: 'chapter',
   NotificationPreferences: 'notifications/prefs',
+  VehicleSetup: 'profile/vehicle',
+  ReceivingSites: 'admin/sites',
+  RescueQueue: 'admin/queue',
   WebsiteContent: 'admin/website',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',
@@ -86,12 +92,58 @@ const screens = {
 };
 
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+const nativePrefix = 'betternature://';
+
+// React Navigation 7's web linking ignores getInitialURL/subscribe and
+// reads window.location.pathname — always "/" with hash routing — on
+// load and on popstate. Resolve that "/" from the hash instead, so cold
+// links like /#/pickups/<id> (the URL every rescue alert carries) open
+// the right screen.
+function currentHashPath() {
+  if (!isWeb) return null;
+  const hash = window.location.hash || '';
+  const path = hash.startsWith('#') ? hash.slice(1) : hash;
+  return path && path !== '/' ? path : null;
+}
+const AUTH_PATHS = /^\/?(welcome|login|signup|start-chapter)(\/|\?|$)/i;
+
+// The link the page was opened with, kept until the signed-in app is
+// on screen: sign-in (or a slow session restore) renders the auth
+// navigator first, which would otherwise overwrite it with #/Welcome.
+let bootDeepLink = isWeb && currentHashPath() && !AUTH_PATHS.test(currentHashPath()) ? currentHashPath() : null;
+
+export function restoreBootDeepLink() {
+  if (!isWeb || !bootDeepLink) return;
+  const target = bootDeepLink;
+  bootDeepLink = null;
+  if (currentHashPath() !== target) window.history.replaceState(null, '', `/#${target}`);
+}
+
+function pickupNotificationUrl(response) {
+  const data = response?.notification.request.content.data;
+  if (data?.type !== 'pickup_available' || typeof data.pickupId !== 'string' ||
+      !/^[a-zA-Z0-9_-]+$/.test(data.pickupId)) return null;
+  return `${nativePrefix}pickups/${data.pickupId}`;
+}
 
 // Hash overrides — RN Navigation reads pathname by default, so we hand it the
 // hash value via getInitialURL/subscribe and write to it via getPathFromState.
 const linking = {
-  prefixes: isWeb ? [window.location.origin] : [],
+  prefixes: isWeb ? [window.location.origin] : [nativePrefix],
   config: { screens },
+  // In-memory preview objects (e.g. PickupDetail's `pickup`) must not be
+  // serialized into the URL as "[object Object]".
+  getPathFromState(state, options) {
+    const path = defaultGetPathFromState(state, options);
+    const [base, query] = path.split('?');
+    if (!query) return path;
+    const kept = query.split('&').filter((pair) => !/^pickup=/.test(pair));
+    return kept.length ? `${base}?${kept.join('&')}` : base;
+  },
+  getStateFromPath(path, options) {
+    const resolved = (!path || path === '/') && currentHashPath() ? currentHashPath() : path;
+    return defaultGetStateFromPath(resolved, options);
+  },
   ...(isWeb
     ? {
         getInitialURL() {
@@ -113,10 +165,35 @@ const linking = {
         // When RN Navigation's state changes, mirror the resulting path into
         // the hash so reload re-reads it. We override history via the default
         // mechanism but force it through window.location.hash.
-        getStateFromPath: undefined, // use default
-        getPathFromState: undefined, // use default
       }
-    : {}),
+    : {
+        async getInitialURL() {
+          const url = await Linking.getInitialURL();
+          if (url) return url;
+          try {
+            const notifications = require('expo-notifications');
+            const target = pickupNotificationUrl(await notifications.getLastNotificationResponseAsync());
+            if (target) notifications.clearLastNotificationResponse();
+            return target;
+          } catch {
+            return null;
+          }
+        },
+        subscribe(listener) {
+          const links = Linking.addEventListener('url', ({ url }) => listener(url));
+          let push;
+          try {
+            const notifications = require('expo-notifications');
+            push = notifications.addNotificationResponseReceivedListener((response) => {
+              const url = pickupNotificationUrl(response);
+              if (!url) return;
+              notifications.clearLastNotificationResponse();
+              listener(url);
+            });
+          } catch {}
+          return () => { links.remove(); push?.remove(); };
+        },
+      }),
 };
 
 // Wire RN Navigation's path → hash. We do this by patching history methods

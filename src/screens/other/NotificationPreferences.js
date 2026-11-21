@@ -146,7 +146,7 @@ export default function NotificationPreferences({ navigation }) {
           <Text style={styles.label}>What do you want to hear about?</Text>
           {[
             { key: 'notif_volunteer', title: 'Volunteer alerts',  desc: 'New events, check-ins, badge milestones' },
-            { key: 'notif_pickup',    title: 'Food pickup alerts', desc: 'New rescues posted near you, claim reminders' },
+            { key: 'notif_pickup',    title: 'Food pickup alerts', desc: 'Confirmed rescues in your chapter and pickup reminders' },
             { key: 'notif_general',   title: 'General updates',   desc: 'Org news, broadcasts, monthly impact recap' },
           ].map((row) => (
             <View key={row.key} style={styles.prefRow}>

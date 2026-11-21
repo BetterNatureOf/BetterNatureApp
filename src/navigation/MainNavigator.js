@@ -2,10 +2,10 @@ import React, { useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Colors } from '../config/theme';
-import { hp } from '../config/scale';
-import useAuthStore, { ROLES } from '../store/authStore';
+import Icon from '../components/ui/Icon';
+import useAuthStore from '../store/authStore';
 import { getProfile } from '../services/auth';
 
 import DashboardScreen from '../screens/main/DashboardScreen';
@@ -31,6 +31,7 @@ import ChangePassword from '../screens/other/ChangePassword';
 import ConnectedAccounts from '../screens/other/ConnectedAccounts';
 import VerifyIdScreen from '../screens/other/VerifyIdScreen';
 import PickupDetail from '../screens/projects/PickupDetail';
+import PickupsScreen from '../screens/projects/PickupsScreen';
 
 import ChapterChecklist from '../screens/chapter/ChapterChecklist';
 import FindChapter from '../screens/main/FindChapter';
@@ -72,6 +73,9 @@ import MemberApprovalGate from '../components/ui/MemberApprovalGate';
 import { isFounderEmail } from '../services/founder';
 import { isExec as isExecRole, isPresident as isPresRole } from '../services/roles';
 import NotificationPreferences from '../screens/other/NotificationPreferences';
+import VehicleSetup from '../screens/other/VehicleSetup';
+import ReceivingSites from '../screens/admin/ReceivingSites';
+import RescueQueue from '../screens/admin/RescueQueue';
 import WebsiteContent from '../screens/admin/WebsiteContent';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
@@ -96,53 +100,17 @@ function PresMetricsScreen(props) {
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// Tab-icon glyphs \u2014 same across tab renames. "Do" replaces the old
-// "Projects" label per IA v2; "You" replaces "Profile". "Belong" is a
-// planned tab that lands with Phase 1 slice 2; today it's still
-// implicit under Home \u2192 chapter, but the label vocabulary is aligned
-// here so a mid-flight rename doesn't blow up icon lookups.
-const TAB_ICONS = {
-  Home: { default: '\u25CB', active: '\u25CF' },     // circle outline / filled
-  Do:      { default: '\u25B3', active: '\u25B2' }, // triangle outline / filled
-  Projects:{ default: '\u25B3', active: '\u25B2' }, // legacy alias
-  Belong:  { default: '\u25C7', active: '\u25C6' }, // diamond outline / filled
-  Impact:  { default: '\u2606', active: '\u2605' }, // star outline / filled
-  Donate:  { default: '\u2661', active: '\u2665' }, // heart outline / filled
-  Org:     { default: '\u25A1', active: '\u25A0' }, // square outline / filled
-  Chapter: { default: '\u25A1', active: '\u25A0' },
-  You:     { default: '\u2299', active: '\u2299' }, // circled dot
-  Profile: { default: '\u2299', active: '\u2299' }, // legacy alias
-};
+function tabOptions(title, icon) {
+  return {
+    title,
+    tabBarIcon: ({ focused, color }) => (
+      <Icon name={icon} color={color} size={22} strokeWidth={focused ? 2.4 : 1.7} />
+    ),
+  };
+}
 
-function TabIcon({ label, focused }) {
-  const icons = TAB_ICONS[label] || TAB_ICONS.Home;
-  return (
-    <View style={styles.tabIcon}>
-      {focused && <View style={styles.activeIndicator} />}
-      <Text
-        allowFontScaling={false}
-        style={[
-          styles.tabIconSymbol,
-          { color: focused ? Colors.green : Colors.grayMid },
-        ]}
-      >
-        {focused ? icons.active : icons.default}
-      </Text>
-      <Text
-        numberOfLines={1}
-        allowFontScaling={false}
-        style={[
-          styles.tabLabel,
-          {
-            color: focused ? Colors.green : Colors.grayMid,
-            fontWeight: focused ? '700' : '500',
-          },
-        ]}
-      >
-        {label}
-      </Text>
-    </View>
-  );
+function RescueTab(props) {
+  return <PickupsScreen {...props} inTab />;
 }
 
 // Roles that should land on the Executive (org-wide) dashboard.
@@ -222,66 +190,28 @@ function MainTabs() {
   // Pure exec (no chapter role) → Home=Exec, no Manage. Pure
   // president → Home=President, no Manage.
   const showManage = (isFounder || isExec) && isPres;
-  const manageLabel = 'Chapter';
 
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarShowLabel: false,
+        tabBarLabelStyle: styles.tabLabel,
+        tabBarActiveBackgroundColor: Colors.greenLight,
+        tabBarItemStyle: styles.tabItem,
+        tabBarLabelPosition: 'below-icon',
+        tabBarActiveTintColor: Colors.green,
+        tabBarInactiveTintColor: Colors.gray,
       }}
     >
-      <Tab.Screen
-        name="Dashboard"
-        component={HomeTab}
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="Home" focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Projects"
-        component={ProjectsScreen}
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="Do" focused={focused} />,
-        }}
-      />
-      {/* Belong tab — Phase 1 slice 3. Chapter directory + memberships
-          + workspace switcher landing. Replaces the Impact tab in the
-          new IA; Impact still exists as a stack screen accessible from
-          Home dashboard's chapter pulse card. */}
-      <Tab.Screen
-        name="Belong"
-        component={BelongScreen}
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="Belong" focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Donate"
-        component={DonateScreen}
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="Donate" focused={focused} />,
-        }}
-      />
+      <Tab.Screen name="Dashboard" component={HomeTab} options={tabOptions('Home', 'home')} />
+      <Tab.Screen name="Rescue" component={RescueTab} options={tabOptions('Rescue', 'truck')} />
+      <Tab.Screen name="Projects" component={ProjectsScreen} options={tabOptions('Programs', 'leaf')} />
+      <Tab.Screen name="Belong" component={BelongScreen} options={tabOptions('Chapters', 'users')} />
       {showManage && (
-        <Tab.Screen
-          name="Manage"
-          component={ManageTab}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon label={manageLabel} focused={focused} />
-            ),
-          }}
-        />
+        <Tab.Screen name="Manage" component={ManageTab} options={tabOptions('Manage', 'clipboard')} />
       )}
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon label="You" focused={focused} />,
-        }}
-      />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={tabOptions('Profile', 'user')} />
     </Tab.Navigator>
   );
 }
@@ -302,6 +232,7 @@ export default function MainNavigator() {
       {/* Impact demoted from tab (Belong takes its slot) but kept as
           a stack screen so links from the chapter-pulse card + any
           future deep-link land somewhere real. */}
+      <Stack.Screen name="Donate" component={DonateScreen} />
       <Stack.Screen name="Impact" component={ImpactScreen} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Stack.Screen name="ProjectDetail" component={ProjectDetail} />
@@ -312,6 +243,9 @@ export default function MainNavigator() {
       <Stack.Screen name="EventDetail" component={EventDetailScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferences} />
+      <Stack.Screen name="VehicleSetup" component={VehicleSetup} />
+      <Stack.Screen name="ReceivingSites" component={ReceivingSites} />
+      <Stack.Screen name="RescueQueue" component={RescueQueue} />
       <Stack.Screen name="WebsiteContent" component={WebsiteContent} />
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
@@ -319,6 +253,7 @@ export default function MainNavigator() {
       <Stack.Screen name="ChangePassword" component={ChangePassword} />
       <Stack.Screen name="ConnectedAccounts" component={ConnectedAccounts} />
       <Stack.Screen name="VerifyId" component={VerifyIdScreen} />
+      <Stack.Screen name="Pickups" component={PickupsScreen} />
       <Stack.Screen name="PickupDetail" component={PickupDetail} />
       <Stack.Screen name="ChapterChecklist" component={ChapterChecklist} />
       <Stack.Screen name="StartChapter" component={require('../screens/chapter/StartChapter').default} />
@@ -395,39 +330,10 @@ export default function MainNavigator() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: Colors.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.grayLight + '80',
-    height: Platform.OS === 'ios' ? hp(88) : hp(72),
-    paddingTop: 6,
-    paddingBottom: Platform.OS === 'ios' ? hp(22) : 8,
-    shadowColor: '#1A1F2E',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 8,
+    backgroundColor: Colors.cream,
+    borderTopColor: Colors.grayLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  tabIcon: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 60,
-    position: 'relative',
-  },
-  activeIndicator: {
-    position: 'absolute',
-    top: -8,
-    width: 20,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: Colors.green,
-  },
-  tabIconSymbol: {
-    fontSize: 18,
-    marginBottom: 2,
-  },
-  tabLabel: {
-    fontSize: 10,
-    textAlign: 'center',
-    letterSpacing: 0.3,
-  },
+  tabItem: { borderRadius: 14, marginHorizontal: 2, marginVertical: 2 },
+  tabLabel: { fontSize: 11, fontWeight: '600' },
 });

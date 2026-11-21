@@ -20,6 +20,8 @@ import { notify } from '../../services/ui';
 import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { getProfile } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
+import { hasRole, isExec, isPresident } from '../../services/roles';
+import VolunteerHistory from './VolunteerHistory';
 
 // Display order: highest org-wide privilege at the top, then chapter
 // officers in their seniority sequence, then plain Member, then the
@@ -68,7 +70,11 @@ export default function ManageMembers({ navigation, route }) {
   // only controls (role picker, executive escalation, chapter
   // reassignment) so the screen looks viewer-only.
   const scope = route?.params?.scope;
-  const isChapterScope = scope === 'chapter';
+  const chapterCoordinator = hasRole(authUser, 'chapter_vol_coord') && !isPresident(authUser) && !isExec(authUser);
+  const historyOnly = chapterCoordinator;
+  const canViewHistory = isExec(authUser) || isPresident(authUser) || chapterCoordinator;
+  const isChapterScope = scope === 'chapter' || historyOnly;
+  const chapterId = isChapterScope ? authUser?.chapter_id : null;
   const { isWide } = useBreakpoint();
   const [needsPromote, setNeedsPromote] = useState(false);
   const [promoting, setPromoting] = useState(false);
@@ -77,6 +83,7 @@ export default function ManageMembers({ navigation, route }) {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // member being edited
+  const [showHistory, setShowHistory] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
   // Additional roles beyond the primary — execs can stack "Member +
   // Chapter President" or "Executive + Chapter President" on one
@@ -92,12 +99,12 @@ export default function ManageMembers({ navigation, route }) {
 
   const load = useCallback(async () => {
     try {
-      const [m, c] = await Promise.all([fetchAllMembers(), fetchChapters()]);
+      const [m, c] = await Promise.all([isChapterScope && !chapterId ? [] : fetchAllMembers(chapterId), fetchChapters()]);
       setMembers(m);
       setChapters(c);
     } catch (e) {}
     setLoading(false);
-  }, []);
+  }, [chapterId, isChapterScope]);
 
   useEffect(() => {
     load();
@@ -140,6 +147,7 @@ export default function ManageMembers({ navigation, route }) {
   }
 
   function openEdit(member) {
+    setShowHistory(historyOnly);
     setEditing(member);
     setSelectedRole(member.role || 'member');
     setSelectedExtraRoles(Array.isArray(member.roles) ? member.roles : []);
@@ -357,13 +365,13 @@ export default function ManageMembers({ navigation, route }) {
           <Text style={styles.back}>‹ Back</Text>
         </TouchableOpacity>
         <BrushText variant="screenTitle" style={styles.title}>
-          Manage Members
+          {historyOnly ? 'Volunteer activity' : 'Manage Members'}
         </BrushText>
         <Text style={styles.subtitle}>
-          Tap a member to change their role or chapter assignment.
+          {historyOnly ? 'Select a volunteer to see deliveries and log work.' : 'Select a member to view their details.'}
         </Text>
 
-        {needsPromote ? (
+        {needsPromote && !historyOnly ? (
           <View style={styles.promoteBanner}>
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={styles.promoteTitle}>Heads up — you're not Executive yet</Text>
@@ -385,7 +393,7 @@ export default function ManageMembers({ navigation, route }) {
 
         <Text style={styles.count}>{visible.length} members</Text>
 
-        {pending.length > 0 && (
+        {!historyOnly && pending.length > 0 && (
           <>
             <Text style={[styles.groupLabel, { color: Colors.pink }]}>
               Pending approval ({pending.length})
@@ -412,7 +420,7 @@ export default function ManageMembers({ navigation, route }) {
             <MemberList
               members={execs}
               onEdit={openEdit}
-              onRemove={handleRemove}
+              onRemove={historyOnly ? undefined : handleRemove}
               wide={isWide}
             />
           </>
@@ -424,7 +432,7 @@ export default function ManageMembers({ navigation, route }) {
             <MemberList
               members={presidents}
               onEdit={openEdit}
-              onRemove={handleRemove}
+              onRemove={historyOnly ? undefined : handleRemove}
               wide={isWide}
             />
           </>
@@ -436,7 +444,7 @@ export default function ManageMembers({ navigation, route }) {
             <MemberList
               members={partners}
               onEdit={openEdit}
-              onRemove={handleRemove}
+              onRemove={historyOnly ? undefined : handleRemove}
               wide={isWide}
             />
           </>
@@ -473,7 +481,7 @@ export default function ManageMembers({ navigation, route }) {
                     <MemberList
                       members={list}
                       onEdit={openEdit}
-                      onRemove={handleRemove}
+                      onRemove={historyOnly ? undefined : handleRemove}
                       wide={isWide}
                     />
                   </View>
@@ -496,6 +504,17 @@ export default function ManageMembers({ navigation, route }) {
               <Text style={styles.modalTitle}>{editing?.name || '(no name)'}</Text>
               <Text style={styles.modalEmail}>{editing?.email}</Text>
 
+              {canViewHistory && editing && (isExec(authUser) || editing.chapter_id === authUser?.chapter_id) && (
+                showHistory ? (
+                  <>
+                    <VolunteerHistory key={editing.id} memberId={editing.id} />
+                    <Button title={historyOnly ? 'Close' : 'Back to member details'} variant="secondary"
+                      onPress={() => historyOnly ? setEditing(null) : setShowHistory(false)} />
+                  </>
+                ) : <Button title="View activity history" variant="secondary" onPress={() => setShowHistory(true)} />
+              )}
+
+              {!showHistory && <>
               {/* Contact info */}
               <View style={styles.detailGrid}>
                 {editing?.phone ? (
@@ -542,7 +561,7 @@ export default function ManageMembers({ navigation, route }) {
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBig}>{editing?.hours_logged || 0}h</Text>
-                  <Text style={styles.statLabel}>Hours</Text>
+                  <Text style={styles.statLabel}>Profile hours</Text>
                 </View>
               </View>
 
@@ -775,6 +794,7 @@ export default function ManageMembers({ navigation, route }) {
                   style={{ flex: 1, marginLeft: 8 }}
                 />
               </View>
+              </>}
               </ScrollView>
             </View>
           </View>
@@ -793,7 +813,7 @@ function MemberList({ members, onEdit, onRemove, wide }) {
           style={[styles.card, wide && styles.cardWide]}
           activeOpacity={0.85}
           onPress={() => onEdit(m)}
-          onLongPress={() => onRemove(m)}
+          onLongPress={onRemove ? () => onRemove(m) : undefined}
         >
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{m.name?.[0] || '?'}</Text>

@@ -10,7 +10,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
-import { fetchActivePickups, fetchAllMembers, fetchRestaurants, fetchRecentlyCompletedPickups, sweepAbandonedPickups } from '../../services/database';
+import { fetchPickupsAwaitingDestination, fetchActivePickups, fetchRestaurants, fetchRecentlyCompletedPickups } from '../../services/database';
+import { fetchAllPublicProfiles } from '../../services/publicProfiles';
+import { buildQueue } from '../../../functions/lib/rescueQueue';
 
 // Start of the local day in ms. LiveOps resets at midnight — every
 // morning the leader sees a clean board, the prior day's runs move
@@ -31,7 +33,10 @@ function toMs(t) {
 
 function timeAgo(ts) {
   if (!ts) return '';
-  const ms = Date.now() - new Date(ts).getTime();
+  // Server stamps arrive as Firestore Timestamps; legacy rows as ISO strings.
+  const at = toMs(ts);
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const ms = Date.now() - at;
   const m = Math.floor(ms / 60000);
   if (m < 1) return 'just now';
   if (m < 60) return `${m}m ago`;
@@ -42,12 +47,15 @@ function timeAgo(ts) {
 }
 
 function statusTone(p) {
+  if (p.safety_hold) return { bg: '#FCE3E3', fg: '#8E1B1B', label: 'Needs help' };
   if (p.verified_by_restaurant_at) return { bg: '#E8E1F4', fg: '#5B3A8E', label: '✓ Picked up' };
   if (p.status === 'enroute') return { bg: '#FFE9CD', fg: '#B8651B', label: 'En route' };
   return { bg: '#E5EEF7', fg: '#2E5984', label: 'Claimed' };
 }
 
 export default function LiveOps({ chapterId = null, navigation }) {
+  const [pending, setPending] = useState([]);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [pickups, setPickups] = useState([]);
   const [recent, setRecent] = useState([]);
   const [members, setMembers] = useState({});
@@ -56,39 +64,31 @@ export default function LiveOps({ chapterId = null, navigation }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadFailed(false);
     try {
-      // #7 from drop-off audit — every LiveOps load kicks off a
-      // no-show sweep for this chapter. Any pickup sitting in
-      // 'claimed' for more than 4h without restaurant verification
-      // gets auto-released back to the board, and the ghosted
-      // volunteer is pushed a soft "we let it go, no penalty"
-      // notification. Idempotent — running twice releases each
-      // pickup once. Best-effort; a failure never blocks the
-      // display of LiveOps itself.
-      try { await sweepAbandonedPickups({ chapterId, maxAgeHours: 4 }); }
-      catch (e) { console.warn('LiveOps no-show sweep', e?.message); }
-
       const today = startOfTodayMs();
-      const [pk, done, mem, rest] = await Promise.all([
+      const [pk, done, mem, rest, waiting] = await Promise.all([
         fetchActivePickups({ chapterId }),
         fetchRecentlyCompletedPickups({ chapterId, hours: 24 }),
-        fetchAllMembers(),
+        // Names come from the public mirror; presidents can't list private profiles.
+        fetchAllPublicProfiles({ chapterId }),
         fetchRestaurants(),
+        fetchPickupsAwaitingDestination(chapterId),
       ]);
-      // LiveOps shows ONLY today. A run claimed yesterday that's
-      // still sitting "claimed" doesn't bleed into the new day's
-      // board, and yesterday's deliveries vanish at midnight.
+      // Keep unresolved holds visible across days. Other rows are today's activity.
       const inflightToday = pk.filter((p) =>
-        toMs(p.claimed_at || p.created_at) >= today
+        p.safety_hold || toMs(p.claimed_at || p.created_at) >= today
       );
       const deliveredToday = done.filter((p) =>
         toMs(p.completed_at) >= today
       );
-      setPickups(inflightToday);
+      setPickups(inflightToday.sort((a, b) => Number(!!b.safety_hold) - Number(!!a.safety_hold)));
       setRecent(deliveredToday);
-      setMembers(Object.fromEntries(mem.map((m) => [m.id, m])));
+      setPending(waiting);
+      setMembers(Object.fromEntries(mem.map((m) => [m.uid || m.id, { ...m, name: m.display_name || m.name }])));
       setRestaurants(Object.fromEntries(rest.map((r) => [r.id, r])));
     } catch (e) {
+      setLoadFailed(true);
       console.warn('LiveOps load failed', e);
     } finally {
       setLoading(false);
@@ -98,6 +98,9 @@ export default function LiveOps({ chapterId = null, navigation }) {
   useEffect(() => { load(); }, [load]);
 
   // Unique volunteers currently out so the leader sees a roster too.
+  // Held, turned-away, late and unsited rescues (dispatch escalations show in the queue itself).
+  const needsYou = buildQueue([...pickups, ...pending]).items
+    .filter((i) => ['held', 'remainder_pending', 'late_pickup', 'late_delivery', 'awaiting_site'].includes(i.kind)).length;
   const volunteersOut = Array.from(new Set(
     pickups.map((p) => p.claimed_by).filter(Boolean)
   )).map((id) => members[id]).filter(Boolean);
@@ -109,6 +112,12 @@ export default function LiveOps({ chapterId = null, navigation }) {
           <Text style={styles.heading}>Live operations</Text>
           <Text style={styles.subhead}>Today only · resets at midnight</Text>
         </View>
+        <TouchableOpacity onPress={() => navigation.navigate('RescueQueue')} style={styles.refresh} accessibilityRole="link">
+          <Text style={styles.refreshText}>Queue</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('ReceivingSites')} style={styles.refresh} accessibilityRole="link">
+          <Text style={styles.refreshText}>Sites</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={load} style={styles.refresh}>
           <Text style={styles.refreshText}>Refresh</Text>
         </TouchableOpacity>
@@ -129,6 +138,30 @@ export default function LiveOps({ chapterId = null, navigation }) {
         </View>
       </View>
 
+      {loadFailed && <Text style={styles.cardSub}>Couldn’t refresh operations. Try again.</Text>}
+      {needsYou > 0 && (
+        <TouchableOpacity style={styles.card} accessibilityRole="button" onPress={() => navigation.navigate('RescueQueue')}>
+          <View>
+            <Text style={styles.cardTitle}>{needsYou} rescue{needsYou === 1 ? ' needs' : 's need'} a decision</Text>
+            <Text style={styles.cardSub}>Open the rescue queue →</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+      {pending.length > 0 && (
+        <View>
+          <Text style={styles.heading}>Waiting for a receiving site</Text>
+          {pending.map((p) => (
+            <TouchableOpacity key={p.id} style={styles.card} accessibilityRole="button"
+              onPress={() => navigation.navigate('PickupDetail', { pickupId: p.id, pickup: p })}>
+              <View>
+                <Text style={styles.cardTitle}>{p.restaurant_name || 'Food offer'}</Text>
+                <Text style={styles.cardSub}>{p.estimated_weight_lbs} lb · Review offer</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {loading ? (
         <ActivityIndicator color={Colors.green} style={{ marginVertical: 16 }} />
       ) : pickups.length === 0 ? (
@@ -144,7 +177,7 @@ export default function LiveOps({ chapterId = null, navigation }) {
             <TouchableOpacity
               key={p.id}
               activeOpacity={navigation ? 0.8 : 1}
-              onPress={navigation ? () => navigation.navigate('PickupDetail', { id: p.id }) : undefined}
+              onPress={navigation ? () => navigation.navigate('PickupDetail', { pickupId: p.id }) : undefined}
               style={styles.card}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle} numberOfLines={1}>
@@ -152,10 +185,14 @@ export default function LiveOps({ chapterId = null, navigation }) {
                 </Text>
                 <Text style={styles.cardSub} numberOfLines={1}>
                   {vol?.name || vol?.full_name || 'Volunteer'}
-                  {vol?.phone ? ` · ${vol.phone}` : ''}
+                  {p.claimant_phone ? ` · ${p.claimant_phone}` : ''}
                 </Text>
                 <Text style={styles.cardMeta} numberOfLines={1}>
-                  Claimed {timeAgo(p.claimed_at || p.updated_at || p.created_at)}
+                  {p.safety_hold ? ({
+                    cannot_continue: 'Volunteer can’t continue',
+                    food_concern: 'Food concern reported',
+                    destination_unavailable: 'Drop-off unavailable',
+                  }[p.safety_hold.reason] || 'Pickup on hold') : `Claimed ${timeAgo(p.claimed_at || p.updated_at || p.created_at)}`}
                   {(p.actual_weight_lbs || p.estimated_weight_lbs) ? ` · ~${p.actual_weight_lbs || p.estimated_weight_lbs} lbs` : ''}
                 </Text>
               </View>
@@ -180,7 +217,7 @@ export default function LiveOps({ chapterId = null, navigation }) {
               <TouchableOpacity
                 key={p.id}
                 activeOpacity={navigation ? 0.8 : 1}
-                onPress={navigation ? () => navigation.navigate('PickupDetail', { id: p.id }) : undefined}
+                onPress={navigation ? () => navigation.navigate('PickupDetail', { pickupId: p.id }) : undefined}
                 style={[styles.card, { borderLeftColor: Colors.green }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle} numberOfLines={1}>
