@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Animated,
   View,
   Text,
   ScrollView,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
@@ -26,6 +26,12 @@ import Logo from '../../components/ui/Logo';
 import { getOrgStats } from '../../services/orgStats';
 import { mealsFromLbs } from '../../services/impact';
 import Icon from '../../components/ui/Icon';
+import BlossomField from '../../components/ui/BlossomField';
+
+// Purely decorative shapes stay out of the screen-reader tree.
+const DECOR = Platform.OS === 'web'
+  ? { 'aria-hidden': true, pointerEvents: 'none' }
+  : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants', pointerEvents: 'none' };
 
 const fmt = (n) => (n ? Math.round(n).toLocaleString('en-US') : '0');
 
@@ -67,22 +73,56 @@ export default function LoginScreen({ navigation, route }) {
   const copy = AUDIENCES[audience];
   const enter = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(enter, { toValue: 1, duration: 450, useNativeDriver: Platform.OS !== 'web' }).start();
+    // Respect "Reduce motion": show the screen immediately.
+    let cancelled = false;
+    (AccessibilityInfo.isReduceMotionEnabled?.() ?? Promise.resolve(false))
+      .catch(() => false)
+      .then((reduce) => {
+        if (cancelled) return;
+        if (reduce) enter.setValue(1);
+        else Animated.timing(enter, { toValue: 1, duration: 450, useNativeDriver: Platform.OS !== 'web' }).start();
+      });
+    return () => { cancelled = true; };
   }, [enter]);
+  // Motion only, never visibility: if the animation is interrupted
+  // (layout change, background tab) the content is still fully shown.
   const enterStyle = {
-    opacity: enter,
     transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
   };
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError] = useState('');
+  const [notice, setNotice] = useState('');
+  const passwordRef = useRef(null);
   const setUser = useAuthStore((s) => s.setUser);
 
+  function goBack() {
+    if (navigation.canGoBack?.()) navigation.goBack();
+    else navigation.navigate('Welcome');
+  }
+  function editEmail(value) {
+    setEmail(value);
+    if (fieldErrors.email) setFieldErrors((f) => ({ ...f, email: '' }));
+    setFormError(''); setNotice('');
+  }
+  function editPassword(value) {
+    setPassword(value);
+    if (fieldErrors.password) setFieldErrors((f) => ({ ...f, password: '' }));
+    setFormError('');
+  }
+
   async function handleLogin() {
-    if (!email.trim() || !password) {
-      Alert.alert('Required', 'Please enter your email and password.');
-      return;
-    }
+    const errors = {
+      email: !email.trim() ? 'Enter your email address.'
+        : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? 'Enter a valid email address, like name@example.com.' : '',
+      password: !password ? 'Enter your password.' : '',
+    };
+    setFieldErrors(errors);
+    setFormError(''); setNotice('');
+    if (errors.email || errors.password) return;
     setLoading(true);
     try {
       const result = await signIn({ email, password });
@@ -101,7 +141,7 @@ export default function LoginScreen({ navigation, route }) {
         : null;
       if (user) setUser(user);
     } catch (e) {
-      notify('Login Failed', e?.message || 'Invalid credentials');
+      setFormError(e?.message || 'That email and password didn’t match. Check them and try again.');
     } finally {
       setLoading(false);
     }
@@ -149,15 +189,16 @@ export default function LoginScreen({ navigation, route }) {
 
   async function handleForgotPassword() {
     const target = (email || '').trim();
+    setFormError(''); setNotice('');
     if (!target) {
-      notify('Enter your email', 'Type the email you signed up with above, then tap "Forgot password?" again.');
+      setFieldErrors((f) => ({ ...f, email: 'Enter the email you signed up with, then choose “Forgot password?” again.' }));
       return;
     }
     try {
       await sendResetEmail(target);
-      notify('Check your email', `We sent a password reset link to ${target}. It may take a minute to arrive.`);
+      setNotice(`We sent a password reset link to ${target}. It may take a minute to arrive.`);
     } catch (e) {
-      notify('Could not send', e?.message || 'Try again in a moment.');
+      setFormError(e?.message || 'We couldn’t send the reset email. Try again in a moment.');
     }
   }
 
@@ -186,41 +227,75 @@ export default function LoginScreen({ navigation, route }) {
             <TouchableOpacity key={key} onPress={() => setAudience(key)} activeOpacity={0.85}
               style={[styles.segmentItem, active && styles.segmentItemActive]}
               accessibilityRole="tab" accessibilityState={{ selected: active }} accessibilityLabel={`Sign in as ${item.label}`}>
-              <Icon name={item.icon} size={17} color={active ? Colors.green : Colors.grayMid} />
+              <Icon name={item.icon} size={17} color={active ? Colors.green : Colors.gray} />
               <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{item.label}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
       {wide && <Text style={styles.eyebrow}>Better Nature</Text>}
-      <BrushText variant="screenTitle" style={styles.title}>Welcome back</BrushText>
+      <BrushText variant="screenTitle" style={styles.title} accessibilityRole="header">Welcome back</BrushText>
       <Text style={styles.subtitle}>{copy.subtitle}</Text>
+
+      {!!formError && (
+        <View style={[styles.banner, styles.bannerError]} accessibilityLiveRegion="assertive"
+          {...(Platform.OS === 'web' ? { role: 'alert' } : null)}>
+          <Icon name="alert" size={18} color="#B42318" />
+          <Text style={[styles.bannerText, { color: '#7A1A12' }]}>{formError}</Text>
+        </View>
+      )}
+      {!!notice && (
+        <View style={[styles.banner, styles.bannerOk]} accessibilityLiveRegion="polite"
+          {...(Platform.OS === 'web' ? { role: 'status' } : null)}>
+          <Icon name="mail" size={18} color={Colors.green} />
+          <Text style={[styles.bannerText, { color: Colors.green }]}>{notice}</Text>
+        </View>
+      )}
 
       <Input
         label="Email"
         placeholder={copy.placeholder}
         value={email}
-        onChangeText={setEmail}
+        onChangeText={editEmail}
+        error={fieldErrors.email}
         keyboardType="email-address"
         autoCapitalize="none"
+        autoCorrect={false}
         autoComplete="email"
         textContentType="emailAddress"
+        returnKeyType="next"
+        blurOnSubmit={false}
+        onSubmitEditing={() => passwordRef.current?.focus()}
       />
       <Input
         label="Password"
         placeholder="Your password"
+        ref={passwordRef}
         value={password}
-        onChangeText={setPassword}
-        secureTextEntry
+        onChangeText={editPassword}
+        error={fieldErrors.password}
+        secureTextEntry={!showPassword}
+        autoCapitalize="none"
+        autoCorrect={false}
         autoComplete="current-password"
         textContentType="password"
+        returnKeyType="go"
         onSubmitEditing={handleLogin}
+        right={(
+          <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn}
+            accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            accessibilityState={{ checked: showPassword }} hitSlop={8}>
+            <Icon name={showPassword ? 'eye-off' : 'eye'} size={20} color={Colors.gray} />
+          </TouchableOpacity>
+        )}
       />
-      <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn} accessibilityRole="button">
+      <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn} accessibilityRole="button"
+        accessibilityLabel="Forgot password? Email me a reset link" hitSlop={8}>
         <Text style={styles.forgotText}>Forgot password?</Text>
       </TouchableOpacity>
 
-      <Button title="Sign in" onPress={handleLogin} loading={loading} style={styles.btn} />
+      <Button title={loading ? 'Signing in…' : 'Sign in'} onPress={handleLogin} loading={loading} disabled={loading}
+        style={styles.btn} accessibilityLabel="Sign in" />
 
       {showOAuth && (
         <>
@@ -245,9 +320,13 @@ export default function LoginScreen({ navigation, route }) {
         </>
       )}
 
-      <Text style={styles.signupLink} onPress={() => navigation.navigate(copy.signupRoute)} accessibilityRole="link">
-        {copy.signupPrompt}<Text style={styles.signupBold}>{copy.signupAction}</Text>
-      </Text>
+      <View style={styles.signupRow}>
+        <Text style={styles.signupLink}>{copy.signupPrompt}</Text>
+        <TouchableOpacity onPress={() => navigation.navigate(copy.signupRoute)} accessibilityRole="link"
+          accessibilityLabel={copy.signupAction} style={styles.signupTap} hitSlop={8}>
+          <Text style={[styles.signupLink, styles.signupBold]}>{copy.signupAction}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -275,10 +354,7 @@ export default function LoginScreen({ navigation, route }) {
       <View style={styles.split}>
         <LinearGradient colors={['#1F4438', '#2A5648', '#3D7A67']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={[styles.brandPanel, bp === 'tablet' && styles.brandPanelTablet]}>
-          <View style={[styles.glow, styles.glowPink]} />
-          <View style={[styles.glow, styles.glowSage]} />
-          <View style={[styles.ring, styles.ringA]} />
-          <View style={[styles.ring, styles.ringB]} />
+          <BlossomField density={42} width={700} height={900} quietZone="32% 52%" />
           <View style={styles.brandTop}>
             <View style={styles.brandLogo}><Logo size={40} /></View>
             <Text style={styles.brandName}>BetterNature</Text>
@@ -302,6 +378,11 @@ export default function LoginScreen({ navigation, route }) {
         </LinearGradient>
         <KeyboardAvoidingView style={styles.formPanel} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
+            <TouchableOpacity onPress={goBack} style={[styles.backBtn, styles.backBtnWide]} accessibilityRole="button"
+              accessibilityLabel="Go back" hitSlop={8}>
+              <Icon name="back" size={20} color={Colors.green} />
+              <Text style={styles.backTextDark}>Back</Text>
+            </TouchableOpacity>
             <Animated.View style={[styles.formCard, enterStyle]}>{form}</Animated.View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -314,8 +395,12 @@ export default function LoginScreen({ navigation, route }) {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.phoneRoot} contentContainerStyle={styles.phoneScroll} keyboardShouldPersistTaps="handled">
         <LinearGradient colors={['#1F4438', '#2A5648', '#3D7A67']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.phoneHero}>
-          <View style={[styles.glow, styles.glowPinkPhone]} />
-          <View style={[styles.ring, styles.ringPhone]} />
+          <BlossomField density={20} width={420} height={360} quietZone="50% 62%" />
+          <TouchableOpacity onPress={goBack} style={[styles.backBtn, styles.backBtnPhone]} accessibilityRole="button"
+            accessibilityLabel="Go back" hitSlop={8}>
+            <Icon name="back" size={20} color={Colors.white} />
+            <Text style={styles.backTextLight}>Back</Text>
+          </TouchableOpacity>
           <View style={styles.phoneLogoRing}><Logo size={80} /></View>
           <Text style={styles.phoneHeroTitle}>BetterNature</Text>
           <Text style={styles.phoneHeroTag}>Rescue food · Restore nature</Text>
@@ -335,6 +420,22 @@ export default function LoginScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
 
+  // Navigation + feedback
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 12,
+    borderRadius: 999 },
+  backBtnPhone: { position: 'absolute', top: 14, left: 12, backgroundColor: 'rgba(255,255,255,0.14)', zIndex: 2 },
+  backBtnWide: { alignSelf: 'flex-start', marginBottom: 16, marginLeft: -12 },
+  backTextLight: { color: Colors.white, fontSize: 15, fontWeight: '600' },
+  backTextDark: { color: Colors.green, fontSize: 15, fontWeight: '600' },
+  eyeBtn: { width: 48, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  banner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 14, padding: 14, marginBottom: 18,
+    borderWidth: 1 },
+  bannerError: { backgroundColor: '#FEF3F2', borderColor: '#FECDCA' },
+  bannerOk: { backgroundColor: Colors.greenLight, borderColor: '#CFE2DA' },
+  bannerText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '500' },
+  signupRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', marginTop: 22 },
+  signupTap: { minHeight: 44, justifyContent: 'center' },
+
   // Volunteer / partner switch
   segment: { flexDirection: 'row', backgroundColor: '#EEF2EF', borderRadius: 16, padding: 5, marginBottom: 26 },
   segmentItem: { flex: 1, minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
@@ -349,13 +450,13 @@ const styles = StyleSheet.create({
   title: { color: Colors.green },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 6, marginBottom: 28 },
   btn: { marginTop: 4 },
-  forgotBtn: { alignSelf: 'flex-end', paddingVertical: 6, marginTop: -6, marginBottom: 14 },
+  forgotBtn: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', marginTop: -10, marginBottom: 8 },
   forgotText: { color: Colors.green, fontSize: 14, fontWeight: '600' },
-  signupLink: { textAlign: 'center', marginTop: 26, ...Type.caption, fontSize: 14 },
+  signupLink: { textAlign: 'center', ...Type.caption, fontSize: 15, color: Colors.gray },
   signupBold: { color: Colors.pink, fontWeight: '700' },
   divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 20, gap: 10 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.grayLight },
-  dividerText: { fontSize: 12, color: Colors.grayMid },
+  dividerText: { fontSize: 13, color: Colors.gray },
   oauthRow: { flexDirection: 'row', gap: 12 },
   oauthHalf: { flex: 1, marginTop: 0 },
   googleBtn: {
@@ -370,7 +471,6 @@ const styles = StyleSheet.create({
   },
   appleText: { fontSize: 15, color: '#fff', fontWeight: '600' },
 
-  circle: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.07)' },
 
   // Phone
   phoneRoot: { flex: 1, backgroundColor: Colors.cream },
@@ -380,7 +480,6 @@ const styles = StyleSheet.create({
   phoneStatPill: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14, paddingVertical: 7,
     paddingHorizontal: 14, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
-  circleC: { width: 260, height: 260, top: -90, right: -80 },
   phoneLogoRing: {
     width: 104, height: 104, borderRadius: 52, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
@@ -398,23 +497,10 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'web' ? { minHeight: '100vh' } : null) },
   brandPanel: { flex: 1.1, padding: 48, justifyContent: 'space-between', overflow: 'hidden' },
   brandPanelTablet: { flex: 0.9, padding: 36 },
-  circleA: { width: 420, height: 420, top: -140, right: -160 },
-  circleB: { width: 300, height: 300, bottom: -120, left: -100 },
   brandTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   brandLogo: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
   brandKicker: { color: '#F6B3C2', fontSize: 12, fontWeight: '800', letterSpacing: 1.6, marginBottom: 14 },
-  glow: { position: 'absolute', borderRadius: 999 },
-  glowPink: { width: 380, height: 380, top: -120, right: -140, backgroundColor: 'rgba(160,214,186,0.22)',
-    ...(Platform.OS === 'web' ? { filter: 'blur(60px)' } : null) },
-  glowSage: { width: 420, height: 420, bottom: -180, left: -120, backgroundColor: 'rgba(111,163,163,0.30)',
-    ...(Platform.OS === 'web' ? { filter: 'blur(70px)' } : null) },
-  glowPinkPhone: { width: 260, height: 260, top: -90, right: -90, backgroundColor: 'rgba(160,214,186,0.24)',
-    ...(Platform.OS === 'web' ? { filter: 'blur(50px)' } : null) },
-  ring: { position: 'absolute', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
-  ringA: { width: 520, height: 520, top: -200, right: -220 },
-  ringB: { width: 340, height: 340, bottom: -140, left: -110 },
-  ringPhone: { width: 300, height: 300, top: -120, left: -110 },
   steps: { marginTop: 28, gap: 12 },
   step: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stepIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
