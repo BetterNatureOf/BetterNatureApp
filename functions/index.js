@@ -71,6 +71,9 @@ exports.closeExpiredRescueOffers = functions.pubsub.schedule('every 5 minutes').
 exports.assignRescueReceiver = functions.https.onCall((data, context) =>
   assignPickupReceiver(admin.firestore(), admin.auth(), data, context.auth?.uid));
 
+exports.suggestRescueVolunteers = functions.https.onCall((data, context) =>
+  require('./rescueSuggestions').suggest(admin.firestore(), data, context.auth?.uid));
+
 exports.manageVolunteerHistory = functions.https.onCall((data, context) =>
   volunteerHistory(admin.firestore(), data, context.auth?.uid));
 

@@ -2198,6 +2198,25 @@ export async function fetchAllMembers() {
   return list;
 }
 
+// What the volunteer can carry (functions/lib/rescueCargo.js reads it).
+export async function saveVehicle(userId, { type, packageCapacity, weightCapacityLbs, equipment }) {
+  if (!userId || useMock()) return null;
+  const vehicle = {
+    type,
+    package_capacity: Number.isInteger(packageCapacity) && packageCapacity > 0 ? packageCapacity : null,
+    weight_capacity_lbs: Number.isFinite(weightCapacityLbs) && weightCapacityLbs > 0 ? weightCapacityLbs : null,
+    equipment: Array.isArray(equipment) ? equipment : [],
+    updated_at: serverTimestamp(),
+  };
+  await updateDoc(doc(db, 'users', userId), { vehicle });
+  return vehicle;
+}
+
+// Coordinator-only ranked list of nearby volunteers for a rescue.
+export async function suggestRescueVolunteers(pickupId) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'suggestRescueVolunteers')({ pickupId })).data;
+}
+
 export async function manageVolunteerHistory(memberId, entry, change) {
   const manage = httpsCallable(getFunctions(firebaseApp), 'manageVolunteerHistory');
   return (await manage({ memberId, ...(entry ? { entry } : {}), ...(change ? { change } : {}) })).data;

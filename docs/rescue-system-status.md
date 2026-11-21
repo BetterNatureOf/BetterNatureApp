@@ -42,11 +42,20 @@ deployment section says so.
    rescue, including from a cold start and after signing in. Still open:
    `sweepAbandonedPickups` and `releaseAbandonedPickup` have no UI caller, and
    the C1 chapter-wide `new_pickup_broadcast` is intentionally unused.
-2. **Practical matching.** `functions/rescueMatching.js` is a disconnected CLI.
-   No volunteer vehicle/capacity/equipment data, no pickup food category or
-   package count, and no receiving-site categories, hours or capacity exist in
-   any form or collection. The optional OSRM routing interface
-   (`RESCUE_ROUTING_BASE_URL`) is used only for ranking alerts.
+2. **Practical matching — done (slice 2).** `functions/lib/rescueCargo.js` holds the
+   shared rules (vehicle type, package and weight capacity, cooler, insulated
+   bags, hand truck). The app and functions both use it. Volunteers enter vehicle
+   details on Profile → Rescue vehicle; donors add food type and package count
+   when posting. Dispatch skips known mismatches and still alerts when details
+   are missing (counted as `cargo_unknown`). Coordinators get "Suggest
+   volunteers" (callable `suggestRescueVolunteers`), which reports road time or
+   distance, whether the volunteer can make the pickup cutoff, the fit, and
+   `rescueMatching.evaluateRescue`'s full-trip result once every input is
+   known. Gaps are listed explicitly. Stated assumptions: 10 min loading,
+   10 min unloading, 10 min buffer, and volunteers free through the receiving
+   deadline (no volunteer schedules exist). Road times need
+   `RESCUE_ROUTING_BASE_URL` (OSRM-compatible); without it, ranking uses
+   straight-line distance and timing shows as unknown.
 3. **Receiving sites.** A destination is free text (name, address, contact).
    No site records with hours, pause status, contacts, capacity reservation,
    partial acceptance or rejected-food accounting.
@@ -79,6 +88,10 @@ notifications must go through `queueBusinessNotification` or server code.
   rescue with the "Needs your decision" card.
 - President dashboard (LiveOps) loads: names come from public profiles and
   timestamps render.
+- Coordinator "Suggest volunteers" on an open rescue lists Val with distance,
+  "Travel time unknown · Vehicle fit unknown", and the not-yet-known list.
+- Add vehicle (SUV, cooler) from the rescue → saved under the real rules →
+  back on the rescue the line reads "Fits your vehicle".
 
 ## Local verification
 

@@ -46,6 +46,7 @@ const screens = {
   PickupDetail: 'pickups/:pickupId',
   ChapterChecklist: 'chapter',
   NotificationPreferences: 'notifications/prefs',
+  VehicleSetup: 'profile/vehicle',
   WebsiteContent: 'admin/website',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',

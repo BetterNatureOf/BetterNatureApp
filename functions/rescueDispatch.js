@@ -14,6 +14,7 @@ const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { latLngToCell, gridDisk, cellToLatLng, greatCircleDistance } = require('h3-js');
 const { pickupEligible } = require('./lib/pickupEligibility');
 const { pickupRoadTimes } = require('./dispatchRouting');
+const { cargoFit } = require('./lib/rescueCargo');
 
 const MINUTE = 60_000;
 const RESOLUTION = 7;                 // ~1.2 km hex edge
@@ -223,7 +224,8 @@ async function runRound(db, pickupRef, s, p, { now, roadTimes }) {
       current.restaurant_id, current.released_by, current.abandoned_prior_claimant].filter(Boolean));
     const genId = safeId(st.generation);
     const recipients = [];
-    const skipped = { excluded: 0, already_alerted: 0, ineligible: 0, busy: 0 };
+    const skipped = { excluded: 0, already_alerted: 0, ineligible: 0, busy: 0, does_not_fit: 0 };
+    let unknownFit = 0;
     for (const { uid } of ranked) {
       if (recipients.length === limit) break;
       if (excluded.has(uid)) { skipped.excluded++; continue; }
@@ -231,9 +233,14 @@ async function runRound(db, pickupRef, s, p, { now, roadTimes }) {
       if ((await tx.get(alertRef)).exists) { skipped.already_alerted++; continue; }
       const user = (await tx.get(db.collection('users').doc(uid))).data();
       if (!wantsAlert(user, current)) { skipped.ineligible++; continue; }
+      // Known mismatches (vehicle, capacity, equipment) are skipped;
+      // missing vehicle or load details stay eligible and are counted.
+      const fit = cargoFit(current, user);
+      if (fit.status === 'does_not_fit') { skipped.does_not_fit++; continue; }
       const busy = await tx.get(db.collection('pickups').where('claimed_by', '==', uid)
         .where('status', 'in', ['claimed', 'enroute']).limit(1));
       if (!busy.empty) { skipped.busy++; continue; }
+      if (fit.status === 'unknown') unknownFit++;
       recipients.push({ uid, user, alertRef });
     }
 
@@ -253,7 +260,7 @@ async function runRound(db, pickupRef, s, p, { now, roadTimes }) {
       round: roundNo, alerted_count: (st.alerted_count || 0) + recipients.length,
       last_round: { round: roundNo, radius_cells: k, recipients: recipients.length,
         ranking: roadTime ? 'road_time' : ranked.length ? 'distance' : 'none',
-        location: located ? 'known' : 'missing', skipped, at: Timestamp.fromMillis(now) },
+        location: located ? 'known' : 'missing', skipped, cargo_unknown: unknownFit, at: Timestamp.fromMillis(now) },
       next_action_at: Timestamp.fromMillis(now + gap), updated_at: FieldValue.serverTimestamp(),
     });
     return { action: 'round', round: roundNo, recipients: recipients.map((r) => r.uid) };

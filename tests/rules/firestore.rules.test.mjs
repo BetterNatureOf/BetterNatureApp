@@ -229,6 +229,10 @@ describe('pickups: creation', () => {
     await assertSucceeds(setDoc(doc(as('rest'), 'pickups/new1'), draft()));
   });
 
+  it('restaurant can include load details (food type, package count)', async () => {
+    await assertSucceeds(setDoc(doc(as('rest'), 'pickups/new2'), draft({ food_category: 'prepared_cold', packages: 4 })));
+  });
+
   it("restaurant cannot post a pickup under another restaurant's id", async () => {
     await assertFails(setDoc(doc(as('rest'), 'pickups/new1'), draft({ restaurant_id: 'r2' })));
   });
@@ -551,5 +555,15 @@ describe('dispatch state: coordinators see it, nobody else writes it', () => {
   it('nobody reads who was alerted or writes dispatch state from a client', async () => {
     await assertFails(getDoc(doc(as('presA'), 'pickups/pAvail/dispatch_alerts/g_volA')));
     await assertFails(setDoc(doc(as('exec'), 'pickups/pAvail/dispatch/state'), { status: 'closed' }));
+  });
+});
+
+describe('vehicle details', () => {
+  const vehicle = { type: 'suv', package_capacity: 12, weight_capacity_lbs: 300, equipment: ['cooler'] };
+  it('a volunteer can save their own vehicle', async () => {
+    await assertSucceeds(updateDoc(doc(as('volA'), 'users/volA'), { vehicle }));
+  });
+  it('nobody can write someone else\'s vehicle', async () => {
+    await assertFails(updateDoc(doc(as('volA'), 'users/volA2'), { vehicle }));
   });
 });

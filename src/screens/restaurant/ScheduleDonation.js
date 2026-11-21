@@ -25,6 +25,7 @@ import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
 import Screen from '../../components/ui/Screen';
+import { FOOD_CATEGORIES } from '../../../functions/lib/rescueCargo';
 
 const WEIGHT_CHIPS = [5, 10, 20, 50, 100];
 
@@ -51,6 +52,10 @@ export default function ScheduleDonation({ navigation }) {
   const [timingMode, setTimingMode] = useState('window'); // 'window' | 'date'
   const [scheduledFor, setScheduledFor] = useState(null);
   const [notes, setNotes] = useState('');
+  // Load details volunteers and receiving sites match against. Optional:
+  // blank stays unknown rather than defaulting to something that may be wrong.
+  const [foodCategory, setFoodCategory] = useState(null);
+  const [packages, setPackages] = useState('');
   const [posting, setPosting] = useState(false);
   // Volunteer-friendly drop-off destination. The restaurant can pre-pick
   // a fridge, and if they don't, the volunteer chooses when claiming.
@@ -184,6 +189,8 @@ export default function ScheduleDonation({ navigation }) {
         scheduled_for: useDate ? scheduledFor.toISOString() : null,
         timing_mode: useDate ? 'date' : 'window',
         notes: notes.trim(),
+        food_category: foodCategory,
+        packages: /^\d+$/.test(packages.trim()) && parseInt(packages, 10) > 0 ? parseInt(packages, 10) : null,
       });
 
       // Toast and dismiss right away.
@@ -297,6 +304,34 @@ export default function ScheduleDonation({ navigation }) {
           {humanImpactPhrase(weight) ? (
             <Text style={styles.impactSub}>{humanImpactPhrase(weight)}</Text>
           ) : null}
+        </View>
+
+        <Text style={styles.sectionLabel}>What kind of food?</Text>
+        <View style={styles.chipsRow}>
+          {FOOD_CATEGORIES.map((c) => (
+            <TouchableOpacity
+              key={c.key}
+              style={[styles.chip, foodCategory === c.key && styles.chipOn]}
+              onPress={() => setFoodCategory(foodCategory === c.key ? null : c.key)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: foodCategory === c.key }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.chipText, foodCategory === c.key && styles.chipTextOn]}>{c.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.sectionLabel}>How many boxes, trays or bags?</Text>
+        <View style={styles.weightRow}>
+          <Input
+            value={packages}
+            onChangeText={(v) => setPackages(v.replace(/[^\d]/g, ''))}
+            keyboardType="number-pad"
+            placeholder="e.g. 3"
+            style={styles.weightInput}
+            accessibilityLabel="Number of boxes, trays or bags"
+          />
+          <Text style={styles.weightUnit}>items</Text>
         </View>
 
         {/* Pickup timing — mutually exclusive modes */}

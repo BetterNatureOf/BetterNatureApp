@@ -22,6 +22,8 @@ import PickupContacts from '../../components/pickup/PickupContacts';
 import { pickupDeadline, rescueOfferDeadline } from '../../services/rescueCells';
 import PickupCountdown from '../../components/pickup/PickupCountdown';
 import DispatchStatus from '../../components/pickup/DispatchStatus';
+import RescueSuggestions from '../../components/pickup/RescueSuggestions';
+import { cargoFit, describeFit, rescueCargo, categoryOf } from '../../../functions/lib/rescueCargo';
 import FridgePicker from '../../components/ui/FridgePicker';
 import AnimatedPressable from '../../components/ui/AnimatedPressable';
 import Icon from '../../components/ui/Icon';
@@ -743,10 +745,33 @@ export default function PickupDetail({ route, navigation }) {
 
         <PickupCard pickup={pickup} showPhoto={false} showMapLinks={!reviewing && !showTripMap && !onHold}
           showCountdown={!reviewing && !showTripMap} />
+        {(() => {
+          const cargo = rescueCargo(pickup);
+          const parts = [categoryOf(cargo.foodCategory)?.label, cargo.packages ? `${cargo.packages} item${cargo.packages === 1 ? '' : 's'}` : null,
+            cargo.requiredEquipment.length ? `needs ${cargo.requiredEquipment.map((e) => e.replace('_', ' ')).join(' + ')}` : null].filter(Boolean);
+          return parts.length ? <Text style={styles.loadLine}>{parts.join(' · ')}</Text> : null;
+        })()}
+        {chapterCoordinator && pickup.status === 'available' && !!pickup.destination_confirmation && (
+          <RescueSuggestions pickupId={pickup.id} />
+        )}
         {reviewing && (
           <View style={styles.reviewActions}>
             <Text style={styles.reviewTime}>Pick up by {rescueTime(pickupBy)}</Text>
             <Text style={styles.reviewTime}>Drop off by {rescueTime(arrivalBy)}</Text>
+            {(() => {
+              const fit = cargoFit(pickup, user);
+              const ownGap = fit.unknown.some((u) => ['vehicle', 'weight_capacity', 'package_capacity', 'equipment'].includes(u));
+              return (
+                <View style={[styles.fitRow, fit.status === 'does_not_fit' && styles.fitRowWarn]} accessibilityRole="text">
+                  <Text style={[styles.fitText, fit.status === 'does_not_fit' && styles.fitTextWarn]}>{describeFit(fit)}</Text>
+                  {ownGap && (
+                    <TouchableOpacity onPress={() => navigation.navigate('VehicleSetup')} accessibilityRole="link">
+                      <Text style={styles.fitLink}>Add vehicle</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })()}
             <Text style={styles.reviewHint}>Accept if you can make both stops. Releasing a claim costs 5 leaderboard points.</Text>
             {nextAction}
           </View>
@@ -1116,6 +1141,13 @@ const styles = StyleSheet.create({
   verifyBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
   verifiedNote: { marginTop: 14, padding: 14, backgroundColor: '#E8F5EE', borderRadius: 14 },
   verifiedText: { color: Colors.green, fontWeight: '700' },
+  fitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    backgroundColor: Colors.greenLight, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginVertical: 8 },
+  fitRowWarn: { backgroundColor: Colors.amberLight },
+  fitText: { flex: 1, fontSize: 14, fontWeight: '600', color: Colors.green },
+  fitTextWarn: { color: '#7A4E0E' },
+  fitLink: { fontSize: 14, fontWeight: '700', color: Colors.green, textDecorationLine: 'underline', paddingVertical: 6 },
+  loadLine: { fontSize: 14, color: Colors.gray, marginTop: 8, marginBottom: 4 },
   previewBanner: {
     backgroundColor: '#FEF9C3', borderColor: '#FDE68A', borderWidth: 1,
     borderRadius: 12, padding: 14, marginBottom: 14,

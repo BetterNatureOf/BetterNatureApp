@@ -73,6 +73,7 @@ import MemberApprovalGate from '../components/ui/MemberApprovalGate';
 import { isFounderEmail } from '../services/founder';
 import { isExec as isExecRole, isPresident as isPresRole } from '../services/roles';
 import NotificationPreferences from '../screens/other/NotificationPreferences';
+import VehicleSetup from '../screens/other/VehicleSetup';
 import WebsiteContent from '../screens/admin/WebsiteContent';
 
 // Wrap MetricsEditor so the route name implies the mode without the caller
@@ -240,6 +241,7 @@ export default function MainNavigator() {
       <Stack.Screen name="EventDetail" component={EventDetailScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferences} />
+      <Stack.Screen name="VehicleSetup" component={VehicleSetup} />
       <Stack.Screen name="WebsiteContent" component={WebsiteContent} />
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />

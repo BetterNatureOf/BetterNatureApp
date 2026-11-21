@@ -36,8 +36,10 @@ const approvedVolunteer = {
 const PEOPLE = {
   coordinator: { email: 'coordinator@demo.betternature.test', name: 'Casey Coordinator',
     profile: { ...approvedVolunteer, role: 'chapter_president', contract_executive: signed('Casey Coordinator') } },
+  // Val has no vehicle on file (shows the "unknown" path); Vic has a car without a cooler.
   volunteer: { email: 'volunteer@demo.betternature.test', name: 'Val Volunteer', profile: { ...approvedVolunteer, phone: '555-0101' } },
-  volunteer2: { email: 'volunteer2@demo.betternature.test', name: 'Vic Volunteer', profile: { ...approvedVolunteer, phone: '555-0102' } },
+  volunteer2: { email: 'volunteer2@demo.betternature.test', name: 'Vic Volunteer', profile: { ...approvedVolunteer, phone: '555-0102',
+    vehicle: { type: 'car', package_capacity: 6, weight_capacity_lbs: 150, equipment: [] } } },
   receiver: { email: 'pantry@demo.betternature.test', name: 'Pat at Mid-South Pantry',
     profile: { role: 'member', chapter_id: CHAPTER, member_status: 'approved', profile_complete: true } },
   donor: { email: 'donor@demo.betternature.test', name: 'Dana at Green Table',
@@ -69,7 +71,7 @@ function pickup(extra) {
     restaurant_id: 'r-green-table', restaurant_name: 'Green Table Kitchen', chapter_id: CHAPTER, chapter_name: 'Memphis',
     restaurant_address: DONOR.address, restaurant_lat: DONOR.lat, restaurant_lng: DONOR.lng,
     restaurant_h3: cell(DONOR.lat, DONOR.lng), restaurant_phone: '901-555-0199', restaurant_contact_name: 'Dana',
-    estimated_weight_lbs: 30, meals_estimate: 36, notes: 'Two trays of roasted vegetables and rice. Bring a cooler bag.',
+    estimated_weight_lbs: 30, meals_estimate: 36, food_category: 'prepared_cold', packages: 4, notes: 'Two trays of roasted vegetables and rice. Bring a cooler bag.',
     pickup_window_until: new Date(now + 120 * MIN).toISOString(), created_at: ts(-45), claimed_by: null,
     ...extra,
   };
