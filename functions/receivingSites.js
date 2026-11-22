@@ -29,6 +29,9 @@ const REASON_TEXT = {
   site_paused: 'it is paused right now',
   closed_at_arrival: 'it is closed at the receiving deadline',
   food_type_not_accepted: 'it does not accept this type of food',
+  closed_on_date: 'it is closed that day',
+  no_cold_storage: 'it has no refrigerated storage for this food',
+  no_hot_holding: 'it can’t hold hot food',
   over_package_capacity: 'it has no room for this many items today',
   over_weight_capacity: 'it has no room for this much weight today',
 };
@@ -73,6 +76,10 @@ function siteFit(site, pickup, { arrivalBy, now, used = { packages: 0, weight: 0
   if (!site || !SITE_TYPES.includes(site.type)) reasons.push('site_invalid');
   if (site && site.chapter_id !== pickup.chapter_id) reasons.push('other_chapter');
   if (isPaused(site, now)) reasons.push('site_paused');
+  // Date-specific closures (holidays, one-off closed days), site-local date.
+  if (Array.isArray(site?.closures) && site.closures.some((c) => c?.date === localParts(arrivalBy, site.timezone).day)) {
+    reasons.push('closed_on_date');
+  }
   const open = isOpenAt(site, arrivalBy);
   if (open === false) reasons.push('closed_at_arrival');
   if (open === null) warnings.push('hours_unknown');
@@ -81,6 +88,13 @@ function siteFit(site, pickup, { arrivalBy, now, used = { packages: 0, weight: 0
     if (!cargo.foodCategory) warnings.push('food_category_unknown');
     else if (!site.food_categories.includes(cargo.foodCategory)) reasons.push('food_type_not_accepted');
   } else warnings.push('accepted_food_unknown');
+  // Storage: cold food needs refrigeration; hot food needs hot holding
+  // (or refrigeration to cool it). Unknown storage is a warning.
+  const COLD = ['prepared_cold', 'dairy', 'meat', 'mixed'];
+  if (Array.isArray(site?.storage) && site.storage.length && cargo.foodCategory) {
+    if (COLD.includes(cargo.foodCategory) && !site.storage.includes('refrigerated') && !site.storage.includes('frozen')) reasons.push('no_cold_storage');
+    if (cargo.foodCategory === 'prepared_hot' && !site.storage.includes('hot_holding') && !site.storage.includes('refrigerated')) reasons.push('no_hot_holding');
+  } else if (cargo.foodCategory) warnings.push('storage_unknown');
   const cap = site?.capacity || {};
   if (Number.isFinite(cap.packages_per_day)) {
     if (cargo.packages == null) warnings.push('packages_unknown');
@@ -93,12 +107,14 @@ function siteFit(site, pickup, { arrivalBy, now, used = { packages: 0, weight: 0
   return { ok: reasons.length === 0, reasons, warnings };
 }
 
-async function usedOnDay(tx, siteRef, day, excludePickupId) {
+async function usedOnDay(tx, siteRef, day, excludePickupId, now = Date.now()) {
   const snap = await tx.get(siteRef.collection('reservations').where('day', '==', day));
   let packages = 0, weight = 0;
   snap.docs.forEach((d) => {
     const r = d.data();
     if (d.id === excludePickupId || !['held', 'received'].includes(r.status)) return;
+    // A hold past its expiry (rescue never progressed) no longer counts.
+    if (r.status === 'held' && Number.isFinite(ms(r.expires_at)) && ms(r.expires_at) < now) return;
     packages += r.status === 'received' ? (r.accepted_packages ?? r.packages ?? 0) : (r.packages || 0);
     weight += r.status === 'received' ? (r.accepted_weight_lbs ?? r.weight_lbs ?? 0) : (r.weight_lbs || 0);
   });
@@ -140,7 +156,7 @@ async function confirmDestination(db, data, uid, { now = Date.now(), authorize =
     }
     if (!site) throw new HttpsError('not-found', 'Receiving site not found.');
     const day = localParts(arrivalBy, site.timezone).day;
-    const used = await usedOnDay(tx, siteRef, day, pickupId);
+    const used = await usedOnDay(tx, siteRef, day, pickupId, now);
     const fit = siteFit(site, pickup, { arrivalBy, now, used });
     if (!fit.ok) {
       const why = fit.reasons.map((r) => REASON_TEXT[r] || r).join(', and ');
@@ -150,6 +166,8 @@ async function confirmDestination(db, data, uid, { now = Date.now(), authorize =
     const weight = Number(pickup.estimated_weight_lbs);
     tx.set(siteRef.collection('reservations').doc(pickupId), {
       pickup_id: pickupId, day, packages: cargo.packages, weight_lbs: cargo.weight, status: 'held',
+      // Held until the receiving deadline (+30 min grace for a late run).
+      expires_at: Timestamp.fromMillis(arrivalBy + 30 * 60_000),
       created_by: uid, created_at: FieldValue.serverTimestamp(),
     });
     const contact = site.contacts?.[0] ? `${site.contacts[0].name}${site.contacts[0].phone ? ` · ${site.contacts[0].phone}` : ''}` : site.name;

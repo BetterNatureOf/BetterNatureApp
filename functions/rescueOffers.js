@@ -67,7 +67,9 @@ async function respond(db, data, uid, { now = Date.now(), advance = D.advance } 
     const siteId = p.destination_confirmation?.site_id;
     if (siteId) {
       const res = (await tx.get(db.doc(`receiving_sites/${siteId}/reservations/${pickupId}`))).data();
-      if (res?.status !== 'held') throw fail('The receiving site’s reservation lapsed. A coordinator needs to reconfirm it.', 'reservation');
+      if (res?.status !== 'held' || (res.expires_at && ms(res.expires_at) < now)) {
+        throw fail('The receiving site’s reservation lapsed. A coordinator needs to reconfirm it.', 'reservation');
+      }
     }
     // Journey: checked when the volunteer shared their area; otherwise the
     // volunteer accepts against the displayed cutoffs (no fake ETA).
