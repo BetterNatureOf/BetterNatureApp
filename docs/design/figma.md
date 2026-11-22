@@ -1,7 +1,16 @@
 # BetterNature in Figma
 
 Source of truth for UI: **[BetterNature — Design System & Product](https://www.figma.com/design/CFEizDPz71IXFg8gnqXI0C)** (Figma, student team plan).
-Version 0.1, built 2026-11-22. **Every visual decision is pending creative-director approval.** No app code has changed.
+Version 0.1, built 2026-11-22. No app code has changed.
+
+## Decisions
+
+| Decision | Status |
+| --- | --- |
+| Primary button: Blossom 600 → 550 gradient (`#C13D5B` → `#C9405E`) | **Approved 2026-11-22 (Option A).** Not yet in `colors.js` |
+| Placeholder Gray 500 `#6B7280` | pending |
+| Field border Gray mid `#8E95A2` | pending |
+| Brand palette, typography, Petal line icons | pending |
 
 ## Pages
 
@@ -30,12 +39,12 @@ Fails today:
 | White on Sage / Amber / IRIS teal / Hydro sky | 1.90 / 2.02 / 2.82 / 1.95:1 | never put white text on these |
 | White on Hydro deep `#4A8E9A` | 3.73:1 | large text only |
 
-Proposed fixes (need approval; the Figma components already use them):
+Fixes (the Figma components already use them; only the primary gradient is approved so far):
 
 | Token | Value | Ratio |
 | --- | --- | --- |
-| Primary gradient | Blossom 600 `#C13D5B` → Blossom 550 `#C9405E` | 5.14 → 4.80:1 with white |
-| Option B | solid Green `#2A5648` | 8.32:1 |
+| Primary gradient (approved) | Blossom 600 `#C13D5B` → Blossom 550 `#C9405E` | 5.14 → 4.80:1 with white |
+| Option B (not chosen) | solid Green `#2A5648` | 8.32:1 |
 | Pink text / links | Blossom 600 on Cream | 4.85:1 |
 | Placeholder | Gray 500 `#6B7280` | 4.83:1 |
 | Field border | Gray mid `#8E95A2` | 3.01:1 |
@@ -57,3 +66,7 @@ Frames are annotated with the backend state from `firestore.rules` `pickupUpdate
 - Code Connect isn't set up. Add it after the library is approved and published.
 - The map is an original illustration, not a real map style.
 - Only the Light mode exists. There's no dark mode yet.
+
+## Code change still to make for the approved primary
+
+In `src/config/colors.js`, set `gradient.pink` to `['#C13D5B', '#C9405E']`. Use `#C13D5B` wherever pink is text or a border: the secondary button and the Sign in link. Re-tint `Shadows.button` in `theme.js` to `#C13D5B`. Keep `pinkLight` as it is.
