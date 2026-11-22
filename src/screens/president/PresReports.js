@@ -12,6 +12,7 @@ import {
 import { fetchAllPublicProfiles } from '../../services/publicProfiles';
 import Screen from '../../components/ui/Screen';
 import VerifiedImpact from '../../components/impact/VerifiedImpact';
+import { BrandHero, BrandSheet, brand } from '../../components/ui/BrandHero';
 
 export default function PresReports({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -65,13 +66,9 @@ export default function PresReports({ navigation }) {
   }, [chapterId]);
 
   return (
-    <Screen contentStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>‹ Back</Text>
-      </TouchableOpacity>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Chapter Reports
-      </BrushText>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Chapter Reports" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <Text style={styles.subtitle}>Your impact this month</Text>
 
       {/* Ledger-backed totals (each activity once) with legacy differences explained. */}
@@ -90,9 +87,9 @@ export default function PresReports({ navigation }) {
         <Stat label="Animals Helped" value={data.animals} color={Colors.skyDark} />
       </View>
 
-      <BrushText variant="sectionHeader" style={styles.sectionHeader}>
+      <Text accessibilityRole="header" style={[brand.section, styles.sectionHeader]}>
         Project Breakdown
-      </BrushText>
+      </Text>
 
       <ProjectRow name="IRIS · Food Rescue" value={`${Math.round(data.lbsRescued).toLocaleString()} lbs`} color={Colors.sage} />
       <ProjectRow name="Evergreen · Conservation" value={`${data.animals} animals helped`} color={Colors.green} />
@@ -110,6 +107,7 @@ export default function PresReports({ navigation }) {
         Pickups and events feed these numbers automatically — tap above to
         adjust the offset or add manual metrics like water sites tested.
       </Text>
+    </BrandSheet>
     </Screen>
   );
 }

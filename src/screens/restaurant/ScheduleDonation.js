@@ -26,6 +26,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
 import Screen from '../../components/ui/Screen';
 import { FOOD_CATEGORIES } from '../../../functions/lib/rescueCargo';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const WEIGHT_CHIPS = [5, 10, 20, 50, 100];
 
@@ -258,15 +259,10 @@ export default function ScheduleDonation({ navigation }) {
   return (
     <ContractGate kind="restaurant">
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={{ padding: 0 }} keyboardShouldPersistTaps="handled">
+      <BrandHero title="Post surplus" subtitle="Photo + weight + window. About 60 seconds, end of shift." onBack={() => navigation.goBack()} />
+      <BrandSheet>
        <ResponsiveContainer maxWidth={760}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>{'\u2039 Back'}</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Post surplus</BrushText>
-        <Text style={styles.subtitle}>
-          Photo + weight + window. About 60 seconds, end of shift.
-        </Text>
 
         {/* Photo */}
         <TouchableOpacity
@@ -465,7 +461,8 @@ export default function ScheduleDonation({ navigation }) {
           </View>
         )}
        </ResponsiveContainer>
-      </Screen>
+      </BrandSheet>
+    </Screen>
     </KeyboardAvoidingView>
     </ContractGate>
   );

@@ -14,6 +14,7 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import { fetchDonationHistory } from '../../services/database';
 import useAuthStore from '../../store/authStore';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const EIN = '99-4028399';
 
@@ -67,12 +68,10 @@ export default function VolunteerTaxReceipts({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Tax receipts" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={780}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Tax receipts</BrushText>
         <Text style={styles.subtitle}>
           BetterNature is a registered 501(c)(3) nonprofit. EIN {EIN}. Every donation
           you make is tax-deductible.
@@ -124,6 +123,7 @@ export default function VolunteerTaxReceipts({ navigation }) {
           For a consolidated year-end statement covering everything, email info@betternatureofficial.org. We send 1098-equivalent summaries by January 31.
         </Text>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

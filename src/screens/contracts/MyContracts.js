@@ -15,6 +15,7 @@ import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { CONTRACTS, roleForKind } from '../../services/contracts';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const ALL_KINDS = ['volunteer', 'restaurant', 'executive', 'president'];
 
@@ -37,17 +38,10 @@ export default function MyContracts({ navigation }) {
     .filter((k, i, arr) => !(k === 'president' && arr.includes('executive')));
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Your signed agreements" subtitle="The agreements you’ve signed with BetterNature. View-only — to make changes, contact info@betternatureofficial.org." onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={680}>
-        <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
-          <Icon name="back" size={18} color={Colors.green} />
-          <Text style={styles.backText}>Back</Text>
-        </AnimatedPressable>
-
-        <BrushText variant="screenTitle" style={styles.title}>Your signed agreements</BrushText>
-        <Text style={styles.subtitle}>
-          The agreements you’ve signed with BetterNature. View-only — to make changes, contact info@betternatureofficial.org.
-        </Text>
 
         {signed.length === 0 ? (
           <View style={styles.empty}>
@@ -86,6 +80,7 @@ export default function MyContracts({ navigation }) {
           </View>
         )}
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

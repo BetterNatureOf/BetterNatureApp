@@ -36,14 +36,12 @@ import Icon from '../../components/ui/Icon';
 import Screen from '../../components/ui/Screen';
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
 import WorkspaceChip from '../../components/ui/WorkspaceChip';
+import { ActionCard, BrandHero, BrandSheet, HeroIconButton } from '../../components/ui/BrandHero';
 
 // Warm serif — hero numbers + hero primary lines. See member dashboard
 // for the rationale; must match visually across the four dashboards.
-const SERIF = Platform.select({
-  ios: 'Georgia',
-  android: 'serif',
-  default: 'Georgia, "Iowan Old Style", "Palatino Linotype", serif',
-});
+// Welcome's type: system sans at heavy weight (was a warm serif).
+const SERIF = undefined;
 
 const STATUS_TONE = {
   pending_destination: { bg: '#FFF2CF', fg: '#7A5400', label: 'Waiting for a receiving site' },
@@ -165,20 +163,22 @@ export default function RestDashboard({ navigation }) {
     <RestaurantApprovalGate>
     <ContractGate kind="restaurant">
     <Screen
-      contentStyle={contentStyle}
+      contentStyle={{ padding: 0 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.green} />}
     >
+      <BrandHero kicker={/partner$/i.test(partnerType.label) ? partnerType.label : `${partnerType.label} partner`} title={orgName || 'Your donations'}
+        accessory={<HeroIconButton icon="logout" label="Sign out" onPress={handleSignOut} />}
+        stats={[
+          { value: Math.round(totalLbs || 0).toLocaleString('en-US'), label: 'lbs donated' },
+          { value: history.length, label: history.length === 1 ? 'donation' : 'donations' },
+          activePosts.length ? { value: activePosts.length, label: 'active now', tone: needsConfirm.length ? 'alert' : undefined } : null,
+        ]} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={720}>
         <WorkspaceChip
           user={user}
           workspaceName={orgName}
           scope="partner"
-        />
-        <IdentityStrip
-          eyebrow={`${partnerType.label} partner`}
-          name={orgName}
-          avatarInitial={(orgName || '?')[0].toUpperCase()}
-          onSignOut={handleSignOut}
         />
 
         {state === 'setup' && (
@@ -204,10 +204,8 @@ export default function RestDashboard({ navigation }) {
           />
         )}
 
-        <TouchableOpacity onPress={() => navigation.navigate('RecurringDonations')} accessibilityRole="button"
-            style={{ paddingVertical: 12, minHeight: 44, alignSelf: 'flex-start' }}>
-            <Text style={{ color: Colors.green, fontWeight: '700', fontSize: 15 }}>Recurring donations →</Text>
-          </TouchableOpacity>
+        <ActionCard icon="calendar" title="Recurring donations" body="Set your usual days once; confirm each one with what you actually have."
+          onPress={() => navigation.navigate('RecurringDonations')} />
 
         {/* Supporting content — recent posts + impact + tools */}
         {(pickups.length > 0) && (
@@ -225,6 +223,7 @@ export default function RestDashboard({ navigation }) {
 
         <SponsorCard />
       </ResponsiveContainer>
+      </BrandSheet>
     </Screen>
     </ContractGate>
     </RestaurantApprovalGate>
@@ -498,7 +497,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.green,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: Colors.cream, fontFamily: SERIF, fontSize: 16, fontWeight: '500' },
+  avatarText: { color: Colors.cream, fontFamily: SERIF, fontSize: 16, fontWeight: '800' },
   greeting: { flex: 1, minWidth: 0 },
   greetingK: { fontSize: 12, color: Colors.gray },
   greetingT: { fontSize: 16, fontWeight: '600', color: Colors.dark, marginTop: 1 },
@@ -522,7 +521,7 @@ const styles = StyleSheet.create({
   heroPrimary: {
     fontFamily: SERIF,
     fontSize: 22, lineHeight: 28,
-    color: Colors.dark, fontWeight: '500',
+    color: Colors.dark, fontWeight: '800',
     letterSpacing: -0.2,
   },
   heroSecondary: {
@@ -536,7 +535,7 @@ const styles = StyleSheet.create({
   heroQuietNum: {
     fontFamily: SERIF,
     fontSize: 30, lineHeight: 34,
-    fontWeight: '500', letterSpacing: -0.4,
+    fontWeight: '800', letterSpacing: -0.4,
     color: Colors.cream, marginTop: 4,
   },
   heroQuietBody: {
@@ -621,7 +620,7 @@ const styles = StyleSheet.create({
   impactNum: {
     fontFamily: SERIF,
     fontSize: 26, lineHeight: 28,
-    color: Colors.dark, fontWeight: '500', letterSpacing: -0.4,
+    color: Colors.dark, fontWeight: '800', letterSpacing: -0.4,
   },
   impactLabel: {
     fontSize: 11, fontWeight: '600', color: Colors.gray,

@@ -10,6 +10,7 @@ import useAuthStore from '../../store/authStore';
 import { sendBroadcast } from '../../services/broadcast';
 import { notify, confirm } from '../../services/ui';
 import { isExec as isExecRole } from '../../services/roles';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const AUDIENCES = [
   { key: 'bn',          label: 'BetterNature',           desc: 'Everyone in the org (members, presidents, execs)' },
@@ -64,10 +65,10 @@ export default function BroadcastScreen({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Broadcast" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={780}>
-        <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
-        <BrushText variant="screenTitle" style={styles.title}>Broadcast</BrushText>
         <Text style={styles.subtitle}>
           {presChapterId
             ? `Goes to your chapter only — every other chapter stays untouched.`
@@ -115,6 +116,7 @@ export default function BroadcastScreen({ navigation }) {
 
         <Button title="Send broadcast" onPress={handleSend} loading={loading} style={styles.btn} />
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

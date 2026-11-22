@@ -12,6 +12,7 @@ import useAuthStore from '../../store/authStore';
 import { changePassword, sendResetEmail } from '../../services/auth';
 import { notify, notifyThen } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 export default function ChangePassword({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -50,13 +51,10 @@ export default function ChangePassword({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={{ padding: 0 }} keyboardShouldPersistTaps="handled">
+      <BrandHero title="Change Password" subtitle="You’ll stay signed in on this device." onBack={() => navigation.goBack()} />
+      <BrandSheet>
        <ResponsiveContainer maxWidth={560}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Change Password</BrushText>
-        <Text style={styles.subtitle}>You’ll stay signed in on this device.</Text>
 
         <Text style={styles.label}>Current password</Text>
         <Input value={current} onChangeText={setCurrent} placeholder="Current password" secureTextEntry />
@@ -79,7 +77,8 @@ export default function ChangePassword({ navigation }) {
           <Text style={styles.resetText}>Send password reset email</Text>
         </TouchableOpacity>
        </ResponsiveContainer>
-      </Screen>
+      </BrandSheet>
+    </Screen>
     </KeyboardAvoidingView>
   );
 }

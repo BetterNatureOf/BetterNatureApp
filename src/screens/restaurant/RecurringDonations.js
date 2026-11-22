@@ -13,6 +13,7 @@ import useAuthStore from '../../store/authStore';
 import { listMySchedules, saveDonationSchedule, listMyOccurrences, confirmDonationOccurrence, listPartnerSites } from '../../services/database';
 import { notify } from '../../services/ui';
 import { FOOD_CATEGORIES, categoryOf } from '../../../functions/lib/rescueCargo';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -84,13 +85,10 @@ export default function RecurringDonations({ navigation }) {
     food_category: null, notes: '', mode: 'network', site_id: null, offer_to_network: true });
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Recurring donations" subtitle="We’ll check with you before each one. Nothing is posted until you confirm what you actually have." onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('RestDashboard'))} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={680}>
-        <TouchableOpacity onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('RestDashboard'))} accessibilityRole="button">
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle">Recurring donations</BrushText>
-        <Text style={styles.subtitle}>We’ll check with you before each one. Nothing is posted until you confirm what you actually have.</Text>
 
         {open.map((o) => (
           <View key={o.id} style={[styles.card, styles.cardDue]}>
@@ -182,6 +180,7 @@ export default function RecurringDonations({ navigation }) {
         )}
         <Text style={styles.footnote}>Holidays or a closed day? Use “Skip today” when we ask, or pause the schedule.</Text>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

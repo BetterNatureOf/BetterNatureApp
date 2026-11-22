@@ -6,6 +6,7 @@ import Card from '../../components/ui/Card';
 import useAuthStore from '../../store/authStore';
 import { fetchPickupsByRestaurant, fetchDonationHistory, ensureMyPartnerRecord } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -38,13 +39,9 @@ export default function DonationHistory({ navigation }) {
   const isEmpty = pickups.length === 0 && sponsorships.length === 0;
 
   return (
-    <Screen contentStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>‹ Back</Text>
-      </TouchableOpacity>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Donation History
-      </BrushText>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Donation History" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <Text style={styles.subtitle}>Pickups and sponsorships from your restaurant</Text>
 
       {isEmpty ? (
@@ -95,6 +92,7 @@ export default function DonationHistory({ navigation }) {
           )}
         </>
       )}
+    </BrandSheet>
     </Screen>
   );
 }

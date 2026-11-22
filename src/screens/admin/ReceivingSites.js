@@ -13,6 +13,7 @@ import { listReceivingSites, saveReceivingSite } from '../../services/database';
 import { notify } from '../../services/ui';
 import { FOOD_CATEGORIES } from '../../../functions/lib/rescueCargo';
 import { describeSiteNow, SITE_TYPES, DAY_KEYS } from '../../services/receivingSiteText';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const blank = { name: '', type: 'staffed_center', address: '', days: ['mon', 'tue', 'wed', 'thu', 'fri'], open: '09:00', close: '17:00',
   foods: [], packages: '', weight: '', contactName: '', contactPhone: '', storage: [], closures: '' };
@@ -90,14 +91,10 @@ export default function ReceivingSites({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Receiving sites" subtitle="Where rescued food can go. Hours, pauses and daily capacity are checked when you confirm a rescue." onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={720}>
-        <TouchableOpacity onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))}
-          accessibilityRole="button">
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle">Receiving sites</BrushText>
-        <Text style={styles.subtitle}>Where rescued food can go. Hours, pauses and daily capacity are checked when you confirm a rescue.</Text>
 
         {sites === null && <ActivityIndicator color={Colors.green} />}
         {!!error && <Text style={styles.error}>{error}</Text>}
@@ -194,6 +191,7 @@ export default function ReceivingSites({ navigation }) {
           </View>
         )}
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

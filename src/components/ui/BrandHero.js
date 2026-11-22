@@ -17,10 +17,11 @@ export const BRAND_GREENS = ['#1F4438', '#2A5648', '#3D7A67'];
 const web = Platform.OS === 'web';
 const lift = web ? { transitionProperty: 'transform, box-shadow, background-color, border-color', transitionDuration: '160ms' } : null;
 
-export function BrandHero({ title, kicker, subtitle, stats = [], onBack, backLabel = 'Back', children }) {
+export function BrandHero({ title, kicker, subtitle, stats = [], onBack, backLabel = 'Back', accessory, children }) {
   return (
     <LinearGradient colors={BRAND_GREENS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
       <View style={styles.heroInner}>
+        {!!accessory && <View style={styles.accessory}>{accessory}</View>}
         {onBack && (
           <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel={backLabel} hitSlop={8}
             style={({ hovered }) => [styles.back, hovered && styles.backHover]}>
@@ -28,8 +29,8 @@ export function BrandHero({ title, kicker, subtitle, stats = [], onBack, backLab
             <Text style={styles.backText}>{backLabel}</Text>
           </Pressable>
         )}
-        {!!kicker && <Text style={styles.kicker}>{kicker.toUpperCase()}</Text>}
-        <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+        {!!kicker && <Text style={[styles.kicker, !!accessory && styles.clearAccessory]}>{kicker.toUpperCase()}</Text>}
+        <Text accessibilityRole="header" style={[styles.title, !!accessory && styles.clearAccessory]}>{title}</Text>
         {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
         {stats.filter(Boolean).length > 0 && (
           <View style={styles.stats}>
@@ -80,6 +81,17 @@ export function ActionCard({ icon, title, body, meta, onPress, accent = 'green',
   );
 }
 
+// Round glass button for the hero's top-right (e.g. notifications).
+export function HeroIconButton({ icon, label, onPress, dot = false }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}
+      style={({ hovered }) => [styles.iconBtn, hovered && styles.iconBtnHover]}>
+      <Icon name={icon} size={18} color={Colors.white} />
+      {dot && <View style={styles.iconDot} />}
+    </Pressable>
+  );
+}
+
 export const brand = StyleSheet.create({
   section: { fontSize: 20, fontWeight: '800', color: Colors.dark, letterSpacing: -0.3, marginTop: 6, marginBottom: 12 },
   caption: { fontSize: 13, lineHeight: 19, color: Colors.gray },
@@ -90,6 +102,8 @@ export const brand = StyleSheet.create({
 const styles = StyleSheet.create({
   hero: { paddingTop: web ? 28 : 56, paddingBottom: 60, paddingHorizontal: 20, overflow: 'hidden' },
   heroInner: { width: '100%', maxWidth: 760, alignSelf: 'center' },
+  accessory: { position: 'absolute', top: 0, right: 0, zIndex: 2 },
+  clearAccessory: { paddingRight: 56 },
   back: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', minHeight: 44, paddingRight: 10, borderRadius: 12, marginBottom: 6 },
   backHover: { backgroundColor: 'rgba(255,255,255,0.10)' },
   backText: { color: Colors.white, fontSize: 15, fontWeight: '600' },
@@ -102,6 +116,10 @@ const styles = StyleSheet.create({
   statAlert: { backgroundColor: 'rgba(246,179,194,0.20)', borderColor: 'rgba(246,179,194,0.45)' },
   statValue: { color: Colors.white, fontSize: 20, fontWeight: '800' },
   statLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  iconBtnHover: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  iconDot: { position: 'absolute', top: 10, right: 11, width: 9, height: 9, borderRadius: 5, backgroundColor: '#F6B3C2', borderWidth: 1.5, borderColor: '#2A5648' },
   sheet: { flex: 1, marginTop: -36, backgroundColor: Colors.cream, borderTopLeftRadius: 32, borderTopRightRadius: 32,
     paddingHorizontal: 16, paddingTop: 22, paddingBottom: 40,
     shadowColor: '#0B2A20', shadowOpacity: 0.12, shadowRadius: 24, shadowOffset: { width: 0, height: -6 } },

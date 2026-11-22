@@ -36,15 +36,13 @@ import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
 import PickupCountdown from '../../components/pickup/PickupCountdown';
 import { openInMaps, formatAddress } from '../../services/maps';
 import WorkspaceChip from '../../components/ui/WorkspaceChip';
+import { BrandHero, BrandSheet, HeroIconButton } from '../../components/ui/BrandHero';
 
 // ── Warm serif stack ────────────────────────────────────────────────
 // Used only on hero numbers + hero primary lines so those moments
 // feel human instead of leaderboard-flat. Everything else stays sans.
-const SERIF = Platform.select({
-  ios: 'Georgia',
-  android: 'serif',
-  default: 'Georgia, "Iowan Old Style", "Palatino Linotype", serif',
-});
+// Welcome's type: system sans at heavy weight (was a warm serif).
+const SERIF = undefined;
 
 // ── Greeting helpers ────────────────────────────────────────────────
 function timeOfDayGreeting() {
@@ -110,8 +108,9 @@ export default function DashboardScreen({ navigation }) {
     (p) => p.claimed_by === user?.id && ['claimed', 'enroute'].includes(p.status)
   ), [pickups, user?.id]);
 
+  // Only rescues a volunteer can take (a saved receiving site is confirmed).
   const available = useMemo(() => pickups.filter(
-    (p) => p.status === 'available'
+    (p) => p.status === 'available' && !!p.destination_confirmation?.site_id
   ), [pickups]);
 
   const state = active.length > 0 ? 'active'
@@ -129,15 +128,18 @@ export default function DashboardScreen({ navigation }) {
   const heroGreeting = state === 'active' ? 'Halfway there,' : timeOfDayGreeting();
 
   return (
-    <Screen contentStyle={contentStyle}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero kicker={heroGreeting.replace(/,$/, '')} title={firstName(user) || 'Welcome'}
+        subtitle={user?.chapter?.name || user?.chapter_name ? `${user?.chapter?.name || user?.chapter_name} chapter` : undefined}
+        accessory={<HeroIconButton icon="bell" label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+          dot={unreadCount > 0} onPress={() => navigation.navigate('Notifications')} />}
+        stats={[
+          { value: Math.round(userLbs).toLocaleString('en-US'), label: 'lbs you rescued' },
+          { value: user?.pickups_completed || 0, label: 'rescues done' },
+          user?.chapter_id && !loading ? { value: available.length, label: 'open now', tone: available.length ? 'alert' : undefined } : null,
+        ]} />
+      <BrandSheet>
       <WorkspaceChip user={user} scope="chapter" />
-      <IdentityStrip
-        greeting={heroGreeting}
-        name={firstName(user)}
-        avatarInitial={(user?.name || '?')[0].toUpperCase()}
-        unreadCount={unreadCount}
-        onNotifPress={() => navigation.navigate('Notifications')}
-      />
       {hasRole(user, 'chapter_vol_coord') && (
         <Button title="Volunteer activity" variant="secondary" onPress={() => navigation.navigate('PresMembers')} />
       )}
@@ -231,6 +233,7 @@ export default function DashboardScreen({ navigation }) {
       <ProjectCards onPress={(project) => navigation.navigate('ProjectDetail', { project })} />
       <View style={{ height: 12 }} />
       <DonateCard onPress={() => navigation.navigate('Donate')} />
+      </BrandSheet>
     </Screen>
   );
 }
@@ -583,7 +586,7 @@ const styles = StyleSheet.create({
   avatarText: {
     color: Colors.cream,
     fontFamily: SERIF,
-    fontSize: 16, fontWeight: '500',
+    fontSize: 16, fontWeight: '800',
   },
   greeting: { flex: 1, minWidth: 0 },
   greetingK: { fontSize: 12, color: Colors.gray },
@@ -640,7 +643,7 @@ const styles = StyleSheet.create({
   heroPrimary: {
     fontFamily: SERIF,
     fontSize: 22, lineHeight: 28,
-    color: Colors.dark, fontWeight: '500',
+    color: Colors.dark, fontWeight: '800',
     letterSpacing: -0.2,
   },
   heroSecondary: {
@@ -728,7 +731,7 @@ const styles = StyleSheet.create({
   heroQuietNum: {
     fontFamily: SERIF,
     fontSize: 44, lineHeight: 46,
-    fontWeight: '500', letterSpacing: -0.8,
+    fontWeight: '800', letterSpacing: -0.8,
     color: Colors.cream,
     marginTop: 4,
   },
@@ -777,7 +780,7 @@ const styles = StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 26, lineHeight: 28,
     color: Colors.dark,
-    fontWeight: '500', letterSpacing: -0.4,
+    fontWeight: '800', letterSpacing: -0.4,
   },
   impactLabel: {
     fontSize: 11, fontWeight: '600', color: Colors.gray,

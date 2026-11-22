@@ -26,6 +26,7 @@ import { listIdReviews, getIdViewUrl, setIdReviewStatus } from '../../services/i
 import useAuthStore from '../../store/authStore';
 import { notify, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const FILTERS = [
   { key: 'pending',  label: 'Pending review' },
@@ -154,16 +155,10 @@ export default function ManageVerifications({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Verify IDs" subtitle="Review every ID that volunteers and partners upload. Approval unlocks pickup claims." onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={920}>
-        <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
-          <Icon name="back" size={18} color={Colors.green} />
-          <Text style={styles.backText}>Back</Text>
-        </AnimatedPressable>
-        <BrushText variant="screenTitle" style={styles.title}>Verify IDs</BrushText>
-        <Text style={styles.subtitle}>
-          Review every ID that volunteers and partners upload. Approval unlocks pickup claims.
-        </Text>
 
         {/* Storage-health hint — when nobody on the platform has an
             ID uploaded, the most likely cause is that Firebase
@@ -326,6 +321,7 @@ export default function ManageVerifications({ navigation }) {
           <Text style={styles.lightboxHint}>Tap anywhere to close</Text>
         </TouchableOpacity>
       </Modal>
+    </BrandSheet>
     </Screen>
   );
 }

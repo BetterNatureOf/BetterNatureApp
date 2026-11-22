@@ -13,6 +13,7 @@ import useAuthStore from '../../store/authStore';
 import { updateProfile, getProfile } from '../../services/auth';
 import { notifyThen, notify } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 export default function EditProfile({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -55,13 +56,10 @@ export default function EditProfile({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={{ padding: 0 }} keyboardShouldPersistTaps="handled">
+      <BrandHero title="Edit Profile" subtitle="Keep your info up to date." onBack={() => navigation.goBack()} />
+      <BrandSheet>
        <ResponsiveContainer maxWidth={720}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Edit Profile</BrushText>
-        <Text style={styles.subtitle}>Keep your info up to date.</Text>
 
         <Text style={styles.label}>Display name</Text>
         <Input value={name} onChangeText={setName} placeholder="How others see you" />
@@ -109,7 +107,8 @@ export default function EditProfile({ navigation }) {
 
         <Button title={saving ? 'Saving…' : 'Save changes'} onPress={handleSave} loading={saving} style={{ marginTop: 24 }} />
        </ResponsiveContainer>
-      </Screen>
+      </BrandSheet>
+    </Screen>
     </KeyboardAvoidingView>
   );
 }
