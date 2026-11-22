@@ -13,7 +13,7 @@
 // authorized by rules). The dispatcher resolves push_token + email
 // server-side and sends.
 import { collection, addDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { serverFunction } from './server';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import useAuthStore from '../store/authStore';
 
@@ -83,7 +83,7 @@ export async function enqueueNotification(opts) {
 async function callQueue(payload) {
   if (!isFirebaseConfigured) return { ok: false, reason: 'firebase_not_configured' };
   try {
-    const fn = httpsCallable(getFunctions(), 'queueBusinessNotification');
+    const fn = serverFunction('queueBusinessNotification');
     const res = await fn(payload);
     // I2 — surface deduped / in_progress so callers can tell apart
     // "already delivered" from "someone else's lease is live right

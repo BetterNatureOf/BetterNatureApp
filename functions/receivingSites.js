@@ -286,6 +286,40 @@ async function reconcileReservation(db, pickupRef, before, after) {
   return ops.length;
 }
 
+// ── State-based reconcile (no before/after needed) ──────────────────
+// Used by the free rescue engine, which notices changes by polling. Looks
+// at every reservation held for this pickup and settles each against the
+// pickup's current state. Every change is guarded, so reruns are no-ops.
+async function reconcileReservationState(db, pickupRef, after) {
+  const site = after?.destination_confirmation?.site_id || null;
+  const snap = await db.collectionGroup('reservations').where('pickup_id', '==', pickupRef.id).get();
+  let changed = 0;
+  for (const d of snap.docs) {
+    const resSite = d.ref.parent.parent.id;
+    const change = resSite !== site ? { status: 'released', released_reason: 'destination_changed' }
+      : after?.status === 'cancelled' ? { status: 'released', released_reason: 'cancelled' }
+        : after?.receiving_receipt ? { status: 'received', accepted_weight_lbs: Number(after.receiving_receipt.weight_lbs) || 0,
+          rejected_weight_lbs: Number(after.receiving_receipt.rejected_weight_lbs) || 0 }
+          : after?.verified_by_restaurant_at ? { collected: true } : null;
+    if (!change) continue;
+    const done = await db.runTransaction(async (tx) => {
+      const cur = (await tx.get(d.ref)).data();
+      if (!cur) return false;
+      if (change.collected) {
+        if (cur.collected || !['held', 'overdue'].includes(cur.status)) return false;
+        tx.update(d.ref, { collected: true, updated_at: FieldValue.serverTimestamp() });
+        return true;
+      }
+      if (cur.status === change.status || (cur.status === 'received' && change.status === 'released')) return false;
+      if (change.status === 'released' && ['released', 'expired'].includes(cur.status)) return false;
+      tx.update(d.ref, { ...change, updated_at: FieldValue.serverTimestamp() });
+      return true;
+    });
+    if (done) changed++;
+  }
+  return changed;
+}
+
 // ── Scheduler: holds past expires_at ─────────────────────────────────
 // Uncollected → expired (capacity frees; dispatch stops offering it).
 // Collected but not received → overdue (capacity stays held; the rescue
@@ -313,7 +347,7 @@ async function sweepReservations(db, { now = Date.now(), limit = 100 } = {}) {
   return out;
 }
 
-module.exports = { sweepReservations,
+module.exports = { sweepReservations, reconcileReservationState,
   SITE_TYPES, REMAINDER_OUTCOMES, localParts, isOpenAt, isPaused, siteFit, canCoordinate,
   confirmDestination, recordRemainder, deliverableWeight, reconcileReservation,
 };

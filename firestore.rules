@@ -562,8 +562,14 @@ service cloud.firestore {
             && u.get('contract_volunteer_signed', false) == true
             && u.get('driver_setup_complete', false) == true));
     }
+    // updated_at is change tracking for the rescue engine (it polls pickups
+    // by it); transitions are judged on every other field.
     function pChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys();
+      return request.resource.data.diff(resource.data).affectedKeys().difference(['updated_at'].toSet());
+    }
+    function pStampOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['updated_at'])
+        || request.resource.data.updated_at == request.time;
     }
     function newStatus() { return request.resource.data.status; }
     function oldStatus() { return resource.data.status; }
@@ -890,7 +896,7 @@ service cloud.firestore {
         && old.destination_confirmation.arrival_by > request.time
         && !pHasHold(next) && next.claimed_by is string && next.claimed_by != old.claimed_by
         && next.claimed_by != old.get('receiver_uid', null)
-        && next.diff(old).affectedKeys().hasOnly(['claimed_by','claimant_name','claimant_phone',
+        && next.diff(old).affectedKeys().difference(['updated_at'].toSet()).hasOnly(['claimed_by','claimant_name','claimant_phone',
           'safety_hold','custody_transfer','custody_transfer_history'])
         && transfer == {'from_uid': old.claimed_by, 'to_uid': next.claimed_by,
           'recorded_by': request.auth.uid, 'recorded_at': request.time, 'hold': old.safety_hold}
@@ -909,7 +915,7 @@ service cloud.firestore {
         && old.get('verified_by_restaurant_at', null) != null && old.get('receiving_receipt', null) == null
         && pHasHold(old) && old.safety_hold.reason == 'destination_unavailable' && !pHasHold(next)
         && previous is map && backup is map
-        && next.diff(old).affectedKeys().hasOnly(['safety_hold','receiver_uid','receiver_assigned_at',
+        && next.diff(old).affectedKeys().difference(['updated_at'].toSet()).hasOnly(['safety_hold','receiver_uid','receiver_assigned_at',
           'receiver_assigned_by','fridge_id','fridge_name','fridge_address','fridge_lat','fridge_lng',
           'fridge_h3','destination_confirmation','destination_history'])
         && backup.keys().hasOnly(['site_name','address','contact','confirmed_by','confirmed_at',
@@ -1011,7 +1017,7 @@ service cloud.firestore {
 
       // Update: one transition branch is selected per write (see
       // pickupUpdateAllowed). Completion is server-only.
-      allow update: if pickupUpdateAllowed();
+      allow update: if pickupUpdateAllowed() && pStampOk();
 
       allow delete: if isAdmin();
 

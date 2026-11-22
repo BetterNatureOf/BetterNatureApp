@@ -66,6 +66,7 @@ function service(uid) {
   const deps = { ...F, db: client(uid), auth: { currentUser: { uid } }, useMock: () => false,
     isFirebaseConfigured: true, pickupEligibility: eligibility,
     rescueCell: cells.rescueCell, pickupDeadline: cells.pickupDeadline, firebaseApp: {},
+    pickupChanged: () => {},
     respondToRescue: async (pickupId, response) => {
       try { return await respond(db, { pickupId, response }, uid, { advance: async () => {} }); }
       catch (e) { throw new Error(e.message); }

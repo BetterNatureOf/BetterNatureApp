@@ -22,7 +22,7 @@
 
 import { collection, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { serverFunction } from './server';
 import { db, storage, isFirebaseConfigured } from '../config/firebase';
 
 const KIND_PATHS = {
@@ -111,7 +111,7 @@ export async function listIdReviews({ status = null } = {}) {
 export async function getIdViewUrl({ uid, kind = 'personal', side = 'front' }) {
   if (!isFirebaseConfigured) return null;
   try {
-    const fn = httpsCallable(getFunctions(), 'getIdViewUrl');
+    const fn = serverFunction('getIdViewUrl');
     const res = await fn({ uid, kind, side });
     return res?.data?.url || null;
   } catch (e) {

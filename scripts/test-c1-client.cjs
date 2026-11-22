@@ -10,14 +10,13 @@ const declarations = ast.program.body.map((node) => node.declaration || node)
 assert.equal(declarations.length, 3);
 const actual = declarations.map((node) => source.slice(node.start, node.end)).join('\n').replace(/\bimport\(/g, 'loadModule(');
 let calls = [], response = { ok: true, cached: false, receipt_id: 'rcpt_p' }, failure;
-const adapter = new Function('useMock', 'isFirebaseConfigured', 'loadModule', `${actual}; return { completePickup, reportPickupSpoiled };`)(
-  () => false, true, async (name) => {
-    assert.equal(name, 'firebase/functions');
-    return { getFunctions: () => ({}), httpsCallable: (_, callable) => async (payload) => {
-      assert.equal(callable, 'completePickupOperation'); calls.push(payload);
-      if (failure) throw failure;
-      return { data: response };
-    } };
+// The adapter reaches the server through serverFunction (Cloud Functions
+// or the free rescue engine Worker); this stub records the payloads.
+const adapter = new Function('useMock', 'isFirebaseConfigured', 'serverFunction', `${actual}; return { completePickup, reportPickupSpoiled };`)(
+  () => false, true, (callable) => async (payload) => {
+    assert.equal(callable, 'completePickupOperation'); calls.push(payload);
+    if (failure) throw failure;
+    return { data: response };
   });
 (async () => {
   assert.equal((await adapter.completePickup('p', 20)).receipt_id, 'rcpt_p');

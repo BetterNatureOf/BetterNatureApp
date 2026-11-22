@@ -302,6 +302,27 @@ offline banner (found and fixed: it stretched to full height on web).
 API (no token on this machine; adapter tested with a fake fetch); native
 compilation and on-device interaction; push delivery.
 
+## Free server: rescue engine (Nov 22)
+
+Production can't use Cloud Functions without a Google billing account, so
+the server side runs on a free Cloudflare Worker, `workers/rescue-engine`
+(see its README). Firebase stays on the free Spark plan (Auth, Firestore,
+Storage, rules, indexes). The Worker reuses `functions/*.js` unchanged
+through REST shims, serves the same callables over the Firebase callable
+protocol, runs the schedule from one per-minute cron, and replaces
+Firestore triggers with app pings (`pickupChanged`) plus polling of
+`pickups.updated_at`, new users and activity rows, and a 6-hourly sweep.
+Client pickup writes now carry `updated_at` (rules accept it only as the
+server time and ignore it in transition checks). The Expo push trigger is
+dropped; push and email go through the notification-dispatcher Worker.
+
+Verified locally: all node suites pass through the REST shims; the Worker's
+own tests (HTTP protocol, auth, CORS, errors, polling idempotency); the
+Worker runs in Cloudflare's runtime (`wrangler dev`); browser flow on the
+free stack (no Cloud Functions): coordinator confirms a site → offer → the
+volunteer accepts → release → the Worker settles the hold and closes
+dispatch.
+
 ## Configuration
 
 | Setting | Where | Notes |
