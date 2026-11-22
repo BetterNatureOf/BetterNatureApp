@@ -19,6 +19,8 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import ActiveRescueMap from '../../components/maps/ActiveRescueMap';
 import RescueMap from '../../components/maps/RescueMap';
 import RescueOfferPanel from '../../components/pickup/RescueOfferPanel';
+import FabricButton from '../../components/ui/FabricButton';
+import UploadButton from '../../components/ui/UploadButton';
 import PickupCard from '../../components/pickup/PickupCard';
 import PickupTimeline from '../../components/pickup/PickupTimeline';
 import PickupContacts from '../../components/pickup/PickupContacts';
@@ -117,6 +119,7 @@ export default function PickupDetail({ route, navigation }) {
   const [dropoffPhotoUri, setDropoffPhotoUri] = useState(null); // local, pre-upload
   const [uploadedDropoffUrl, setUploadedDropoffUrl] = useState(null);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [proofFailed, setProofFailed] = useState(false);
   const [myLoc, setMyLoc] = useState(null);
   // Restaurant verifying that the volunteer just walked in to pick up.
   const [verifying, setVerifying] = useState(false);
@@ -345,10 +348,11 @@ export default function PickupDetail({ route, navigation }) {
       if (!uri) return;
       setDropoffPhotoUri(uri);
       // Upload straight away so completePickup only needs the URL.
-      setUploadingProof(true);
+      setUploadingProof(true); setProofFailed(false);
       const url = await uploadPickupPhoto(`dropoff-${pickup.id}`, uri);
       setUploadedDropoffUrl(url || null);
     } catch (e) {
+      setProofFailed(true);
       notify('Photo upload failed', e?.message || 'Try again — the tax receipt still ships without it.');
     } finally { setUploadingProof(false); }
   }
@@ -649,12 +653,9 @@ export default function PickupDetail({ route, navigation }) {
   };
   const needsFridge = !onHold && isClaimant && pickup.status === 'claimed' && !pickup.fridge_id && !pickup.destination_confirmation;
   const reviewing = cta && pickup.status === 'available' && !staff && !onHold;
+  // The volunteer's main commitment (accept → on my way → delivered).
   const nextAction = cta && (
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled: cta.loading || cta.disabled, busy: cta.loading }}
-      disabled={cta.loading || cta.disabled} onPress={cta.onPress}
-      style={({ pressed }) => [styles.rescueAction, (pressed || cta.loading) && { opacity: 0.75 }, cta.disabled && { opacity: 0.45 }]}>
-      <Text style={styles.rescueActionLabel}>{cta.label}</Text>
-    </Pressable>
+    <FabricButton title={cta.label} onPress={cta.onPress} loading={cta.loading} disabled={cta.disabled} />
   );
   const actionInTrip = showTripMap && cta && !needsFridge;
 
@@ -1128,35 +1129,19 @@ export default function PickupDetail({ route, navigation }) {
             <Text style={styles.sectionLabel}>
               Drop-off proof <Text style={styles.optional}>· optional, shown on the receipt</Text>
             </Text>
-            {dropoffPhotoUri ? (
+            {!!dropoffPhotoUri && (
               <View style={styles.proofPhotoWrap}>
                 <Image source={{ uri: dropoffPhotoUri }} style={styles.proofPhoto} resizeMode="cover" />
-                {uploadingProof ? (
-                  <View style={styles.proofOverlay}>
-                    <ActivityIndicator color={Colors.white} />
-                    <Text style={styles.proofOverlayText}>Uploading…</Text>
-                  </View>
-                ) : uploadedDropoffUrl ? (
-                  <View style={styles.proofBadge}>
-                    <Text style={styles.proofBadgeText}>✓ Attached</Text>
-                  </View>
-                ) : null}
-                <TouchableOpacity onPress={handleAddDropoffPhoto} style={styles.proofRetake}>
-                  <Text style={styles.proofRetakeText}>Retake</Text>
-                </TouchableOpacity>
               </View>
-            ) : (
-              <TouchableOpacity style={styles.proofBtn} onPress={handleAddDropoffPhoto} activeOpacity={0.85}>
-                <Icon name="camera" size={16} color={Colors.green} />
-                <Text style={styles.proofBtnText}>Snap the food in the fridge</Text>
-              </TouchableOpacity>
             )}
+            <UploadButton label="Snap the food in the fridge" workingLabel="Uploading photo…"
+              doneLabel="Photo attached · tap to retake" errorLabel="Upload failed — tap to retry"
+              state={uploadingProof ? 'working' : proofFailed ? 'error' : uploadedDropoffUrl ? 'done' : 'idle'}
+              onPress={handleAddDropoffPhoto} />
           </View>
         ) : null}
 
-        {cta && !onHold && !reviewing && !actionInTrip && (
-          <Button title={cta.label} onPress={cta.onPress} loading={cta.loading} />
-        )}
+        {cta && !onHold && !reviewing && !actionInTrip && nextAction}
 
         {!onHold && isClaimant && ['claimed', 'enroute'].includes(pickup.status) && (
           <View style={styles.section}>

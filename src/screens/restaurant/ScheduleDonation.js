@@ -2,7 +2,7 @@
 // "Snap surplus", picks a weight chip, picks a window chip, taps Post.
 // Goal: under a minute end-to-end so it actually happens during a busy
 // service. Anything not on this screen is friction.
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Image, StyleSheet, Alert, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -25,6 +25,7 @@ import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
 import Screen from '../../components/ui/Screen';
+import PaperPlaneButton from '../../components/ui/PaperPlaneButton';
 import { FOOD_CATEGORIES } from '../../../functions/lib/rescueCargo';
 import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
@@ -43,6 +44,7 @@ function inHours(h) {
 
 export default function ScheduleDonation({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  const postedNote = useRef('');
   const [photoUri, setPhotoUri] = useState(null);
   const [weight, setWeight] = useState(20);
   const [windowKey, setWindowKey] = useState('3h');
@@ -218,12 +220,8 @@ export default function ScheduleDonation({ navigation }) {
           partnerNote = 'We couldn’t reach the partner just now, so a coordinator will confirm where it goes.';
         }
       }
-      // Toast and dismiss right away.
-      notifyThen(
-        'Donation posted',
-        `${partnerNote} Volunteers are only contacted after a receiving partner accepts.`,
-        () => navigation.goBack(),
-      );
+      // The send button flies off once this resolves, then shows the note.
+      postedNote.current = `${partnerNote} Volunteers are only contacted after a receiving partner accepts.`;
 
       // Fire-and-forget photo upload + patch. If it fails the
       // pickup still exists, just without a thumbnail; restaurant
@@ -248,9 +246,10 @@ export default function ScheduleDonation({ navigation }) {
             }).catch(() => {});
           });
       }
+      return true;
     } catch (e) {
       console.error('createPickup failed:', e);
-      notify('Could not post', e?.message || 'Try again.');
+      return { error: e?.message ? `Couldn’t post: ${e.message}` : 'Couldn’t post — try again' };
     } finally {
       setPosting(false);
     }
@@ -448,13 +447,11 @@ export default function ScheduleDonation({ navigation }) {
           style={{ height: 70 }}
         />
 
-        <Button
-          title={posting ? 'Saving…' : 'Submit food offer'}
-          onPress={handlePost}
-          loading={posting}
-          style={styles.submit}
-        />
-        {posting && (
+        <View style={styles.submit}>
+          <PaperPlaneButton title="Send food offer" sentTitle="Offer sent" onPress={handlePost}
+            onSent={() => notifyThen('Donation posted', postedNote.current, () => navigation.goBack())} />
+        </View>
+        {posting && !!photoUri && (
           <View style={styles.uploadingHint}>
             <ActivityIndicator size="small" color={Colors.green} />
             <Text style={styles.uploadingText}>Uploading photo…</Text>
