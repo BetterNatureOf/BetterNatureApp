@@ -1,7 +1,9 @@
 # Rescue system status
 
-Living record of what the rescue system actually does, based on the code on
-`rescue/integration` (C1/A2 line + November IRIS work, merged 2026-11-21).
+Living record of what the rescue system actually does. Slices 1–4 and the
+impact reconciliation are on `main` (PR #4, merged 2026-11-21). Offers,
+partner requests, recurring donations, site closures/storage and the role UX
+are on `feat/rescue-offers` (cut from `origin/main` d3fad062, not pushed).
 Update it whenever a slice lands. "Verified" means exercised by an emulator
 test or a browser run listed below. Nothing here is deployed until the
 deployment section says so.
@@ -22,7 +24,11 @@ deployment section says so.
 | Donor posts surplus | ScheduleDonation → `createPickup` | rules: create as `pending_destination` | verified (delivery suite) |
 | Coordinator confirms receiving site | PickupDetail → `confirmPickupDestination` | rules `isDestinationConfirm` (chapter staff or exec) | verified |
 | Receiving-site account assigned | PickupDetail → `assignRescueReceiver` callable | functions/pickupReceiving.js | code only |
-| Nearby alert rounds + escalation | `dispatchRescueOffer` trigger, `advanceRescueDispatch` scheduler | functions/rescueDispatch.js | verified (12 emulator cases + browser) |
+| Donor picks where it goes (network / preferred partner / coordinator) | ScheduleDonation → `requestReceivingPartner` | functions/partnerRequests.js | verified (8 cases + browser) |
+| Partner accepts / declines before `respond_by` | Receiving screen (`/#/receiving`) → `respondToPartnerRequest` | reserve-and-confirm transaction in receivingSites.js | verified (browser) |
+| Recurring donation occurrence | `materializeDonationOccurrences` (15 min), RecurringDonations → `confirmDonationOccurrence` | functions/donationSchedules.js | verified (8 cases incl. DST) |
+| Bounded server offers + widening + escalation | `dispatchRescueOffer` trigger, `advanceRescueDispatch`, `closeExpiredRescueOffers` | functions/rescueDispatch.js | verified (21 cases + browser) |
+| Volunteer accepts / declines an offer | PickupDetail offer banner → `respondToRescueOffer` | functions/rescueOffers.js | verified (accept race, expiry, revalidation, browser) |
 | Volunteer discovery | PickupsScreen (Map/List, H3 cells) | `usePickups`, rescueCells | code only |
 | Claim | PickupDetail → `claimPickup` | rules `isAtomicClaim` + `claimWindowOk` | verified (race, chapter, window) |
 | Release | PickupDetail → `cancelClaim` | rules + `recordPickupRelease` ledger | verified |
@@ -86,13 +92,71 @@ deployment section says so.
    offer closes, are notified server-side. Custody transfer candidates come from
    `listCustodyCandidates`, which fixes the A2 regression where presidents
    couldn't load the picker.
-5. **Reporting.** C1 completion writes the activity, totals and org_stats once.
-   Legacy profile totals, manual history entries and event check-ins are not
-   reconciled against activity rows.
-6. **Offline and native.** There is no connectivity or save-status feedback and
-   no draft recovery. Native push, location and deep links have not been
-   checked on a device.
-7. **Recall.** Not implemented.
+5. **Reporting — done (816c9ede, a4081a4b).** `impactLedger` counts each
+   activity once and explains legacy counter differences instead of adding
+   them; event check-ins use `checkin_<event>_<user>` IDs and server counters.
+   Chapter reports show the verified card. Tests: tests/rules/impact.test.mjs.
+6. **Server-owned offers — done (200d0c18, feat/rescue-offers).** Dispatch no
+   longer broadcasts. Each round writes `pickups/{id}/offers/{gen}_{uid}` to the
+   best `RESCUE_OFFER_BATCH` volunteers (default 1, max 3) for
+   `RESCUE_OFFER_TTL_MIN` (default 5). H3 rings (res 7, k = 2 / 4 / 7) only
+   build the shortlist; each candidate must pass eligibility, chapter, cargo
+   fit, schedule conflicts and `rescueMatching.journey()` (volunteer → donor
+   before cutoff → site before `arrival_by`, 10 min loading/unloading, 5 min
+   buffer on road times or 15 min on the labeled approximate estimate of
+   km × 1.35 at 30 km/h). Declining has no penalty and moves on at once.
+   Acceptance (`respondToRescueOffer`) re-checks the offer, eligibility,
+   conflicts, fit, the site reservation and the journey inside one transaction;
+   a lost race returns `taken`. Widening stops when nobody is feasible and the
+   coordinator is escalated with `no_feasible_volunteer` or `no_acceptance`.
+   Claims and closures withdraw open offers; offer notifications are marked
+   closed and dimmed in Notifications.
+7. **Receiving partners — done (2e826168).** Donors choose BN network, a
+   preferred partner, or "let a coordinator decide", plus whether a preferred
+   partner's silence or decline may fall back to the network. The partner sees
+   the request on the Receiving screen and answers before `respond_by` (default
+   30 min, 10–240, never later than 15 min before the pickup window ends).
+   Accepting reuses the site reserve-and-confirm transaction and only then opens
+   dispatch, so recipient acceptance stays separate from driver assignment.
+   Declines and expiries follow the donor's fallback choice or go to the
+   coordinator queue (`awaiting_partner`). Receivers can pause/resume their site
+   but cannot edit anything else on it.
+8. **Recurring donations — done (fa2ea44c).** `donation_schedules` (weekdays,
+   local ready time, timezone, window, end date, skip dates, food template,
+   destination choice). Occurrences `donation_occurrences/{schedule}_{date}` are
+   created once, up to 3 h ahead, and the donor must confirm each one (with an
+   estimate) or skip it; unconfirmed ones become `missed`. Times stay at local
+   wall-clock across DST. Confirmed weights are labeled `weight_basis:
+   estimate` until a receipt records measured pounds.
+9. **Site closures and storage — done (84dc0bc5).** Date closures
+   (`closed_on_date`), storage capability (`no_cold_storage`, `no_hot_holding`,
+   `storage_unknown` warning) and reservations that expire 30 min after
+   `arrival_by` so stale holds stop consuming capacity. Offer acceptance
+   requires the reservation to still be held.
+10. **Role UX — done (6ba90f5e).** One three-step progress card (partner,
+    volunteer, delivery) for donors, coordinators and receivers; the receiving
+    screen offers receive-by times after the pickup window and disables times
+    when the site is closed; a web offline banner says taps aren't saved.
+11. **Still open.** Recall workflow (not implemented). Native offline banner
+    (needs `@react-native-community/netinfo`). Possible double push (Expo
+    `sendPushOnNotification` plus the OneSignal dispatcher) — unchecked. Site
+    addresses aren't geocoded, so the drop-off leg is "unknown" and only the
+    pickup leg is timed. The legacy client claim path is still allowed by rules
+    for unsited rescues. No coordinator button to push a donor-declined request
+    to the network. No site-level receiver assignment UI. Recurring donations
+    not yet run in a browser. Native push, location and deep links not checked
+    on a device.
+
+### Reference sources and what came from them
+
+- Clean Memphis Project Green Fork page: no matching, dispatch or
+  certification details to draw on; nothing was taken from it, and the app
+  never implies certification by or affiliation with Clean Memphis.
+- 2023 annual report PDF: too large to read in this session (>10 MB); nothing
+  is based on it.
+- Uber H3 blog post: documents hexagonal indexing for analysis. BN uses H3 only
+  for the nearby shortlist; the offer sequence, timeouts, widening and
+  feasibility rules are BN decisions, not Uber's dispatch algorithm.
 
 Known A2 trade-offs to keep in mind: signed-out visitors can no longer queue
 outbox email (StartChapter receipt email fails quietly). Cross-user
@@ -126,6 +190,25 @@ notifications must go through `queueBusinessNotification` or server code.
   collected run loads eligible replacements through the callable and the
   president records the custody transfer.
 
+- feat/rescue-offers, demo-bn-rescue stack: donor posts produce (3 items) to
+  preferred partner Mid-South Pantry with network fallback → the pantry
+  receiver sees it on Receiving, a too-early time is refused (pickup cutoff),
+  a closed time is disabled, accepting confirms the site and reserves
+  capacity → dispatch offers Val only (Vic skipped as busy) with an
+  approximate trip and unknown drop-off leg → Val sees the offer banner and
+  accepts → pickup `claimed_via: offer`, offer `accepted`, dispatch `assigned`.
+
+## Configuration
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `RESCUE_OFFER_BATCH` | 1 | volunteers offered at once, 1–3 |
+| `RESCUE_OFFER_TTL_MIN` | 5 | minutes to answer an offer |
+| `RESCUE_ROUTING_BASE_URL` / `_TOKEN` | unset | OSRM-compatible; unset = labeled approximate times |
+| partner `respondWithinMin` | 30 | 10–240, capped 15 min before pickup window ends |
+| recurring lead time | 3 h | `LEAD_MS` in donationSchedules.js |
+| reservation expiry | arrival_by + 30 min | receivingSites.js |
+
 ## Local verification
 
 ```bash
@@ -142,5 +225,7 @@ with yours (signing in or out in one affects the other). Use
 
 Manual browser testing: `npm run emulators`, then `npm run seed:emulators`,
 then `npm run web:emulators` (or the "Expo Web (emulators)" launch config).
+A second isolated stack (project `demo-bn-rescue`, firebase.dev2.json) runs
+with `npm run emulators:alt`, `seed:emulators:alt`, `web:emulators:alt`.
 Demo accounts are `*@demo.betternature.test`; the password is in
 `scripts/seed-emulator.cjs`.
