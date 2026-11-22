@@ -9,7 +9,14 @@
 import { getFunctions, httpsCallable, httpsCallableFromURL } from 'firebase/functions';
 import { firebaseApp } from '../config/firebase';
 
-export const ENGINE_URL = ((typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_RESCUE_ENGINE_URL) || '').replace(/\/$/, '');
+// Production default: the deployed rescue engine (a public URL, not a
+// secret). EXPO_PUBLIC_RESCUE_ENGINE_URL overrides it; local emulator
+// builds (EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1) default to Cloud Functions
+// on the functions emulator unless the override is set.
+const PRODUCTION_ENGINE_URL = 'https://bn-rescue-engine.satvik-koya.workers.dev';
+// Written literally so Expo inlines them at build time.
+export const ENGINE_URL = (process.env.EXPO_PUBLIC_RESCUE_ENGINE_URL
+  || (process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS === '1' ? '' : PRODUCTION_ENGINE_URL)).replace(/\/$/, '');
 
 export function serverFunction(name) {
   const fns = getFunctions(firebaseApp);
