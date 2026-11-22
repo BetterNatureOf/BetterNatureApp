@@ -1,9 +1,11 @@
 export const Colors = {
-  // Primary
-  pink: '#E8627C',
+  // Primary — Blossom 600. Approved 2026-11-22 (Figma "Option A"): the old
+  // #E8627C failed WCAG AA with white text (3.25:1); this carries white at
+  // 5.14:1 and reads at 4.85:1 as text on cream.
+  pink: '#C13D5B',
   pinkSoft: '#F28AA9',
   pinkLight: '#FDF0F3',
-  pinkGlow: 'rgba(232,98,124,0.18)',
+  pinkGlow: 'rgba(193,61,91,0.18)',
 
   // Greens
   green: '#2A5648',
@@ -43,7 +45,7 @@ export const Colors = {
   gradient: {
     green: ['#2A5648', '#3D7A67'],
     greenSoft: ['#367262', '#4A9B84'],
-    pink: ['#E8627C', '#F08B6D'],
+    pink: ['#C13D5B', '#C9405E'], // Blossom 600 → 550, white text ≥ 4.80:1 end to end
     sunset: ['#E8627C', '#E8A94E'],
     sky: ['#7CC5D4', '#A8DDE6'],
     sage: ['#6FA3A3', '#8FC4C4'],
