@@ -10,6 +10,7 @@ import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/fire
 import { db } from '../../config/firebase';
 import { Colors, Type } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import Button from '../../components/ui/Button';
@@ -75,14 +76,16 @@ export default function RescueQueue({ navigation }) {
   }, []);
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero kicker="Coordinator" title="Rescue queue" subtitle="Everything that needs a decision, most urgent first. Updates live."
+        onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))}
+        stats={queue ? [
+          { value: queue.items.filter((i) => URGENT.has(i.kind)).length, label: 'need you now', tone: queue.items.some((i) => URGENT.has(i.kind)) ? 'alert' : undefined },
+          { value: queue.items.length, label: 'in the queue' },
+          { value: queue.healthy, label: 'on schedule' },
+        ] : []} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={720}>
-        <TouchableOpacity onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))}
-          accessibilityRole="button">
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle">Rescue queue</BrushText>
-        <Text style={styles.subtitle}>Everything that needs a decision, most urgent first. Updates live.</Text>
         {!chapterId && <Text style={styles.empty}>Your account isn’t linked to a chapter.</Text>}
         {!!error && <Text style={styles.error}>{error}</Text>}
         {queue === null && !!chapterId && !error && <ActivityIndicator color={Colors.green} />}
@@ -115,6 +118,7 @@ export default function RescueQueue({ navigation }) {
           <Text style={styles.footer}>{queue.healthy} other rescue{queue.healthy === 1 ? ' is' : 's are'} on schedule.</Text>
         )}
       </ResponsiveContainer>
+      </BrandSheet>
     </Screen>
   );
 }
@@ -123,8 +127,9 @@ const styles = StyleSheet.create({
   content: { paddingTop: 12, paddingBottom: 40, paddingHorizontal: 20 },
   back: { color: Colors.green, fontSize: 15, fontWeight: '600', paddingVertical: 8 },
   subtitle: { ...Type.body, color: Colors.gray, marginTop: 6, marginBottom: 16 },
-  card: { backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1, borderColor: Colors.grayLight, padding: 14, marginBottom: 12 },
-  cardUrgent: { borderColor: '#F4D9A8' },
+  card: { backgroundColor: Colors.white, borderRadius: 20, borderWidth: 1, borderColor: '#E7EBE6', padding: 16, marginBottom: 12, gap: 4,
+    shadowColor: '#0B2A20', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  cardUrgent: { borderColor: Colors.pink, borderLeftWidth: 4 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   badge: { fontSize: 12, fontWeight: '700', color: Colors.green, backgroundColor: Colors.greenLight, borderRadius: 999,
     paddingHorizontal: 10, paddingVertical: 4, overflow: 'hidden' },

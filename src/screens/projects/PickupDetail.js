@@ -12,6 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Platform, Pressable } from 'react-native';
 import { Colors, Type, Radius } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
@@ -660,14 +661,15 @@ export default function PickupDetail({ route, navigation }) {
   if (isReceiver && !staff) {
     const canReceive = waitingForReceipt && !!pickup.verified_by_restaurant_at && !isClaimant;
     return (
-      <Screen contentStyle={styles.content}>
+      <Screen contentStyle={{ padding: 0 }}>
+        <BrandHero kicker="Receiving" title="Receive food" subtitle={pickup.restaurant_name ? `From ${pickup.restaurant_name}` : undefined}
+          onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Notifications'))}
+          stats={[
+            pickup.destination_confirmation?.accepted_weight_lbs ? { value: `${pickup.destination_confirmation.accepted_weight_lbs} lb`, label: 'expected (estimate)' } : null,
+            arrivalBy !== null ? { value: new Date(arrivalBy).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), label: 'receive by' } : null,
+          ]} />
+        <BrandSheet>
         <ResponsiveContainer maxWidth={560}>
-          <AnimatedPressable onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Notifications')}
-            style={styles.back} scaleTo={0.97}>
-            <Icon name="back" size={18} color={Colors.green} />
-            <Text style={styles.backText}>Back</Text>
-          </AnimatedPressable>
-          <BrushText variant="screenTitle" style={styles.title}>Receive food</BrushText>
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>{pickup.destination_confirmation?.site_name}</Text>
             <Text style={styles.sectionHelp}>{pickup.destination_confirmation?.address}</Text>
@@ -696,20 +698,26 @@ export default function PickupDetail({ route, navigation }) {
             </Text>
           )}
         </ResponsiveContainer>
+        </BrandSheet>
       </Screen>
     );
   }
 
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const heroTitle = reviewing ? (myOffer ? 'Your offer' : 'Review pickup') : showTripMap ? 'Your rescue' : 'Pickup';
+  const STATUS_LABEL = { pending_destination: 'Finding a site', available: 'Open', claimed: 'Volunteer assigned', enroute: 'On the way',
+    completed: 'Delivered', cancelled: 'Cancelled' };
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero kicker="Food rescue" title={heroTitle} onBack={goBackOrRescue}
+        subtitle={[pickup.restaurant_name, pickup.destination_confirmation?.site_name].filter(Boolean).join(' → ') || undefined}
+        stats={[
+          { value: STATUS_LABEL[pickup.status] || pickup.status, label: 'status', tone: onHold ? 'alert' : undefined },
+          pickupBy !== null && !droppingOff ? { value: hhmm(pickupBy), label: 'pick up by' } : null,
+          arrivalBy !== null ? { value: hhmm(arrivalBy), label: 'drop off by' } : null,
+        ]} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={720}>
-        <AnimatedPressable onPress={goBackOrRescue} style={styles.back} scaleTo={0.97}>
-          <Icon name="back" size={18} color={Colors.green} />
-          <Text style={styles.backText}>Back</Text>
-        </AnimatedPressable>
-        {reviewing || showTripMap ? (
-          <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={styles.rescueTitle}>{reviewing ? 'Review pickup' : 'Your rescue'}</Text>
-        ) : <BrushText variant="screenTitle" style={styles.title}>Pickup</BrushText>}
 
         {(offerExpired || (!isClaimant && !userIsRestaurant && !staff &&
           ['claimed', 'enroute', 'cancelled', 'completed'].includes(pickup.status))) && (
@@ -1213,6 +1221,7 @@ export default function PickupDetail({ route, navigation }) {
           </View>
         ) : null}
       </ResponsiveContainer>
+      </BrandSheet>
     </Screen>
   );
 }

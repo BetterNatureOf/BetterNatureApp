@@ -3,11 +3,11 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from '
 import { Colors, Type } from '../../config/theme';
 import Icon from '../../components/ui/Icon';
 import Button from '../../components/ui/Button';
-import Card from '../../components/ui/Card';
 import Screen from '../../components/ui/Screen';
 import usePickups from '../../hooks/usePickups';
 import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import RescueMap from '../../components/maps/RescueMap';
+import { ActionCard, BrandHero, BrandSheet, brand } from '../../components/ui/BrandHero';
 import { pickupDeadline, rescueCell, rescueOfferDeadline } from '../../services/rescueCells';
 import useAuthStore from '../../store/authStore';
 import { db } from '../../config/firebase';
@@ -65,7 +65,7 @@ function NearbyRescues({ uid, now }) {
   }
 
   return (
-    <Card>
+    <View style={[brand.panel, { gap: 8 }]}>
       <Text style={styles.offerTitle}>Nearby rescue offers</Text>
       <Text style={styles.caption}>{active
         ? 'You can get offers for the next hour. We use your approximate area (about 2 km across), never your exact location.'
@@ -75,7 +75,7 @@ function NearbyRescues({ uid, now }) {
         loading={busy} disabled={availability === null} onPress={() => changeAvailability(false)} />
       {availability?.cell && <Button variant="secondary" title="Stop sharing my area" disabled={busy}
         onPress={() => changeAvailability(true)} />}
-    </Card>
+    </View>
   );
 }
 
@@ -151,118 +151,102 @@ export default function PickupsScreen({ navigation, inTab = false }) {
     );
   }
 
-  return (
-    <Screen
-      webHeight={inTab ? '100%' : undefined}
-      contentStyle={Platform.OS === 'web' ? { ...contentStyle, paddingTop: 12, paddingInline: 16 } : contentStyle}
-    >
-      {!inTab && (
-        <Pressable
-          accessibilityRole="button"
-          style={styles.back}
-          onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs')}
-        >
-          <Text style={styles.backLabel}>‹  Back</Text>
-        </Pressable>
-      )}
-      <Text accessibilityRole="header" style={styles.title}>Food pickups</Text>
-      {!loading && available.length > 0 && <Text style={styles.count}>{available.length} available in your chapter</Text>}
+  const closingSoon = points.filter((p) => p.soon).length;
+  function pickupCard(pickup) {
+    const by = pickupDeadline(pickup.latest_safe_start_at ?? pickup.destination_confirmation?.pickup_by ?? pickup.pickup_window_until);
+    const line = offerLine(pickup);
+    const soon = (rescueOfferDeadline(pickup) ?? Infinity) - now <= CLOSING_SOON_MS;
+    return (
+      <ActionCard key={pickup.id} icon={soon ? 'clock' : 'store'} accent={soon ? 'amber' : 'green'} highlight={offeredToMe.has(pickup.id)}
+        title={pickup.restaurant_name || 'Food partner'}
+        body={[`Drop off at ${pickup.destination_confirmation?.site_name || pickup.fridge_name || 'a receiving site'}`,
+          pickup.estimated_weight_lbs ? `${pickup.estimated_weight_lbs} lb` : null].filter(Boolean).join(' · ')}
+        meta={line || (by ? `Pick up by ${clock(by)}` : 'Pickup time unlisted')}
+        onPress={() => navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup })} />
+    );
+  }
 
-      {myOffers.map((o) => (
-        <Pressable key={o.id} accessibilityRole="button" onPress={() => navigation.navigate('PickupDetail', { pickupId: o.pickup_id })}
-          style={styles.offerBanner}>
-          <Icon name="truck" color={Colors.white} size={20} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.offerBannerTitle}>A rescue is offered to you</Text>
-            <Text style={styles.offerBannerBody}>Respond by {clock(pickupDeadline(o.expires_at))} · review the stops and timing</Text>
+  return (
+    <Screen webHeight={inTab ? '100%' : undefined} contentStyle={{ padding: 0 }}>
+      <BrandHero
+        kicker="Food rescue"
+        title="Food pickups"
+        subtitle={user?.chapter_id ? 'Open rescues in your chapter. Offers come to you one at a time.' : 'Join a chapter to see rescues near you.'}
+        onBack={inTab ? undefined : () => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs'))}
+        stats={loading ? [] : [
+          { value: available.length, label: available.length === 1 ? 'open rescue' : 'open rescues' },
+          closingSoon ? { value: closingSoon, label: 'closing soon' } : null,
+          myOffers.length ? { value: myOffers.length, label: myOffers.length === 1 ? 'offer for you' : 'offers for you', tone: 'alert' } : null,
+        ]} />
+      <BrandSheet>
+        {myOffers.map((o) => (
+          <ActionCard key={o.id} icon="truck" accent="pink" highlight title="A rescue is offered to you"
+            body="Only you can accept it right now. Review the stops and timing."
+            meta={`Respond by ${clock(pickupDeadline(o.expires_at))}`}
+            onPress={() => navigation.navigate('PickupDetail', { pickupId: o.pickup_id })} />
+        ))}
+        {loading && <ActivityIndicator color={Colors.green} accessibilityLabel="Loading pickups" />}
+        {active.map((pickup) => (
+          <ActionCard key={pickup.id} icon="truck" title={pickup.safety_hold ? 'Pickup on hold' : 'Resume your rescue'}
+            body={pickup.verified_by_restaurant_at ? `Drop off at ${pickup.fridge_name || 'the receiving site'}` : `Pick up at ${pickup.restaurant_name || 'the food partner'}`}
+            onPress={() => navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup })} />
+        ))}
+        {error && (
+          <View style={brand.panel}>
+            <Text style={Type.body}>Some pickups couldn’t load.</Text>
+            <Button title="Try again" onPress={loadPickups} />
           </View>
-          <Icon name="chevron" color={Colors.white} size={18} />
-        </Pressable>
-      ))}
-      {loading && <ActivityIndicator color={Colors.green} accessibilityLabel="Loading pickups" />}
-      {active.map((pickup) => (
-        <Pressable
-          key={pickup.id}
-          accessibilityRole="button"
-          onPress={() => navigation.navigate('PickupDetail', { pickupId: pickup.id, pickup })}
-          style={styles.activeRun}
-        >
-          <Icon name="truck" color={Colors.green} size={22} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.offerTitle}>{pickup.safety_hold ? 'Pickup on hold' : 'Resume pickup'}</Text>
-            <Text style={styles.caption}>
-              {pickup.verified_by_restaurant_at
-                ? pickup.fridge_name || 'Drop-off'
-                : pickup.restaurant_name || 'Food partner'}
-            </Text>
-          </View>
-          <Icon name="chevron" color={Colors.green} size={18} />
-        </Pressable>
-      ))}
-      {error && (
-        <Card>
-          <Text style={Type.body}>Some pickups couldn’t load.</Text>
-          <Button title="Try again" onPress={loadPickups} />
-        </Card>
-      )}
-      {!loading && (
-        <View style={{ gap: 12 }}>
-          {available.length > 0 && (
+        )}
+        {!loading && available.length > 0 && (
+          <>
+            <Text style={brand.section} accessibilityRole="header">Open rescues</Text>
             <View style={styles.segmented}>
-              {['List', 'Map'].map((value) => (
-                <Pressable
-                  key={value}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: mode === value }}
-                  onPress={() => changeMode(value)}
-                  style={[styles.segment, mode === value && styles.segmentSelected]}
-                >
-                  <Text style={styles.segmentLabel}>{value}</Text>
+              {['Map', 'List'].map((value) => (
+                <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value }}
+                  onPress={() => changeMode(value)} style={[styles.segment, mode === value && styles.segmentSelected]}>
+                  <Text style={[styles.segmentLabel, mode === value && styles.segmentLabelOn]}>{value}</Text>
                 </Pressable>
               ))}
             </View>
-          )}
-          {mode === 'Map' && available.length > 0 && (
-            <RescueMap mode="browse" points={points} selectedId={selected} onSelect={selectPoint}
-              onPickArea={Platform.OS === 'web' && user?.id && user?.chapter_id ? pickArea : undefined}>
-              {selectedPickup && (
-                <View style={styles.sheet} accessibilityRole="summary">
-                  <View style={styles.sheetTop}>
-                    <Text style={styles.sheetTitle} numberOfLines={1}>Selected pickup</Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setSelected(null)} style={styles.sheetClose}>
-                      <Text style={styles.sheetCloseText}>×</Text>
-                    </Pressable>
-                  </View>
-                  {renderPickup(selectedPickup)}
+          </>
+        )}
+        {!loading && mode === 'Map' && available.length > 0 && (
+          <RescueMap mode="browse" points={points} selectedId={selected} onSelect={selectPoint}
+            onPickArea={Platform.OS === 'web' && user?.id && user?.chapter_id ? pickArea : undefined}>
+            {selectedPickup && (
+              <View style={styles.sheet} accessibilityRole="summary">
+                <View style={styles.sheetTop}>
+                  <Text style={styles.sheetTitle} numberOfLines={1}>Selected pickup</Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setSelected(null)} style={styles.sheetClose}>
+                    <Text style={styles.sheetCloseText}>×</Text>
+                  </Pressable>
                 </View>
-              )}
-            </RescueMap>
-          )}
-          {mode === 'Map' && !!areaNote && <Text accessibilityRole="alert" style={styles.caption}>{areaNote}</Text>}
-          {mode === 'Map' && available.length > 0 && !selectedPickup && (
-            <Text style={styles.caption}>{points.length} on the map · tap a dot to see it{unmapped > 0 ? ` · ${unmapped} without a map location` : ''}</Text>
-          )}
-          {mode === 'Map' && unmapped > 0 && (
-            <Pressable accessibilityRole="button" onPress={() => changeMode('List')} style={styles.back}>
-              <Text style={styles.backLabel}>{unmapped} without a map location · View list</Text>
-            </Pressable>
-          )}
-          {mode === 'List' && available.map(renderPickup)}
-          {!user?.chapter_id ? (
-            <Card>
-              <Text style={Type.body}>Join a chapter to see pickups near you.</Text>
-              <Button title="Find a chapter" onPress={() => navigation.navigate('FindChapter')} />
-            </Card>
-          ) : available.length === 0 && !error ? (
-            <Card><Text style={Type.body}>No pickups are available in your chapter right now.</Text></Card>
-          ) : null}
-        </View>
-      )}
-      {!loading && !error && user?.chapter_id ? (
-        <Button title="Refresh pickups" variant="secondary" onPress={loadPickups} />
-      ) : null}
-      {Platform.OS === 'web' && db && user?.id && user?.chapter_id &&
-        <NearbyRescues key={user.id} uid={user.id} now={now} />}
+                {renderPickup(selectedPickup)}
+              </View>
+            )}
+          </RescueMap>
+        )}
+        {!loading && mode === 'Map' && !!areaNote && <Text accessibilityRole="alert" style={brand.caption}>{areaNote}</Text>}
+        {!loading && mode === 'Map' && available.length > 0 && !selectedPickup && (
+          <Text style={brand.caption}>{points.length} on the map · tap a dot to see it{unmapped > 0 ? ` · ${unmapped} without a map location` : ''}</Text>
+        )}
+        {!loading && mode === 'Map' && unmapped > 0 && (
+          <Pressable accessibilityRole="button" onPress={() => changeMode('List')} style={styles.back}>
+            <Text style={styles.backLabel}>{unmapped} without a map location · View list</Text>
+          </Pressable>
+        )}
+        {!loading && mode === 'List' && available.map(pickupCard)}
+        {!loading && (!user?.chapter_id ? (
+          <ActionCard icon="users" title="Join a chapter" body="Rescues are organised by chapter. Find yours to see pickups near you."
+            onPress={() => navigation.navigate('FindChapter')} />
+        ) : available.length === 0 && !error ? (
+          <ActionCard icon="leaf" title="No open rescues right now" body="New donations appear here, and offers you can make in time come to you directly." />
+        ) : null)}
+        {Platform.OS === 'web' && db && user?.id && user?.chapter_id && <NearbyRescues key={user.id} uid={user.id} now={now} />}
+        {!loading && !error && user?.chapter_id ? (
+          <Button title="Refresh pickups" variant="secondary" onPress={loadPickups} />
+        ) : null}
+      </BrandSheet>
     </Screen>
   );
 }
@@ -273,10 +257,11 @@ const styles = StyleSheet.create({
   backLabel: { color: Colors.green, fontWeight: '600', fontSize: 16 },
   title: { fontSize: 34, lineHeight: 40, letterSpacing: -1.1, fontWeight: '700', color: Colors.dark },
   count: { fontSize: 15, color: Colors.gray, marginBottom: 12 },
-  segmented: { flexDirection: 'row', backgroundColor: Colors.greenLight, borderRadius: 14, padding: 4 },
-  segment: { flex: 1, minHeight: 44, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  segmentSelected: { backgroundColor: Colors.cream, shadowColor: Colors.dark, shadowOpacity: 0.10, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  segmented: { flexDirection: 'row', backgroundColor: Colors.white, borderRadius: 16, padding: 4, borderWidth: 1, borderColor: '#E7EBE6' },
+  segment: { flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  segmentSelected: { backgroundColor: Colors.green },
   segmentLabel: { color: Colors.green, fontSize: 15, fontWeight: '700' },
+  segmentLabelOn: { color: Colors.white },
   offer: { flexDirection: 'row', alignItems: 'center', minHeight: 64, paddingVertical: 12, gap: 12,
     borderBottomWidth: 1, borderBottomColor: Colors.greenLight },
   offerBody: { flex: 1, gap: 3 },

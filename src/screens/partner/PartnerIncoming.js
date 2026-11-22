@@ -10,6 +10,7 @@ import { Colors, Type } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 import Button from '../../components/ui/Button';
 import useAuthStore from '../../store/authStore';
 import { respondToPartnerRequest } from '../../services/database';
@@ -89,12 +90,16 @@ export default function PartnerIncoming({ navigation }) {
   }, []);
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero kicker="Receiving partner" title="Receiving"
+        subtitle={sites?.length ? sites.map((x) => x.name).join(' · ') : 'Donations offered to your site, and deliveries on the way.'}
+        onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))}
+        stats={sites?.length ? [
+          { value: forMe.length, label: forMe.length === 1 ? 'request waiting' : 'requests waiting', tone: forMe.length ? 'alert' : undefined },
+          { value: incoming.length, label: 'on the way' },
+        ] : []} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={720}>
-        <TouchableOpacity onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))} accessibilityRole="button">
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle">Receiving</BrushText>
         {sites === null && <ActivityIndicator color={Colors.green} />}
         {sites?.length === 0 && <Text style={styles.empty}>Your account isn’t a receiving contact for any site yet. Ask your chapter coordinator to add you.</Text>}
 
@@ -162,6 +167,7 @@ export default function PartnerIncoming({ navigation }) {
           </TouchableOpacity>
         ))}
       </ResponsiveContainer>
+      </BrandSheet>
     </Screen>
   );
 }
@@ -169,8 +175,9 @@ export default function PartnerIncoming({ navigation }) {
 const styles = StyleSheet.create({
   content: { paddingTop: 12, paddingBottom: 40, paddingHorizontal: 20 },
   back: { color: Colors.green, fontSize: 15, fontWeight: '600', paddingVertical: 8 },
-  section: { fontSize: 17, fontWeight: '700', color: Colors.dark, marginTop: 18, marginBottom: 8 },
-  card: { backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1, borderColor: Colors.grayLight, padding: 14, marginBottom: 12, gap: 6 },
+  section: { fontSize: 20, fontWeight: '800', color: Colors.dark, letterSpacing: -0.3, marginTop: 18, marginBottom: 10 },
+  card: { backgroundColor: Colors.white, borderRadius: 20, borderWidth: 1, borderColor: '#E7EBE6', padding: 16, marginBottom: 12, gap: 6,
+    shadowColor: '#0B2A20', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   cardTitle: { fontSize: 16, fontWeight: '700', color: Colors.dark, flexShrink: 1 },
   badge: { fontSize: 12, fontWeight: '700', color: Colors.green, backgroundColor: Colors.greenLight, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, overflow: 'hidden' },
