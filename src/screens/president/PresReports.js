@@ -11,6 +11,7 @@ import {
 } from '../../services/database';
 import { fetchAllPublicProfiles } from '../../services/publicProfiles';
 import Screen from '../../components/ui/Screen';
+import VerifiedImpact from '../../components/impact/VerifiedImpact';
 
 export default function PresReports({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -72,6 +73,9 @@ export default function PresReports({ navigation }) {
         Chapter Reports
       </BrushText>
       <Text style={styles.subtitle}>Your impact this month</Text>
+
+      {/* Ledger-backed totals (each activity once) with legacy differences explained. */}
+      <VerifiedImpact chapterId={user?.chapter_id} />
 
       <View style={styles.heroCard}>
         <Text style={styles.heroLabel}>Pounds of food rescued</Text>
