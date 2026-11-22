@@ -2239,6 +2239,18 @@ export async function saveVehicle(userId, { type, packageCapacity, weightCapacit
   return vehicle;
 }
 
+// Accept or decline a rescue (an offer, or directly from the map/list).
+// The server re-checks state, eligibility, fit, reservation and the
+// journey, and assigns atomically (functions/rescueOffers.js).
+export async function respondToRescue(pickupId, response) {
+  try {
+    return (await httpsCallable(getFunctions(firebaseApp), 'respondToRescueOffer')({ pickupId, response })).data;
+  } catch (e) {
+    if (e?.details?.reason) e.reason = e.details.reason;
+    throw e;
+  }
+}
+
 // Coordinator-only ranked list of nearby volunteers for a rescue.
 export async function suggestRescueVolunteers(pickupId) {
   return (await httpsCallable(getFunctions(firebaseApp), 'suggestRescueVolunteers')({ pickupId })).data;

@@ -89,6 +89,9 @@ exports.volunteerImpact = functions.https.onCall((data, context) =>
 exports.chapterImpact = functions.https.onCall((data, context) =>
   require('./impactReports').chapterImpact(admin.firestore(), data, context.auth?.uid));
 
+exports.respondToRescueOffer = functions.https.onCall((data, context) =>
+  require('./rescueOffers').respond(admin.firestore(), data, context.auth?.uid));
+
 exports.suggestRescueVolunteers = functions.https.onCall((data, context) =>
   require('./rescueSuggestions').suggest(admin.firestore(), data, context.auth?.uid));
 

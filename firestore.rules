@@ -1021,6 +1021,13 @@ service cloud.firestore {
       match /dispatch_alerts/{doc} {
         allow read, write: if false;
       }
+      // Offers: the volunteer sees their own; chapter staff see all.
+      // Written only by rescueDispatch / rescueOffers.
+      match /offers/{offerId} {
+        allow read: if (isSignedIn() && resource.data.uid == request.auth.uid)
+          || isPresOfChapter(get(/databases/$(database)/documents/pickups/$(id)).data.get('chapter_id', null));
+        allow write: if false;
+      }
     }
 
     // ── receiving_sites ──

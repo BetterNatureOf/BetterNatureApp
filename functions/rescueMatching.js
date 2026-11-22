@@ -106,7 +106,45 @@ function suggestRescues(candidates, now) {
   return { suggestions, needsCoverage };
 }
 
-module.exports = { evaluateRescue, suggestRescues };
+// ── Complete-journey check used by live dispatch ─────────────────────
+// volunteer → donor → receiving site, with loading, unloading and an
+// uncertainty buffer. Travel legs are minutes with a `basis`:
+//   road         from the routing service (OSRM-compatible)
+//   approximate  straight-line distance × circuity at a conservative
+//                city speed — labeled as an estimate, never shown as an ETA
+// A missing leg stays unknown; it is never assumed to fit.
+const JOURNEY_DEFAULTS = {
+  loadingMinutes: 10, unloadingMinutes: 10,
+  bufferMinutes: { road: 5, approximate: 15 },
+  approxKmh: 30, circuity: 1.35,
+};
+
+function approximateMinutes(km, cfg = JOURNEY_DEFAULTS) {
+  if (!Number.isFinite(km) || km < 0) return null;
+  return Math.ceil((km * cfg.circuity / cfg.approxKmh) * 60);
+}
+
+function journey({ now, toPickup, toSite, pickupBy, arrivalBy }, cfg = JOURNEY_DEFAULTS) {
+  if (!toPickup || !Number.isFinite(toPickup.minutes) || !Number.isFinite(pickupBy)) {
+    return { feasible: null, reason: 'pickup_leg_unknown' };
+  }
+  const approx = toPickup.basis !== 'road' || (toSite && toSite.basis !== 'road');
+  const buffer = cfg.bufferMinutes[approx ? 'approximate' : 'road'] * MINUTE;
+  const loadedAt = now + toPickup.minutes * MINUTE + cfg.loadingMinutes * MINUTE;
+  if (loadedAt > pickupBy - buffer) return { feasible: false, reason: 'pickup_deadline', loadedAt };
+  if (!toSite || !Number.isFinite(toSite.minutes) || !Number.isFinite(arrivalBy)) {
+    return { feasible: true, partial: true, reason: 'dropoff_leg_unknown', loadedAt,
+      toPickupMinutes: toPickup.minutes, basis: approx ? 'approximate' : 'road' };
+  }
+  const finishAt = loadedAt + toSite.minutes * MINUTE + cfg.unloadingMinutes * MINUTE;
+  if (finishAt > arrivalBy - buffer) return { feasible: false, reason: 'delivery_deadline', loadedAt, finishAt };
+  return { feasible: true, partial: false, loadedAt, finishAt,
+    marginMinutes: Math.floor((Math.min(pickupBy - (loadedAt - cfg.loadingMinutes * MINUTE), arrivalBy - finishAt)) / MINUTE),
+    toPickupMinutes: toPickup.minutes, toSiteMinutes: toSite.minutes,
+    totalMinutes: Math.round((finishAt - now) / MINUTE), basis: approx ? 'approximate' : 'road' };
+}
+
+module.exports = { evaluateRescue, suggestRescues, journey, approximateMinutes, JOURNEY_DEFAULTS };
 
 // Local shadow runs accept a JSON snapshot on stdin. No Firebase reads or
 // writes are made and the output includes IDs and timings only.

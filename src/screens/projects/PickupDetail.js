@@ -30,7 +30,8 @@ import Icon from '../../components/ui/Icon';
 import useAuthStore from '../../store/authStore';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { listReceivingSites, confirmRescueDestination, recordRescueRemainder } from '../../services/database';
+import { listReceivingSites, confirmRescueDestination, recordRescueRemainder, respondToRescue } from '../../services/database';
+import { collection as fsCollection, query as fsQuery, where as fsWhere } from 'firebase/firestore';
 import { describeSiteNow, siteOpenAt } from '../../services/receivingSiteText';
 import { confirmPickupDestination, rerouteHeldPickup, assignPickupReceiver, recordPickupReceipt, claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge, holdPickup, closeHeldPickup, fetchCustodyVolunteers, transferPickupCustody } from '../../services/database';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
@@ -79,6 +80,13 @@ export default function PickupDetail({ route, navigation }) {
   const needsSite = !!pickup?.chapter_id && !pickup?.destination_confirmation &&
     ['pending_destination', 'available'].includes(pickup?.status) &&
     hasRole(user, ['chapter_president', 'chapter_pres', 'executive', 'admin', 'super_admin']);
+  // This volunteer's live offer for the rescue, if dispatch made one.
+  const [myOffer, setMyOffer] = useState(null);
+  useEffect(() => {
+    if (!pickup?.id || !user?.id || !db) return undefined;
+    return onSnapshot(fsQuery(fsCollection(db, 'pickups', pickup.id, 'offers'), fsWhere('uid', '==', user.id), fsWhere('status', '==', 'open')),
+      (snap) => setMyOffer(snap.docs[0] ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null), () => setMyOffer(null));
+  }, [pickup?.id, user?.id]);
   useEffect(() => {
     if (!needsSite) return undefined;
     let alive = true;
@@ -223,11 +231,26 @@ export default function PickupDetail({ route, navigation }) {
     if (!ok) return;
     setBusy(true);
     try {
-      await claimPickup(pickup.id, user.id);
+      // Confirmed-site rescues are accepted through the server, which
+      // re-checks the journey, reservation and eligibility atomically.
+      if (pickup.destination_confirmation) await respondToRescue(pickup.id, 'accept');
+      else await claimPickup(pickup.id, user.id);
       await refresh();
       if (Platform.OS !== 'web') notify('Pickup claimed', 'Your next stop is ready.');
     } catch (e) {
-      notify('Could not claim', e?.message || 'Try again.');
+      notify('Could not accept', e?.message || 'Check your connection and try again. Nothing was claimed.');
+      await refresh().catch(() => {});
+    } finally { setBusy(false); }
+  }
+
+  async function handleDeclineOffer() {
+    setBusy(true);
+    try {
+      await respondToRescue(pickup.id, 'decline');
+      setMyOffer(null);
+      if (navigation.canGoBack()) navigation.goBack(); else navigation.navigate('MainTabs', { screen: 'Rescue' });
+    } catch (e) {
+      notify('Could not pass on this offer', e?.message || 'Try again.');
     } finally { setBusy(false); }
   }
 
@@ -890,6 +913,20 @@ export default function PickupDetail({ route, navigation }) {
         {chapterCoordinator && pickup.status === 'available' && !!pickup.destination_confirmation && (
           <RescueSuggestions pickupId={pickup.id} />
         )}
+        {reviewing && myOffer && (
+          <View style={styles.offerBanner} accessibilityRole="alert">
+            <Text style={styles.offerTitle}>This rescue is offered to you</Text>
+            <Text style={styles.offerBody}>
+              Respond by {new Date(myOffer.expires_at?.toMillis ? myOffer.expires_at.toMillis() : myOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
+              {myOffer.trip?.to_pickup_minutes != null ? ` About ${myOffer.trip.to_pickup_minutes} min to the pickup` : ''}
+              {myOffer.trip?.total_minutes != null ? `, about ${myOffer.trip.total_minutes} min for the whole trip` : ''}
+              {myOffer.trip?.basis === 'approximate' ? ' (estimated from your shared area, not a live route).' : myOffer.trip?.to_pickup_minutes != null ? ' (road estimate).' : ''}
+              {myOffer.trip?.dropoff_leg === 'unknown' ? ' Drop-off drive time unknown.' : ''}
+            </Text>
+            <Text style={styles.offerBody}>Passing is fine — it never counts against you.</Text>
+            <Button title="Pass on this one" variant="secondary" onPress={handleDeclineOffer} disabled={busy} />
+          </View>
+        )}
         {reviewing && (
           <View style={styles.reviewActions}>
             <Text style={styles.reviewTime}>Pick up by {rescueTime(pickupBy)}</Text>
@@ -1277,6 +1314,9 @@ const styles = StyleSheet.create({
   verifyBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
   verifiedNote: { marginTop: 14, padding: 14, backgroundColor: '#E8F5EE', borderRadius: 14 },
   verifiedText: { color: Colors.green, fontWeight: '700' },
+  offerBanner: { backgroundColor: Colors.greenLight, borderRadius: 14, padding: 14, gap: 6, marginTop: 10 },
+  offerTitle: { fontSize: 15, fontWeight: '700', color: Colors.green },
+  offerBody: { fontSize: 14, color: Colors.green, lineHeight: 20 },
   sitePicker: { gap: 8, marginBottom: 8 },
   siteOption: { borderWidth: 1, borderColor: Colors.grayLight, borderRadius: 12, padding: 12, backgroundColor: Colors.white },
   siteOptionOn: { borderColor: Colors.green, backgroundColor: Colors.greenLight },

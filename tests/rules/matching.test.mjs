@@ -88,9 +88,10 @@ beforeEach(async () => {
 });
 
 describe('dispatch uses cargo fit', () => {
-  it('skips known mismatches, still alerts unknowns, and records both', async () => {
+  it('skips known mismatches, keeps unknowns eligible, and records both', async () => {
     const out = await D.onPickupChange(db, db.doc('pickups/p'), (await db.doc('pickups/p').get()).data(), { now: T0, roadTimes: noRoads });
-    assert.deepEqual(out.recipients.sort(), ['fits', 'unknown']);
+    assert.equal(out.recipients.length, 1);
+    assert.ok(['fits', 'unknown'].includes(out.recipients[0]));
     const s = (await db.doc('pickups/p/dispatch/state').get()).data();
     assert.equal(s.last_round.skipped.does_not_fit, 1);
     assert.equal(s.last_round.cargo_unknown, 1);
