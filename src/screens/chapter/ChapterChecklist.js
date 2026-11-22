@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import useAuthStore from '../../store/authStore';
 import { fetchChecklistProgress, updateChecklistItem } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const CHECKLIST_ITEMS = [
   { key: 'team', label: 'Recruit founding team (3+ members)', description: 'Find at least 3 dedicated members' },
@@ -60,14 +61,10 @@ export default function ChapterChecklist({ navigation }) {
   const completed = Object.values(progress).filter((s) => s === 'complete').length;
 
   return (
-    <Screen contentStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>‹ Back</Text>
-      </TouchableOpacity>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Chapter Checklist" onBack={() => navigation.goBack()} />
+      <BrandSheet>
 
-      <BrushText variant="screenTitle" style={styles.title}>
-        Chapter Checklist
-      </BrushText>
       <Text style={styles.subtitle}>
         {completed} of {CHECKLIST_ITEMS.length} complete
       </Text>
@@ -114,6 +111,7 @@ export default function ChapterChecklist({ navigation }) {
           </TouchableOpacity>
         );
       })}
+    </BrandSheet>
     </Screen>
   );
 }

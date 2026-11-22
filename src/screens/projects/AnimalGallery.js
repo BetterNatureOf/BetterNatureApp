@@ -4,6 +4,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import { fetchAnimalsHelped } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 export default function AnimalGallery({ navigation, route }) {
   const { species, name } = route.params;
@@ -29,14 +30,10 @@ export default function AnimalGallery({ navigation, route }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>‹ Back to Evergreen</Text>
-      </TouchableOpacity>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title={<>{name}</>} onBack={() => navigation.goBack()} />
+      <BrandSheet>
 
-      <BrushText variant="screenTitle" style={styles.title}>
-        {name}
-      </BrushText>
       <Text style={styles.subtitle}>
         Photos from our conservation efforts
       </Text>
@@ -60,6 +57,7 @@ export default function AnimalGallery({ navigation, route }) {
           )}
         </View>
       )}
+    </BrandSheet>
     </Screen>
   );
 }

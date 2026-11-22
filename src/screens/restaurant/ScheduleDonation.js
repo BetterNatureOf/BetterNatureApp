@@ -2,7 +2,7 @@
 // "Snap surplus", picks a weight chip, picks a window chip, taps Post.
 // Goal: under a minute end-to-end so it actually happens during a busy
 // service. Anything not on this screen is friction.
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Image, StyleSheet, Alert, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -13,7 +13,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import useAuthStore from '../../store/authStore';
-import { createPickup, ensureMyPartnerRecord } from '../../services/database';
+import { createPickup, ensureMyPartnerRecord, listPartnerSites, requestReceivingPartner } from '../../services/database';
 import { mealsFromLbs, co2FromLbs, humanImpactPhrase } from '../../services/impact';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -25,7 +25,9 @@ import DatePicker from '../../components/ui/DatePicker';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Icon from '../../components/ui/Icon';
 import Screen from '../../components/ui/Screen';
+import PaperPlaneButton from '../../components/ui/PaperPlaneButton';
 import { FOOD_CATEGORIES } from '../../../functions/lib/rescueCargo';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const WEIGHT_CHIPS = [5, 10, 20, 50, 100];
 
@@ -42,6 +44,7 @@ function inHours(h) {
 
 export default function ScheduleDonation({ navigation }) {
   const user = useAuthStore((s) => s.user);
+  const postedNote = useRef('');
   const [photoUri, setPhotoUri] = useState(null);
   const [weight, setWeight] = useState(20);
   const [windowKey, setWindowKey] = useState('3h');
@@ -56,6 +59,17 @@ export default function ScheduleDonation({ navigation }) {
   // blank stays unknown rather than defaulting to something that may be wrong.
   const [foodCategory, setFoodCategory] = useState(null);
   const [packages, setPackages] = useState('');
+  // Where the food should go. A preferred partner is asked first and may
+  // decline; the donor decides whether it can then go to other partners.
+  const [partnerSites, setPartnerSites] = useState(null);
+  const [destinationMode, setDestinationMode] = useState('network');   // 'preferred' | 'network' | 'coordinator'
+  const [preferredSite, setPreferredSite] = useState(null);
+  const [offerToNetwork, setOfferToNetwork] = useState(true);
+  React.useEffect(() => {
+    let alive = true;
+    listPartnerSites().then((sites) => alive && setPartnerSites(sites)).catch(() => alive && setPartnerSites([]));
+    return () => { alive = false; };
+  }, []);
   const [posting, setPosting] = useState(false);
   // Volunteer-friendly drop-off destination. The restaurant can pre-pick
   // a fridge, and if they don't, the volunteer chooses when claiming.
@@ -193,12 +207,21 @@ export default function ScheduleDonation({ navigation }) {
         packages: /^\d+$/.test(packages.trim()) && parseInt(packages, 10) > 0 ? parseInt(packages, 10) : null,
       });
 
-      // Toast and dismiss right away.
-      notifyThen(
-        'Offer saved',
-        'The offer is waiting for a receiving site. Volunteers can see it after a coordinator confirms the destination.',
-        () => navigation.goBack(),
-      );
+      // Ask the chosen partner (or the network). If that request fails the
+      // donation still exists; a coordinator can place it.
+      let partnerNote = 'A coordinator will confirm where it goes.';
+      if (created?.id && destinationMode !== 'coordinator' && (destinationMode === 'network' || preferredSite)) {
+        try {
+          await requestReceivingPartner(created.id, { mode: destinationMode, siteId: preferredSite?.id || null, offerToNetwork });
+          partnerNote = destinationMode === 'preferred'
+            ? `${preferredSite.name} has been asked. ${offerToNetwork ? 'If they can’t take it, it goes to other BN partners.' : 'If they can’t take it, we’ll let you know.'}`
+            : 'BN receiving partners in your chapter have been asked.';
+        } catch (e) {
+          partnerNote = 'We couldn’t reach the partner just now, so a coordinator will confirm where it goes.';
+        }
+      }
+      // The send button flies off once this resolves, then shows the note.
+      postedNote.current = `${partnerNote} Volunteers are only contacted after a receiving partner accepts.`;
 
       // Fire-and-forget photo upload + patch. If it fails the
       // pickup still exists, just without a thumbnail; restaurant
@@ -223,9 +246,10 @@ export default function ScheduleDonation({ navigation }) {
             }).catch(() => {});
           });
       }
+      return true;
     } catch (e) {
       console.error('createPickup failed:', e);
-      notify('Could not post', e?.message || 'Try again.');
+      return { error: e?.message ? `Couldn’t post: ${e.message}` : 'Couldn’t post — try again' };
     } finally {
       setPosting(false);
     }
@@ -234,15 +258,10 @@ export default function ScheduleDonation({ navigation }) {
   return (
     <ContractGate kind="restaurant">
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={{ padding: 0 }} keyboardShouldPersistTaps="handled">
+      <BrandHero title="Post surplus" subtitle="Photo + weight + window. About 60 seconds, end of shift." onBack={() => navigation.goBack()} />
+      <BrandSheet>
        <ResponsiveContainer maxWidth={760}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>{'\u2039 Back'}</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Post surplus</BrushText>
-        <Text style={styles.subtitle}>
-          Photo + weight + window. About 60 seconds, end of shift.
-        </Text>
 
         {/* Photo */}
         <TouchableOpacity
@@ -334,6 +353,33 @@ export default function ScheduleDonation({ navigation }) {
           <Text style={styles.weightUnit}>items</Text>
         </View>
 
+        <Text style={styles.sectionLabel}>Where should it go?</Text>
+        <View style={styles.chipsCol}>
+          {[['network', 'Any BN receiving partner'], ['preferred', 'A partner I work with'], ['coordinator', 'Let a coordinator decide']].map(([key, label]) => (
+            <TouchableOpacity key={key} style={[styles.windowChip, destinationMode === key && styles.chipOn]}
+              onPress={() => setDestinationMode(key)} accessibilityRole="radio" accessibilityState={{ selected: destinationMode === key }}>
+              <Text style={[styles.chipText, destinationMode === key && styles.chipTextOn]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {destinationMode === 'preferred' && (
+          <View style={styles.chipsCol}>
+            {partnerSites === null && <Text style={styles.partnerHelp}>Loading partners…</Text>}
+            {partnerSites?.length === 0 && <Text style={styles.partnerHelp}>No partners are taking requests right now. Choose another option.</Text>}
+            {partnerSites?.map((site) => (
+              <TouchableOpacity key={site.id} style={[styles.windowChip, preferredSite?.id === site.id && styles.chipOn]}
+                onPress={() => setPreferredSite(site)} accessibilityRole="radio" accessibilityState={{ selected: preferredSite?.id === site.id }}>
+                <Text style={[styles.chipText, preferredSite?.id === site.id && styles.chipTextOn]}>{site.name}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setOfferToNetwork((v) => !v)} accessibilityRole="checkbox"
+              accessibilityState={{ checked: offerToNetwork }} style={styles.partnerCheck}>
+              <Text style={styles.chipText}>{offerToNetwork ? '☑' : '☐'} If they decline or don’t answer, offer it to other BN partners</Text>
+            </TouchableOpacity>
+            <Text style={styles.partnerHelp}>Asking a partner is a request — they confirm whether they can take it.</Text>
+          </View>
+        )}
+
         {/* Pickup timing — mutually exclusive modes */}
         <Text style={styles.sectionLabel}>When can volunteers pick this up?</Text>
         <View style={styles.modeToggle}>
@@ -389,8 +435,7 @@ export default function ScheduleDonation({ navigation }) {
           </>
         )}
 
-        <Text style={styles.sectionLabel}>Receiving site</Text>
-        <Text style={styles.optional}>A coordinator confirms where the food can go before volunteers see this offer.</Text>
+        <Text style={styles.optional}>Volunteers only see this after a receiving partner confirms they can take it.</Text>
 
         {/* Notes (optional) */}
         <Text style={styles.sectionLabel}>Notes <Text style={styles.optional}>(optional)</Text></Text>
@@ -402,20 +447,19 @@ export default function ScheduleDonation({ navigation }) {
           style={{ height: 70 }}
         />
 
-        <Button
-          title={posting ? 'Saving…' : 'Submit food offer'}
-          onPress={handlePost}
-          loading={posting}
-          style={styles.submit}
-        />
-        {posting && (
+        <View style={styles.submit}>
+          <PaperPlaneButton title="Send food offer" sentTitle="Offer sent" onPress={handlePost}
+            onSent={() => notifyThen('Donation posted', postedNote.current, () => navigation.goBack())} />
+        </View>
+        {posting && !!photoUri && (
           <View style={styles.uploadingHint}>
             <ActivityIndicator size="small" color={Colors.green} />
             <Text style={styles.uploadingText}>Uploading photo…</Text>
           </View>
         )}
        </ResponsiveContainer>
-      </Screen>
+      </BrandSheet>
+    </Screen>
     </KeyboardAvoidingView>
     </ContractGate>
   );
@@ -466,6 +510,8 @@ const styles = StyleSheet.create({
   weightUnit: { fontSize: 18, fontWeight: '700', color: Colors.gray },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chipsCol: { gap: 8 },
+  partnerHelp: { fontSize: 13, color: Colors.gray, lineHeight: 18 },
+  partnerCheck: { paddingVertical: 10, minHeight: 44, justifyContent: 'center' },
   chip: {
     paddingVertical: 12, paddingHorizontal: 18,
     borderRadius: Radius.lg,

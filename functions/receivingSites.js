@@ -11,7 +11,15 @@
 //   receiver_uid (staff member or fridge steward who confirms receipts),
 //   contacts: [{ name, phone, role }]
 // receiving_sites/{siteId}/reservations/{pickupId}
-//   day (site-local YYYY-MM-DD), packages, weight_lbs, status: held | released | received
+//   day (site-local YYYY-MM-DD), packages, weight_lbs,
+//   status: held | released | expired | overdue | received,
+//   expires_at (arrival_by + 30 min), collected (donor confirmed collection)
+//
+// Capacity accounting: held, overdue and received reservations count.
+// A hold that passes expires_at before collection stops counting and is
+// marked expired. A hold whose food was already collected never silently
+// frees capacity: it becomes `overdue` (still counted) until a receipt,
+// reroute or coordinator closure resolves it.
 //
 // Confirmation against a saved site runs here so capacity is checked and
 // reserved atomically. A trigger settles reservations on every path
@@ -19,6 +27,8 @@
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { HttpsError } = require('firebase-functions/v1/https');
 const { rescueCargo } = require('./lib/rescueCargo');
+const { POLICY } = require('./lib/rescuePolicy');
+const GRACE_MS = POLICY.RESERVATION_GRACE_MIN * 60_000;
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const SITE_TYPES = ['staffed_center', 'steward_fridge', 'outreach_partner'];
@@ -29,6 +39,9 @@ const REASON_TEXT = {
   site_paused: 'it is paused right now',
   closed_at_arrival: 'it is closed at the receiving deadline',
   food_type_not_accepted: 'it does not accept this type of food',
+  closed_on_date: 'it is closed that day',
+  no_cold_storage: 'it has no refrigerated storage for this food',
+  no_hot_holding: 'it can’t hold hot food',
   over_package_capacity: 'it has no room for this many items today',
   over_weight_capacity: 'it has no room for this much weight today',
 };
@@ -73,6 +86,10 @@ function siteFit(site, pickup, { arrivalBy, now, used = { packages: 0, weight: 0
   if (!site || !SITE_TYPES.includes(site.type)) reasons.push('site_invalid');
   if (site && site.chapter_id !== pickup.chapter_id) reasons.push('other_chapter');
   if (isPaused(site, now)) reasons.push('site_paused');
+  // Date-specific closures (holidays, one-off closed days), site-local date.
+  if (Array.isArray(site?.closures) && site.closures.some((c) => c?.date === localParts(arrivalBy, site.timezone).day)) {
+    reasons.push('closed_on_date');
+  }
   const open = isOpenAt(site, arrivalBy);
   if (open === false) reasons.push('closed_at_arrival');
   if (open === null) warnings.push('hours_unknown');
@@ -81,6 +98,13 @@ function siteFit(site, pickup, { arrivalBy, now, used = { packages: 0, weight: 0
     if (!cargo.foodCategory) warnings.push('food_category_unknown');
     else if (!site.food_categories.includes(cargo.foodCategory)) reasons.push('food_type_not_accepted');
   } else warnings.push('accepted_food_unknown');
+  // Storage: cold food needs refrigeration; hot food needs hot holding
+  // (or refrigeration to cool it). Unknown storage is a warning.
+  const COLD = ['prepared_cold', 'dairy', 'meat', 'mixed'];
+  if (Array.isArray(site?.storage) && site.storage.length && cargo.foodCategory) {
+    if (COLD.includes(cargo.foodCategory) && !site.storage.includes('refrigerated') && !site.storage.includes('frozen')) reasons.push('no_cold_storage');
+    if (cargo.foodCategory === 'prepared_hot' && !site.storage.includes('hot_holding') && !site.storage.includes('refrigerated')) reasons.push('no_hot_holding');
+  } else if (cargo.foodCategory) warnings.push('storage_unknown');
   const cap = site?.capacity || {};
   if (Number.isFinite(cap.packages_per_day)) {
     if (cargo.packages == null) warnings.push('packages_unknown');
@@ -93,12 +117,14 @@ function siteFit(site, pickup, { arrivalBy, now, used = { packages: 0, weight: 0
   return { ok: reasons.length === 0, reasons, warnings };
 }
 
-async function usedOnDay(tx, siteRef, day, excludePickupId) {
+async function usedOnDay(tx, siteRef, day, excludePickupId, now = Date.now()) {
   const snap = await tx.get(siteRef.collection('reservations').where('day', '==', day));
   let packages = 0, weight = 0;
   snap.docs.forEach((d) => {
     const r = d.data();
-    if (d.id === excludePickupId || !['held', 'received'].includes(r.status)) return;
+    if (d.id === excludePickupId || !['held', 'overdue', 'received'].includes(r.status)) return;
+    // An uncollected hold past its expiry no longer counts; collected food does.
+    if (r.status === 'held' && !r.collected && Number.isFinite(ms(r.expires_at)) && ms(r.expires_at) <= now) return;
     packages += r.status === 'received' ? (r.accepted_packages ?? r.packages ?? 0) : (r.packages || 0);
     weight += r.status === 'received' ? (r.accepted_weight_lbs ?? r.weight_lbs ?? 0) : (r.weight_lbs || 0);
   });
@@ -106,7 +132,10 @@ async function usedOnDay(tx, siteRef, day, excludePickupId) {
 }
 
 // ── Callable: confirm a rescue's destination against a saved site ──
-async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
+// `authorize(caller, pickup, site)` decides who may confirm: chapter
+// coordinators by default; a site's own receiver when accepting a
+// donor's partner request (partnerRequests.js).
+async function confirmDestination(db, data, uid, { now = Date.now(), authorize = null, extraUpdate = null } = {}) {
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
   const pickupId = typeof data?.pickupId === 'string' ? data.pickupId : '';
   const siteId = typeof data?.siteId === 'string' ? data.siteId : '';
@@ -120,8 +149,9 @@ async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
     const [pkSnap, siteSnap, callerSnap] = await Promise.all([tx.get(pickupRef), tx.get(siteRef), tx.get(callerRef)]);
     const pickup = pkSnap.data(), site = siteSnap.data();
     if (!pickup) throw new HttpsError('not-found', 'Rescue not found.');
-    if (!canCoordinate(callerSnap.data(), pickup.chapter_id)) {
-      throw new HttpsError('permission-denied', 'Only this chapter’s coordinators can confirm a receiving site.');
+    const allowed = authorize ? authorize(callerSnap.data(), pickup, site, uid) : canCoordinate(callerSnap.data(), pickup.chapter_id);
+    if (!allowed) {
+      throw new HttpsError('permission-denied', 'Only this chapter’s coordinators or the site’s receiver can confirm a receiving site.');
     }
     if (pickup.destination_confirmation?.site_id === siteId && pickup.status === 'available') {
       return { ok: true, cached: true };
@@ -136,7 +166,7 @@ async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
     }
     if (!site) throw new HttpsError('not-found', 'Receiving site not found.');
     const day = localParts(arrivalBy, site.timezone).day;
-    const used = await usedOnDay(tx, siteRef, day, pickupId);
+    const used = await usedOnDay(tx, siteRef, day, pickupId, now);
     const fit = siteFit(site, pickup, { arrivalBy, now, used });
     if (!fit.ok) {
       const why = fit.reasons.map((r) => REASON_TEXT[r] || r).join(', and ');
@@ -146,6 +176,8 @@ async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
     const weight = Number(pickup.estimated_weight_lbs);
     tx.set(siteRef.collection('reservations').doc(pickupId), {
       pickup_id: pickupId, day, packages: cargo.packages, weight_lbs: cargo.weight, status: 'held',
+      // Held until the receiving deadline (+30 min grace for a late run).
+      expires_at: Timestamp.fromMillis(arrivalBy + GRACE_MS), collected: false,
       created_by: uid, created_at: FieldValue.serverTimestamp(),
     });
     const contact = site.contacts?.[0] ? `${site.contacts[0].name}${site.contacts[0].phone ? ` · ${site.contacts[0].phone}` : ''}` : site.name;
@@ -161,6 +193,7 @@ async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
       receiving_site: { id: siteId, type: site.type, food_categories: site.food_categories || null,
         opens_at: null, closes_at: null, remaining_packages: Number.isFinite(site.capacity?.packages_per_day)
           ? site.capacity.packages_per_day - used.packages - (cargo.packages || 0) : null },
+      ...(extraUpdate ? extraUpdate(pickup, site) : {}),
       ...(site.receiver_uid && site.receiver_uid !== pickup.restaurant_id ? {
         receiver_uid: site.receiver_uid, receiver_assigned_by: uid, receiver_assigned_at: FieldValue.serverTimestamp(),
       } : {}),
@@ -232,6 +265,9 @@ async function reconcileReservation(db, pickupRef, before, after) {
   const resRef = (siteId) => db.doc(`receiving_sites/${siteId}/reservations/${pickupRef.id}`);
   if (prevSite && prevSite !== nextSite) ops.push([resRef(prevSite), { status: 'released', released_reason: 'destination_changed' }]);
   if (nextSite && after.status === 'cancelled') ops.push([resRef(nextSite), { status: 'released', released_reason: 'cancelled' }]);
+  if (nextSite && after.verified_by_restaurant_at && !before?.verified_by_restaurant_at) {
+    ops.push([resRef(nextSite), { collected: true }]);
+  }
   if (nextSite && after.receiving_receipt && !before?.receiving_receipt) {
     ops.push([resRef(nextSite), { status: 'received', accepted_weight_lbs: Number(after.receiving_receipt.weight_lbs) || 0,
       rejected_weight_lbs: Number(after.receiving_receipt.rejected_weight_lbs) || 0 }]);
@@ -239,15 +275,79 @@ async function reconcileReservation(db, pickupRef, before, after) {
   for (const [ref, change] of ops) {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
-      if (!snap.exists || snap.data().status === change.status) return;
-      if (snap.data().status === 'received' && change.status === 'released') return;
+      if (!snap.exists) return;
+      const cur = snap.data();
+      if (change.collected) { if (!cur.collected && ['held', 'overdue'].includes(cur.status)) tx.update(ref, { collected: true, updated_at: FieldValue.serverTimestamp() }); return; }
+      if (cur.status === change.status) return;
+      if (cur.status === 'received' && change.status === 'released') return;
       tx.update(ref, { ...change, updated_at: FieldValue.serverTimestamp() });
     });
   }
   return ops.length;
 }
 
-module.exports = {
+// ── State-based reconcile (no before/after needed) ──────────────────
+// Used by the free rescue engine, which notices changes by polling. Looks
+// at every reservation held for this pickup and settles each against the
+// pickup's current state. Every change is guarded, so reruns are no-ops.
+async function reconcileReservationState(db, pickupRef, after) {
+  const site = after?.destination_confirmation?.site_id || null;
+  const snap = await db.collectionGroup('reservations').where('pickup_id', '==', pickupRef.id).get();
+  let changed = 0;
+  for (const d of snap.docs) {
+    const resSite = d.ref.parent.parent.id;
+    const change = resSite !== site ? { status: 'released', released_reason: 'destination_changed' }
+      : after?.status === 'cancelled' ? { status: 'released', released_reason: 'cancelled' }
+        : after?.receiving_receipt ? { status: 'received', accepted_weight_lbs: Number(after.receiving_receipt.weight_lbs) || 0,
+          rejected_weight_lbs: Number(after.receiving_receipt.rejected_weight_lbs) || 0 }
+          : after?.verified_by_restaurant_at ? { collected: true } : null;
+    if (!change) continue;
+    const done = await db.runTransaction(async (tx) => {
+      const cur = (await tx.get(d.ref)).data();
+      if (!cur) return false;
+      if (change.collected) {
+        if (cur.collected || !['held', 'overdue'].includes(cur.status)) return false;
+        tx.update(d.ref, { collected: true, updated_at: FieldValue.serverTimestamp() });
+        return true;
+      }
+      if (cur.status === change.status || (cur.status === 'received' && change.status === 'released')) return false;
+      if (change.status === 'released' && ['released', 'expired'].includes(cur.status)) return false;
+      tx.update(d.ref, { ...change, updated_at: FieldValue.serverTimestamp() });
+      return true;
+    });
+    if (done) changed++;
+  }
+  return changed;
+}
+
+// ── Scheduler: holds past expires_at ─────────────────────────────────
+// Uncollected → expired (capacity frees; dispatch stops offering it).
+// Collected but not received → overdue (capacity stays held; the rescue
+// queue shows the late delivery until someone resolves it).
+async function sweepReservations(db, { now = Date.now(), limit = 100 } = {}) {
+  const snap = await db.collectionGroup('reservations').where('status', '==', 'held')
+    .where('expires_at', '<=', Timestamp.fromMillis(now)).limit(limit).get();
+  const out = { expired: 0, overdue: 0 };
+  for (const d of snap.docs) {
+    const pickupRef = db.doc(`pickups/${d.id}`);
+    const result = await db.runTransaction(async (tx) => {
+      const [res, pk] = await Promise.all([tx.get(d.ref), tx.get(pickupRef)]);
+      const r = res.data(), p = pk.data();
+      if (r?.status !== 'held' || !(ms(r.expires_at) <= now)) return null;
+      const collected = r.collected || !!p?.verified_by_restaurant_at;
+      if (collected && !p?.receiving_receipt && p?.status !== 'cancelled') {
+        tx.update(d.ref, { status: 'overdue', collected: true, overdue_at: Timestamp.fromMillis(now), updated_at: FieldValue.serverTimestamp() });
+        return 'overdue';
+      }
+      tx.update(d.ref, { status: 'expired', released_reason: 'expired_before_collection', updated_at: FieldValue.serverTimestamp() });
+      return 'expired';
+    });
+    if (result) out[result]++;
+  }
+  return out;
+}
+
+module.exports = { sweepReservations, reconcileReservationState,
   SITE_TYPES, REMAINDER_OUTCOMES, localParts, isOpenAt, isPaused, siteFit, canCoordinate,
   confirmDestination, recordRemainder, deliverableWeight, reconcileReservation,
 };

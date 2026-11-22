@@ -25,12 +25,10 @@ import Screen from '../../components/ui/Screen';
 import LiveOps from '../admin/LiveOps';
 import { mealsFromLbs, familyDaysFromLbs } from '../../services/impact';
 import WorkspaceChip from '../../components/ui/WorkspaceChip';
+import { BrandHero, BrandSheet, HeroIconButton } from '../../components/ui/BrandHero';
 
-const SERIF = Platform.select({
-  ios: 'Georgia',
-  android: 'serif',
-  default: 'Georgia, "Iowan Old Style", "Palatino Linotype", serif',
-});
+// Welcome's type: system sans at heavy weight (was a warm serif).
+const SERIF = undefined;
 
 const TOOLS = [
   { key: 'events',    icon: 'calendar',  title: 'Events',            to: 'PresEvents' },
@@ -103,19 +101,16 @@ export default function PresidentDashboard({ navigation }) {
 
   return (
     <ContractGate kind="president">
-    <Screen contentStyle={contentStyle}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero kicker={`President · ${chapterName}`} title={firstName(user) || 'Welcome'}
+        accessory={<HeroIconButton icon="logout" label="Sign out" onPress={handleSignOut} />}
+        stats={[{ value: weekLbsRounded, label: 'lbs this week' }, { value: completedWeek.length, label: 'rescues this week' }, unclaimedCount ? { value: unclaimedCount, label: 'unclaimed', tone: 'alert' } : null]} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={720}>
         <WorkspaceChip
           user={user}
           workspaceName={chapterName}
           scope="chapter"
-        />
-        <IdentityStrip
-          eyebrow={`President · ${chapterName}`}
-          greeting={timeOfDayGreeting()}
-          name={firstName(user)}
-          avatarInitial={(user?.name || '?')[0].toUpperCase()}
-          onSignOut={handleSignOut}
         />
 
         <PulseHero
@@ -136,6 +131,7 @@ export default function PresidentDashboard({ navigation }) {
 
         <ToolsRow navigation={navigation} tileMinWidth={toolTileMinWidth} />
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
     </ContractGate>
   );
@@ -279,7 +275,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.green,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: Colors.cream, fontFamily: SERIF, fontSize: 16, fontWeight: '500' },
+  avatarText: { color: Colors.cream, fontFamily: SERIF, fontSize: 16, fontWeight: '800' },
   greeting: { flex: 1, minWidth: 0 },
   greetingK: { fontSize: 11, color: Colors.gray, letterSpacing: 0.1, textTransform: 'uppercase', fontWeight: '700' },
   greetingT: { fontSize: 16, fontWeight: '600', color: Colors.dark, marginTop: 1 },
@@ -299,7 +295,7 @@ const styles = StyleSheet.create({
   },
   pulseNum: {
     fontFamily: SERIF, fontSize: 40, lineHeight: 42,
-    color: Colors.cream, fontWeight: '500', letterSpacing: -0.6, marginTop: 4,
+    color: Colors.cream, fontWeight: '800', letterSpacing: -0.6, marginTop: 4,
   },
   pulseNumUnit: {
     fontFamily: undefined,

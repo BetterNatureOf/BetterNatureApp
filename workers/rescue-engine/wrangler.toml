@@ -1,0 +1,33 @@
+# Better Nature rescue engine — the app's server side on Cloudflare's free
+# Workers plan (replaces Cloud Functions, which need Google billing).
+name = "bn-rescue-engine"
+main = "src/index.mjs"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# One cron; the engine fans out (every minute / 5 / 15 min / 6 h).
+[triggers]
+crons = ["* * * * *"]
+
+# functions/*.js is reused as-is; these aliases swap the Google SDKs for
+# small REST shims at bundle time.
+[alias]
+"firebase-admin" = "./src/shim/admin.js"
+"firebase-admin/firestore" = "./src/shim/admin-firestore.js"
+"firebase-admin/app" = "./src/shim/admin-app.js"
+"firebase-functions" = "./src/shim/functions.js"
+"firebase-functions/v1" = "./src/shim/functions.js"
+"firebase-functions/v1/https" = "./src/shim/functions.js"
+
+[vars]
+FIRESTORE_PROJECT_ID = "better-nature-app"
+ALLOWED_ORIGINS = "https://app.betternatureofficial.org,http://localhost:8081,http://127.0.0.1:8081"
+
+# Secrets (set with `npx wrangler secret put NAME` in this folder):
+#   GOOGLE_SERVICE_ACCOUNT  full JSON of a service account (Firebase console →
+#                           Project settings → Service accounts → Generate key).
+#                           Roles: Cloud Datastore User, Firebase Authentication
+#                           Viewer, Storage Object Viewer. Free.
+#   MANUAL_TRIGGER_KEY      any random string, for POST /tick
+#   MAPBOX_SERVER_TOKEN     optional; road times (otherwise labeled estimates)
+#   STORAGE_BUCKET          optional; defaults to <project>.appspot.com

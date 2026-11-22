@@ -25,6 +25,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { notify, notifyThen } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 export default function RestaurantOnboarding({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -111,16 +112,10 @@ export default function RestaurantOnboarding({ navigation }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen contentStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <Screen contentStyle={{ padding: 0 }} keyboardShouldPersistTaps="handled">
+      <BrandHero title="Set up your restaurant" subtitle="One quick form, then you can post surplus in 60 seconds. Volunteers see your business name, address, and contact when they claim a pickup." onBack={() => navigation.goBack()} />
+      <BrandSheet>
         <ResponsiveContainer maxWidth={720}>
-          <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
-            <Icon name="back" size={18} color={Colors.green} />
-            <Text style={styles.backText}>Back</Text>
-          </AnimatedPressable>
-          <BrushText variant="screenTitle" style={styles.title}>Set up your restaurant</BrushText>
-          <Text style={styles.subtitle}>
-            One quick form, then you can post surplus in 60 seconds. Volunteers see your business name, address, and contact when they claim a pickup.
-          </Text>
 
           <Field label="Business name">
             <Input value={businessName} onChangeText={setBusinessName} placeholder="Sunny Cafe" />
@@ -183,7 +178,8 @@ export default function RestaurantOnboarding({ navigation }) {
 
           <Button title={saving ? 'Saving…' : 'Save & continue'} onPress={save} loading={saving} style={{ marginTop: 22 }} />
         </ResponsiveContainer>
-      </Screen>
+      </BrandSheet>
+    </Screen>
     </KeyboardAvoidingView>
   );
 }

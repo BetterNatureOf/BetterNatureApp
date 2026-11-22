@@ -12,6 +12,7 @@ import { LeaderboardBody } from './LeaderboardScreen';
 import { getOrgStats } from '../../services/orgStats';
 import { getProfile } from '../../services/auth';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet, brand } from '../../components/ui/BrandHero';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -34,14 +35,10 @@ export default function ImpactScreen() {
   }, [user?.id]));
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Your Impact" subtitle="Every action matters. Here's what you've contributed." />
+      <BrandSheet>
      <ResponsiveContainer maxWidth={1100}>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Your Impact
-      </BrushText>
-      <Text style={styles.subtitle}>
-        Every action matters. Here's what you've contributed.
-      </Text>
 
       {/* Personal Stats */}
       <View style={styles.statsGrid}>
@@ -74,9 +71,9 @@ export default function ImpactScreen() {
       <BrushDivider />
 
       {/* Organization-wide Stats */}
-      <BrushText variant="sectionHeader" style={styles.sectionTitle}>
+      <Text accessibilityRole="header" style={[brand.section, styles.sectionTitle]}>
         BetterNature Overall
-      </BrushText>
+      </Text>
 
       <LinearGradient
         colors={Colors.gradient.green}
@@ -120,9 +117,9 @@ export default function ImpactScreen() {
       <BrushDivider />
 
       {/* Badges Section */}
-      <BrushText variant="sectionHeader" style={styles.sectionTitle}>
+      <Text accessibilityRole="header" style={[brand.section, styles.sectionTitle]}>
         Your Badges
-      </BrushText>
+      </Text>
       <View style={styles.badgesEmpty}>
         <View style={styles.badgeIconWrap}>
           <Text style={styles.badgeEmoji}>{'\u{1F331}'}</Text>
@@ -135,15 +132,16 @@ export default function ImpactScreen() {
       <BrushDivider />
 
       {/* Leaderboard */}
-      <BrushText variant="sectionHeader" style={styles.sectionTitle}>
+      <Text accessibilityRole="header" style={[brand.section, styles.sectionTitle]}>
         Leaderboard
-      </BrushText>
+      </Text>
       <Text style={styles.leaderIntro}>
         See who's making the biggest impact. Filter by time, project, or sort
         by lbs, hours, events, or dollars raised.
       </Text>
       <LeaderboardBody embedded />
      </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

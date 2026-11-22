@@ -13,9 +13,12 @@ import { listReceivingSites, saveReceivingSite } from '../../services/database';
 import { notify } from '../../services/ui';
 import { FOOD_CATEGORIES } from '../../../functions/lib/rescueCargo';
 import { describeSiteNow, SITE_TYPES, DAY_KEYS } from '../../services/receivingSiteText';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const blank = { name: '', type: 'staffed_center', address: '', days: ['mon', 'tue', 'wed', 'thu', 'fri'], open: '09:00', close: '17:00',
-  foods: [], packages: '', weight: '', contactName: '', contactPhone: '' };
+  foods: [], packages: '', weight: '', contactName: '', contactPhone: '', storage: [], closures: '' };
+const STORAGE = [['ambient', 'Shelf'], ['refrigerated', 'Refrigerated'], ['frozen', 'Frozen'], ['hot_holding', 'Hot holding']];
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function toForm(site) {
@@ -24,7 +27,8 @@ function toForm(site) {
   return { name: site.name || '', type: site.type, address: site.address || '', days, open: first.open, close: first.close,
     foods: site.food_categories || [], packages: site.capacity?.packages_per_day ? String(site.capacity.packages_per_day) : '',
     weight: site.capacity?.weight_lbs_per_day ? String(site.capacity.weight_lbs_per_day) : '',
-    contactName: site.contacts?.[0]?.name || '', contactPhone: site.contacts?.[0]?.phone || '' };
+    contactName: site.contacts?.[0]?.name || '', contactPhone: site.contacts?.[0]?.phone || '',
+    storage: site.storage || [], closures: (site.closures || []).map((c) => c.date).join(', ') };
 }
 
 export default function ReceivingSites({ navigation }) {
@@ -56,12 +60,15 @@ export default function ReceivingSites({ navigation }) {
     if ((form.packages.trim() && !(packages > 0)) || (form.weight.trim() && !(weight > 0))) {
       notify('Check the capacity', 'Use whole items and pounds per day, or leave them blank for no limit.'); return;
     }
+    const closureDates = form.closures.split(/[\s,]+/).filter(Boolean);
+    if (closureDates.some((d) => !DAY_RE.test(d))) { notify('Check closed dates', 'Use dates like 2026-12-25, separated by commas.'); return; }
     const hours = form.days.length ? Object.fromEntries(form.days.map((d) => [d, [{ open: form.open, close: form.close }]])) : null;
     const site = {
       name: form.name.trim(), type: form.type, address: form.address.trim(), chapter_id: chapterId,
       food_categories: form.foods, capacity: { packages_per_day: packages, weight_lbs_per_day: weight },
       contacts: form.contactName.trim() ? [{ name: form.contactName.trim(), phone: form.contactPhone.trim(), role: 'receiving' }] : [],
-      timezone: 'America/Chicago',
+      timezone: 'America/Chicago', storage: form.storage,
+      closures: closureDates.map((date) => ({ date, reason: 'Closed' })),
     };
     if (hours) site.hours = hours;
     setBusy(true);
@@ -84,14 +91,10 @@ export default function ReceivingSites({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Receiving sites" subtitle="Where rescued food can go. Hours, pauses and daily capacity are checked when you confirm a rescue." onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={720}>
-        <TouchableOpacity onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Dashboard' }))}
-          accessibilityRole="button">
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle">Receiving sites</BrushText>
-        <Text style={styles.subtitle}>Where rescued food can go. Hours, pauses and daily capacity are checked when you confirm a rescue.</Text>
 
         {sites === null && <ActivityIndicator color={Colors.green} />}
         {!!error && <Text style={styles.error}>{error}</Text>}
@@ -157,6 +160,18 @@ export default function ReceivingSites({ navigation }) {
                 </TouchableOpacity>
               ))}
             </View>
+            <Text style={styles.label}>Storage on site</Text>
+            <View style={styles.chips}>
+              {STORAGE.map(([key, label]) => (
+                <TouchableOpacity key={key} onPress={() => toggleIn('storage', key)} accessibilityRole="checkbox" accessibilityState={{ checked: form.storage.includes(key) }}
+                  style={[styles.chipSm, form.storage.includes(key) && styles.chipOn]}>
+                  <Text style={[styles.chipText, form.storage.includes(key) && styles.chipTextOn]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.label}>Closed dates</Text>
+            <TextInput style={styles.input} value={form.closures} onChangeText={(v) => set({ closures: v })} placeholder="2026-12-25, 2027-01-01"
+              accessibilityLabel="Closed dates, comma separated" />
             <View style={styles.row}>
               <View style={styles.field}><Text style={styles.label}>Items per day</Text>
                 <TextInput style={styles.input} value={form.packages} onChangeText={(v) => set({ packages: v })} keyboardType="number-pad" placeholder="No limit" accessibilityLabel="Items per day" /></View>
@@ -176,6 +191,7 @@ export default function ReceivingSites({ navigation }) {
           </View>
         )}
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

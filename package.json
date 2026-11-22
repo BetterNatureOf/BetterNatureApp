@@ -22,10 +22,17 @@
     "web:deploy": "npm run web:build && echo 'Upload the dist/ folder to Vercel or Cloudflare Pages'",
     "test:rules": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:exec --config firebase.test-ports.json --only firestore,storage --project demo-a2 \"node scripts/test-pickup-transition.cjs && node scripts/test-pickup-release.cjs && node scripts/test-delivery-flow.cjs && node scripts/test-a2-rules.cjs && node scripts/test-c1-complete.cjs && node scripts/test-idgate.cjs && node scripts/test-c1-client.cjs && node --test tests/rules/*.test.mjs\"",
     "test:functions": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:exec --config firebase.test-ports.json --only auth,functions,firestore --project demo-c1 \"FUNCTIONS_EMULATOR_HOST=127.0.0.1:5301 node scripts/test-c1-callable.cjs\"",
-    "test:emulators": "npm run test:rules && npm run test:functions",
+    "test:emulators": "npm run test:rules && npm run test:functions && npm run test:engine",
     "emulators": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:start --only auth,firestore,functions,storage --project demo-bn-local",
     "seed:emulators": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-bn-local node scripts/seed-emulator.cjs",
-    "web:emulators": "EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 expo start --web --port 8081"
+    "web:emulators": "EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 expo start --web --port 8081",
+    "emulators:alt": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:start --config firebase.dev2.json --only auth,firestore,functions,storage --project demo-bn-rescue",
+    "seed:emulators:alt": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9289 GCLOUD_PROJECT=demo-bn-rescue node scripts/seed-emulator.cjs",
+    "web:emulators:alt": "EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 EXPO_PUBLIC_EMULATOR_PROJECT_ID=demo-bn-rescue EXPO_PUBLIC_AUTH_EMULATOR_PORT=9289 EXPO_PUBLIC_FIRESTORE_EMULATOR_PORT=8280 EXPO_PUBLIC_STORAGE_EMULATOR_PORT=9399 EXPO_PUBLIC_FUNCTIONS_EMULATOR_PORT=5201 expo start --web --port 8081",
+    "emulators:free": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:start --config firebase.dev2.json --only auth,firestore,storage --project demo-bn-rescue",
+    "engine:dev": "cd workers/rescue-engine && npx -y wrangler@4 dev --port 8787 --var FIRESTORE_EMULATOR_HOST:127.0.0.1:8280 --var FIREBASE_AUTH_EMULATOR_HOST:127.0.0.1:9289 --var FIRESTORE_PROJECT_ID:demo-bn-rescue --var MANUAL_TRIGGER_KEY:local-dev --test-scheduled",
+    "web:free": "EXPO_PUBLIC_RESCUE_ENGINE_URL=http://127.0.0.1:8787 EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 EXPO_PUBLIC_EMULATOR_PROJECT_ID=demo-bn-rescue EXPO_PUBLIC_AUTH_EMULATOR_PORT=9289 EXPO_PUBLIC_FIRESTORE_EMULATOR_PORT=8280 EXPO_PUBLIC_STORAGE_EMULATOR_PORT=9399 EXPO_PUBLIC_FUNCTIONS_EMULATOR_PORT=5201 expo start --web --port 8081",
+    "test:engine": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:exec --config firebase.test-ports.json --only firestore --project demo-bn-worker \"node -r ./workers/rescue-engine/test/use-shim.cjs --test --test-timeout=60000 tests/rules/*.test.mjs workers/rescue-engine/test/*.test.mjs\""
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
@@ -33,6 +40,7 @@
     "@react-navigation/bottom-tabs": "^7.0.0",
     "@react-navigation/native": "^7.0.0",
     "@react-navigation/stack": "^7.0.0",
+    "@rnmapbox/maps": "^10.3.18",
     "@supabase/supabase-js": "^2.45.0",
     "expo": "~54.0.0",
     "expo-apple-authentication": "~8.0.8",

@@ -18,6 +18,7 @@ import { fetchRestaurants, updateRestaurant, backfillRestaurantDocs, createResta
 import { PARTNER_TYPES, partnerTypeFor } from '../../config/partnerTypes';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const TABS = ['all', 'pending', 'approved', 'rejected'];
 const TAB_LABELS = {
@@ -196,18 +197,12 @@ export default function ManageRestaurants({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Manage Food Donors" subtitle={`${counts.all} partner${counts.all === 1 ? '' : 's'} · ${counts.pending} pending · ${counts.approved} approved`} onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={960}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <BrushText variant="screenTitle" style={styles.title}>Manage Food Donors</BrushText>
-            <Text style={styles.subtitle}>
-              {counts.all} partner{counts.all === 1 ? '' : 's'} · {counts.pending} pending · {counts.approved} approved
-            </Text>
-          </View>
+          <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={() => setShowAdd((v) => !v)} style={styles.addBtn} activeOpacity={0.85}>
             <Text style={styles.addBtnText}>{showAdd ? 'Cancel' : '+ Add partner'}</Text>
           </TouchableOpacity>
@@ -479,6 +474,7 @@ export default function ManageRestaurants({ navigation }) {
           })
         )}
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

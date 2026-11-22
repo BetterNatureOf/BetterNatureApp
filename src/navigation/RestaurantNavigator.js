@@ -3,6 +3,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import PickupDetail from '../screens/projects/PickupDetail';
 import RestDashboard from '../screens/restaurant/RestDashboard';
 import ScheduleDonation from '../screens/restaurant/ScheduleDonation';
+import RecurringDonations from '../screens/restaurant/RecurringDonations';
 import DonationHistory from '../screens/restaurant/DonationHistory';
 import TaxReceiptsScreen from '../screens/restaurant/TaxReceiptsScreen';
 import SettingsScreen from '../screens/other/SettingsScreen';
@@ -24,6 +25,7 @@ export default function RestaurantNavigator() {
       <Stack.Screen name="RestDashboard" component={RestDashboard} />
       <Stack.Screen name="PickupDetail" component={PickupDetail} />
       <Stack.Screen name="ScheduleDonation" component={ScheduleDonation} />
+      <Stack.Screen name="RecurringDonations" component={RecurringDonations} />
       <Stack.Screen name="DonationHistory" component={DonationHistory} />
       <Stack.Screen name="TaxReceipts" component={TaxReceiptsScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />

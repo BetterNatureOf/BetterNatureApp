@@ -8,6 +8,7 @@ import { getOrgStats } from '../../services/orgStats';
 import ProjectLogo from '../../components/ui/ProjectLogo';
 import Button from '../../components/ui/Button';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const fmt = (n) => (!n ? '0' : n.toLocaleString('en-US'));
 
@@ -63,14 +64,10 @@ export default function ProjectsScreen({ navigation }) {
   ];
 
   return (
-    <Screen contentStyle={contentStyle}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Programs" subtitle="Three initiatives, one mission: a better world." />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={1200}>
-        <BrushText variant="screenTitle" style={styles.title}>
-          Programs
-        </BrushText>
-        <Text style={styles.subtitle}>
-          Three initiatives, one mission: a better world.
-        </Text>
 
         <View style={[styles.grid, (isDesktop || isTablet) && styles.gridWide]}>
           {PROJECTS.map((project) => (
@@ -95,6 +92,7 @@ export default function ProjectsScreen({ navigation }) {
         </View>
         <Button title="Support Better Nature" variant="secondary" onPress={() => navigation.navigate('Donate')} />
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

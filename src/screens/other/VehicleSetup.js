@@ -12,6 +12,7 @@ import useAuthStore from '../../store/authStore';
 import { saveVehicle } from '../../services/database';
 import { notify } from '../../services/ui';
 import { VEHICLES, EQUIPMENT } from '../../../functions/lib/rescueCargo';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const toInt = (v) => (/^\d+$/.test(String(v).trim()) ? parseInt(v, 10) : null);
 const toNum = (v) => (String(v).trim() && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -53,14 +54,10 @@ export default function VehicleSetup({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Your rescue vehicle" subtitle="We use this to send you rescues you can actually carry. Leave anything you’re unsure of blank." onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Profile' }))} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={680}>
-        <TouchableOpacity onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs', { screen: 'Profile' }))}
-          accessibilityRole="button">
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Your rescue vehicle</BrushText>
-        <Text style={styles.subtitle}>We use this to send you rescues you can actually carry. Leave anything you’re unsure of blank.</Text>
 
         <Text style={styles.label}>How do you usually travel?</Text>
         <View style={styles.chips}>
@@ -100,6 +97,7 @@ export default function VehicleSetup({ navigation }) {
 
         <Button title={saving ? 'Saving…' : 'Save vehicle'} onPress={save} loading={saving} />
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

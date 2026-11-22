@@ -261,8 +261,13 @@ describe('pickups: claiming', () => {
   });
   // (claims also require an approved restaurant; seeded below)
 
-  it('approved volunteer in the same chapter can claim (positive control)', async () => {
-    await assertSucceeds(updateDoc(doc(as('volA'), 'pickups/pAvail'), claim('volA')));
+  it('even an approved volunteer in the same chapter cannot claim by direct write (claims are server-only)', async () => {
+    await assertFails(updateDoc(doc(as('volA'), 'pickups/pAvail'), claim('volA')));
+  });
+
+  it('an old client cannot bypass an exclusive offer with a direct write', async () => {
+    await assertFails(updateDoc(doc(as('volA'), 'pickups/pAvail'), { ...claim('volA'), claimant_phone: '' }));
+    await assertFails(updateDoc(doc(as('volA'), 'pickups/pAvail'), { offer_hold: null }));
   });
 
   it('volunteer from another chapter cannot claim', async () => {
@@ -603,12 +608,13 @@ describe('receiving sites', () => {
   it('sites must have a valid type', async () => {
     await assertFails(setDoc(doc(as('presA'), 'receiving_sites/new'), site({ type: 'warehouse' })));
   });
-  it('a client cannot attach a saved site (that path checks and reserves capacity)', async () => {
+  it('a client cannot open an offer: saved sites go through the callable that reserves capacity', async () => {
     const dest = (extra) => ({ site_name: 'Pantry', address: 'A', contact: 'Pat', confirmed_by: 'presA',
       confirmed_at: serverTimestamp(), accepted_weight_lbs: 40, pickup_by: Timestamp.fromMillis(Date.now() + HOUR),
       arrival_by: Timestamp.fromMillis(Date.now() + 2 * HOUR), ...extra });
     await assertFails(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({ site_id: 'sA' }) }));
-    await assertSucceeds(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({}) }));
+    // A typed-in destination can't open an offer from the client either.
+    await assertFails(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({}) }));
   });
   it('reservations are server-only', async () => {
     await assertSucceeds(getDoc(doc(as('presA'), 'receiving_sites/sA/reservations/pAvail')));
@@ -628,5 +634,38 @@ describe('no-show release', () => {
   });
   it('collected food is never released as a no-show', async () => {
     await assertFails(updateDoc(doc(as('presA'), 'pickups/pClaimedCollected'), release('presA')));
+  });
+});
+
+describe('partner requests and receiver availability', () => {
+  it('nobody writes a partner request from a client (the server validates it)', async () => {
+    await assertFails(updateDoc(doc(as('rest'), 'pickups/pPending'), { partner_request: { status: 'accepted' } }));
+    await assertFails(setDoc(doc(as('rest'), 'pickups/newPR'), { restaurant_id: 'r1', chapter_id: CH_A, status: 'pending_destination',
+      claimed_by: null, estimated_weight_lbs: 10, partner_request: { status: 'accepted' } }));
+  });
+  it('a site’s receiver can pause it and adjust capacity, but not rename it', async () => {
+    await assertSucceeds(updateDoc(doc(as('receiver'), 'receiving_sites/sA'), { status: 'paused', pause_reason: 'Freezer repair' }));
+    await assertSucceeds(updateDoc(doc(as('receiver'), 'receiving_sites/sA'), { capacity: { packages_per_day: 8 } }));
+    await assertFails(updateDoc(doc(as('receiver'), 'receiving_sites/sA'), { name: 'Renamed' }));
+  });
+  it('other members cannot change a site’s availability', async () => {
+    await assertFails(updateDoc(doc(as('volA'), 'receiving_sites/sA'), { status: 'paused' }));
+  });
+});
+
+describe('recurring donation schedules', () => {
+  const schedule = (extra = {}) => ({ restaurant_id: 'r1', chapter_id: CH_A, owner_uid: 'rest', status: 'active',
+    days: ['mon'], ready_time: '15:00', timezone: 'America/Chicago', window_hours: 3,
+    template: { estimated_weight_lbs: 20 }, destination: { mode: 'network' }, ...extra });
+  it('the donor can save a schedule for their own restaurant', async () => {
+    await assertSucceeds(setDoc(doc(as('rest'), 'donation_schedules/s1'), schedule()));
+  });
+  it('nobody else can, and occurrences are server-only', async () => {
+    await assertFails(setDoc(doc(as('restOther'), 'donation_schedules/s2'), schedule({ owner_uid: 'restOther' })));
+    await assertFails(setDoc(doc(as('volA'), 'donation_schedules/s3'), schedule({ owner_uid: 'volA' })));
+    await assertFails(setDoc(doc(as('rest'), 'donation_occurrences/x'), { owner_uid: 'rest', status: 'confirmed' }));
+  });
+  it('invalid times are refused', async () => {
+    await assertFails(setDoc(doc(as('rest'), 'donation_schedules/s4'), schedule({ ready_time: '25:00' })));
   });
 });

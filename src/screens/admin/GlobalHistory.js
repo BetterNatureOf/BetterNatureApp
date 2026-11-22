@@ -9,6 +9,7 @@ import {
   fetchAnnouncements,
 } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -89,13 +90,9 @@ export default function GlobalHistory({ navigation }) {
   );
 
   return (
-    <Screen contentStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>‹ Back</Text>
-      </TouchableOpacity>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Global History
-      </BrushText>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Global History" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <Text style={styles.subtitle}>All activity across BetterNature</Text>
 
       <ScrollView
@@ -138,6 +135,7 @@ export default function GlobalHistory({ navigation }) {
           </View>
         ))
       )}
+    </BrandSheet>
     </Screen>
   );
 }

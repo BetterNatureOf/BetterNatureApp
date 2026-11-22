@@ -21,6 +21,7 @@ import useAuthStore from '../../store/authStore';
 import { updateProfile, getProfile } from '../../services/auth';
 import { notify } from '../../services/ui';
 import { requestPush, disablePush } from '../../services/onesignal';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 export default function NotificationPreferences({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -105,15 +106,10 @@ export default function NotificationPreferences({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Notification preferences" subtitle="Choose how BetterNature reaches you. Changes save instantly." onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={680}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Notification preferences</BrushText>
-        <Text style={styles.subtitle}>
-          Choose how BetterNature reaches you. Changes save instantly.
-        </Text>
 
         {/* Email */}
         <View style={styles.card}>
@@ -166,6 +162,7 @@ export default function NotificationPreferences({ navigation }) {
           </View>
         </View>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

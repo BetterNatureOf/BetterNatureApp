@@ -5,6 +5,7 @@ import BrushText from '../../components/ui/BrushText';
 import Icon from '../../components/ui/Icon';
 import ContractGate from '../../components/ui/ContractGate';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const ADMIN_ITEMS = [
   { key: 'chapters', label: 'Manage Chapters', icon: 'pin', desc: 'View, edit, and approve chapters', screen: 'ManageChapters' },
@@ -21,10 +22,9 @@ const ADMIN_ITEMS = [
 export default function AdminPanel({ navigation }) {
   return (
     <ContractGate kind="executive">
-    <Screen contentStyle={styles.content}>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Admin Panel
-      </BrushText>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Admin Panel" />
+      <BrandSheet>
       <Text style={styles.subtitle}>Executive access only</Text>
 
       {ADMIN_ITEMS.map((item) => (
@@ -44,6 +44,7 @@ export default function AdminPanel({ navigation }) {
           <Text style={styles.arrow}>›</Text>
         </TouchableOpacity>
       ))}
+    </BrandSheet>
     </Screen>
     </ContractGate>
   );

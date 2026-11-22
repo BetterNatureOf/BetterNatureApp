@@ -65,7 +65,10 @@ exports.countVolunteerSignup = functions.firestore
 
 exports.closeExpiredRescueOffers = functions.pubsub.schedule('every 5 minutes').onRun(async () => {
   const result = await expireOpenPickups(admin.firestore());
-  console.log('Expired rescue offers closed', result.expired);
+  const partners = await require('./partnerRequests').expirePartnerRequests(admin.firestore());
+  const holds = await require('./receivingSites').sweepReservations(admin.firestore());
+  console.log('Expired rescue offers closed', result.expired, 'partner requests moved on', partners.moved,
+    'holds expired', holds.expired, 'holds overdue', holds.overdue);
 });
 
 exports.assignRescueReceiver = functions.https.onCall((data, context) =>
@@ -81,6 +84,9 @@ exports.reconcileSiteReservation = functions.runWith({ failurePolicy: true }).fi
   .onUpdate((change) => require('./receivingSites').reconcileReservation(admin.firestore(),
     change.after.ref, change.before.data(), change.after.data()));
 
+exports.getRescueRoute = functions.https.onCall((data, context) =>
+  require('./rescueRoute').getRescueRoute(admin.firestore(), data, context.auth?.uid));
+
 exports.listCustodyCandidates = functions.https.onCall((data, context) =>
   require('./custodyCandidates').listCustodyCandidates(admin.firestore(), data, context.auth?.uid));
 
@@ -88,6 +94,26 @@ exports.volunteerImpact = functions.https.onCall((data, context) =>
   require('./impactReports').volunteerImpact(admin.firestore(), data, context.auth?.uid));
 exports.chapterImpact = functions.https.onCall((data, context) =>
   require('./impactReports').chapterImpact(admin.firestore(), data, context.auth?.uid));
+
+// Donor → receiving partner requests (see partnerRequests.js).
+exports.listPartnerSites = functions.https.onCall((data, context) =>
+  require('./partnerRequests').listPartnerSites(admin.firestore(), data, context.auth?.uid));
+exports.requestReceivingPartner = functions.https.onCall((data, context) =>
+  require('./partnerRequests').requestPartner(admin.firestore(), data, context.auth?.uid));
+exports.respondToPartnerRequest = functions.https.onCall((data, context) =>
+  require('./partnerRequests').respondPartner(admin.firestore(), data, context.auth?.uid));
+
+// Recurring donations (see donationSchedules.js).
+exports.materializeDonationOccurrences = functions.pubsub.schedule('every 15 minutes').onRun(async () => {
+  const out = await require('./donationSchedules').materialize(admin.firestore());
+  if (out.created || out.missed) console.log('Donation occurrences', JSON.stringify(out));
+});
+exports.confirmDonationOccurrence = functions.https.onCall((data, context) =>
+  require('./donationSchedules').confirmOccurrence(admin.firestore(), data, context.auth?.uid,
+    { requestPartner: require('./partnerRequests').requestPartner }));
+
+exports.respondToRescueOffer = functions.https.onCall((data, context) =>
+  require('./rescueOffers').respond(admin.firestore(), data, context.auth?.uid));
 
 exports.suggestRescueVolunteers = functions.https.onCall((data, context) =>
   require('./rescueSuggestions').suggest(admin.firestore(), data, context.auth?.uid));

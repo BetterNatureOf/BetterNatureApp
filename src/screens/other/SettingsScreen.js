@@ -12,6 +12,7 @@ import { selfPromoteToExecutive, isFounderEmail } from '../../services/founder';
 import { notify, confirm } from '../../services/ui';
 import { confirmWithPassword } from '../../services/passwordConfirm';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet, brand } from '../../components/ui/BrandHero';
 
 export default function SettingsScreen({ navigation }) {
   const { contentStyle } = useResponsiveLayout();
@@ -113,17 +114,15 @@ export default function SettingsScreen({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={contentStyle}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Settings" onBack={() => navigation.goBack()} />
+      <BrandSheet>
      <ResponsiveContainer maxWidth={720}>
-      <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
 
-      <BrushText variant="screenTitle" style={styles.title}>
-        Settings
-      </BrushText>
 
-      <BrushText variant="sectionHeader" style={styles.sectionTitle}>
+      <Text accessibilityRole="header" style={[brand.section, styles.sectionTitle]}>
         Notifications
-      </BrushText>
+      </Text>
 
       <View style={styles.settingRow}>
         <View style={styles.settingText}>
@@ -151,9 +150,9 @@ export default function SettingsScreen({ navigation }) {
 
       <BrushDivider />
 
-      <BrushText variant="sectionHeader" style={styles.sectionTitle}>
+      <Text accessibilityRole="header" style={[brand.section, styles.sectionTitle]}>
         Account
-      </BrushText>
+      </Text>
 
       <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
         <Text style={styles.linkItem}>Edit Profile</Text>
@@ -224,6 +223,7 @@ export default function SettingsScreen({ navigation }) {
 
       <Text style={styles.version}>BetterNature v1.0.0</Text>
      </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

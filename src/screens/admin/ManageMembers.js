@@ -22,6 +22,7 @@ import { getProfile } from '../../services/auth';
 import useAuthStore from '../../store/authStore';
 import { hasRole, isExec, isPresident } from '../../services/roles';
 import VolunteerHistory from './VolunteerHistory';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 // Display order: highest org-wide privilege at the top, then chapter
 // officers in their seniority sequence, then plain Member, then the
@@ -359,14 +360,10 @@ export default function ManageMembers({ navigation, route }) {
   );
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title={<>{historyOnly ? 'Volunteer activity' : 'Manage Members'}</>} onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={900}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>
-          {historyOnly ? 'Volunteer activity' : 'Manage Members'}
-        </BrushText>
         <Text style={styles.subtitle}>
           {historyOnly ? 'Select a volunteer to see deliveries and log work.' : 'Select a member to view their details.'}
         </Text>
@@ -800,6 +797,7 @@ export default function ManageMembers({ navigation, route }) {
           </View>
         </Modal>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

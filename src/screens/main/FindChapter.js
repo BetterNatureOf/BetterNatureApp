@@ -16,6 +16,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import useAuthStore from '../../store/authStore';
 import { notify, confirm } from '../../services/ui';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 export default function FindChapter({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -93,15 +94,10 @@ export default function FindChapter({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Find your chapter" subtitle="Moved cities or never picked a chapter at signup? Browse and join." onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={780}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>Find your chapter</BrushText>
-        <Text style={styles.subtitle}>
-          Moved cities or never picked a chapter at signup? Browse and join.
-        </Text>
 
         <TextInput
           style={styles.search}
@@ -149,6 +145,7 @@ export default function FindChapter({ navigation }) {
           <Button title="Start a chapter" variant="secondary" onPress={() => navigation.navigate('StartChapter')} style={{ marginTop: 12 }} />
         </View>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

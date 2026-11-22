@@ -40,9 +40,13 @@ export function describeSiteNow(site, now = Date.now()) {
   const capText = [cap.packages_per_day ? `${cap.packages_per_day} items/day` : null,
     cap.weight_lbs_per_day ? `${cap.weight_lbs_per_day} lb/day` : null].filter(Boolean).join(' · ') || 'No daily limit set';
   const foods = site.food_categories?.length ? site.food_categories.map((k) => categoryOf(k)?.label || k).join(', ') : 'Accepted food not listed';
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: site.timezone || 'America/Chicago' }).format(new Date(now));
+  const closedToday = (site.closures || []).some((c) => c.date === today);
+  const upcoming = (site.closures || []).filter((c) => c.date > today).map((c) => c.date).sort().slice(0, 2);
+  const storage = site.storage?.length ? `Storage: ${site.storage.join(', ').replace('hot_holding', 'hot holding')}` : 'Storage not listed';
   return {
-    label: paused ? 'Paused' : open === null ? 'Hours unknown' : open ? 'Open now' : 'Closed now',
-    tone: paused || open === false ? 'warn' : 'ok',
-    detail: `${hoursText(site)} · ${capText} · ${foods}`,
+    label: paused ? 'Paused' : closedToday ? 'Closed today' : open === null ? 'Hours unknown' : open ? 'Open now' : 'Closed now',
+    tone: paused || closedToday || open === false ? 'warn' : 'ok',
+    detail: `${hoursText(site)} · ${capText} · ${foods} · ${storage}${upcoming.length ? ` · Closed ${upcoming.join(', ')}` : ''}`,
   };
 }

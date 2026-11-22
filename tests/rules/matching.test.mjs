@@ -47,9 +47,22 @@ describe('cargo rules', () => {
 const PROJECT_ID = 'demo-bn-matching';
 const MIN = 60_000;
 const LAT = 35.1495, LNG = -90.049;
+const SITE = [LAT + 0.02, LNG];
 const ORIGIN = latLngToCell(LAT, LNG, 7);
-const noRoads = async () => new Map();
-let app, db, T0;
+// Routing fixture: seconds per volunteer cell to the donor; donor → site.
+const fixture = (toDonor = {}, toSite = null) => ({
+  name: 'fixture',
+  async matrix({ origins, destination }) {
+    const toSiteCall = Math.abs(destination[0] - SITE[0]) < 1e-9;
+    const seconds = origins.map((o) => (toSiteCall ? toSite : toDonor[latLngToCell(o[0], o[1], 7)] ?? null));
+    const got = seconds.filter((v) => v !== null).length;
+    return { status: !got ? 'unavailable' : got === seconds.length ? 'ok' : 'partial', seconds };
+  },
+  async route() { return { status: 'unavailable' }; },
+});
+const noRoads = fixture();
+let app, db;
+const T0 = Date.parse('2026-11-23T18:00:00Z');
 before(() => { app = initializeApp({ projectId: PROJECT_ID }, 'matching-test'); db = getFirestore(app); });
 after(async () => { await deleteApp(app); });
 
@@ -59,8 +72,8 @@ const volunteer = (extra = {}) => ({
 });
 const offer = (extra = {}) => ({
   status: 'available', chapter_id: 'ch', restaurant_id: 'r1', claimed_by: null, restaurant_lat: LAT, restaurant_lng: LNG,
-  estimated_weight_lbs: 30, packages: 4, food_category: 'prepared_cold',
-  destination_confirmation: { site_name: 'S', address: 'A', contact: 'C', confirmed_by: 'pres', accepted_weight_lbs: 30,
+  fridge_lat: SITE[0], fridge_lng: SITE[1], estimated_weight_lbs: 30, packages: 4, food_category: 'prepared_cold',
+  destination_confirmation: { site_name: 'S', site_id: 'site1', address: 'A', contact: 'C', confirmed_by: 'pres', accepted_weight_lbs: 30,
     confirmed_at: Timestamp.fromMillis(T0 - MIN), pickup_by: Timestamp.fromMillis(T0 + 120 * MIN),
     arrival_by: Timestamp.fromMillis(T0 + 180 * MIN) },
   ...extra,
@@ -68,7 +81,6 @@ const offer = (extra = {}) => ({
 
 beforeEach(async () => {
   await fetch(`http://${process.env.FIRESTORE_EMULATOR_HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`, { method: 'DELETE' });
-  T0 = Date.now();
   const users = {
     fits: volunteer({ name: 'Fits', vehicle: { type: 'suv', package_capacity: 12, weight_capacity_lbs: 300, equipment: ['cooler'] } }),
     nocooler: volunteer({ name: 'No cooler', vehicle: { type: 'suv', package_capacity: 12, weight_capacity_lbs: 300, equipment: [] } }),
@@ -85,12 +97,15 @@ beforeEach(async () => {
     db.doc(`rescue_availability/${uid}`).set({ cell, updated_at: Timestamp.fromMillis(T0 - 5 * MIN) })));
   await db.doc('pickups/other-run').set({ status: 'enroute', claimed_by: 'busy', chapter_id: 'ch' });
   await db.doc('pickups/p').set(offer());
+  await db.doc('receiving_sites/site1').set({ name: 'S', type: 'staffed_center', chapter_id: 'ch', status: 'active' });
+  await db.doc('receiving_sites/site1/reservations/p').set({ status: 'held', expires_at: Timestamp.fromMillis(T0 + 210 * MIN) });
 });
 
 describe('dispatch uses cargo fit', () => {
-  it('skips known mismatches, still alerts unknowns, and records both', async () => {
-    const out = await D.onPickupChange(db, db.doc('pickups/p'), (await db.doc('pickups/p').get()).data(), { now: T0, roadTimes: noRoads });
-    assert.deepEqual(out.recipients.sort(), ['fits', 'unknown']);
+  it('skips known mismatches, keeps unknowns eligible, and records both', async () => {
+    const out = await D.onPickupChange(db, db.doc('pickups/p'), (await db.doc('pickups/p').get()).data(), { now: T0, routing: noRoads });
+    assert.equal(out.recipients.length, 1);
+    assert.ok(['fits', 'unknown'].includes(out.recipients[0]));
     const s = (await db.doc('pickups/p/dispatch/state').get()).data();
     assert.equal(s.last_round.skipped.does_not_fit, 1);
     assert.equal(s.last_round.cargo_unknown, 1);
@@ -99,36 +114,27 @@ describe('dispatch uses cargo fit', () => {
 
 describe('coordinator suggestions', () => {
   it('only chapter coordinators and execs can ask', async () => {
-    await assert.rejects(suggest(db, { pickupId: 'p' }, 'fits', { now: T0, roadTimes: noRoads }), /coordinators/);
-    await assert.rejects(suggest(db, { pickupId: 'p' }, 'otherpres', { now: T0, roadTimes: noRoads }), /coordinators/);
+    await assert.rejects(suggest(db, { pickupId: 'p' }, 'fits', { now: T0, routing: noRoads }), /coordinators/);
+    await assert.rejects(suggest(db, { pickupId: 'p' }, 'otherpres', { now: T0, routing: noRoads }), /coordinators/);
     await assert.rejects(suggest(db, { pickupId: 'p' }, null, { now: T0 }), /Sign in/);
   });
 
-  it('lists free, eligible chapter volunteers with fit first and explicit gaps', async () => {
-    const out = await suggest(db, { pickupId: 'p' }, 'pres', { now: T0, roadTimes: noRoads });
-    assert.deepEqual(out.candidates.map((c) => [c.uid, c.fit]), [['fits', 'fits'], ['unknown', 'unknown'], ['nocooler', 'does_not_fit']]);
-    assert.ok(out.candidates.every((c) => c.timing === 'unknown' && c.road_minutes === null));
-    assert.ok(out.gaps.includes('road_times') && out.gaps.includes('receiving_site_details'));
-    assert.equal(out.candidates[0].full_trip.status, 'missing_route_data');
+  it('without routing, every estimate is labeled straight-line and the gap is listed', async () => {
+    const out = await suggest(db, { pickupId: 'p' }, 'pres', { now: T0, routing: noRoads });
+    assert.deepEqual(out.candidates.map((c) => c.uid).sort(), ['fits', 'nocooler', 'unknown']);
+    assert.ok(out.candidates.every((c) => c.estimate_basis === 'approximate' && c.road_minutes === null));
+    assert.ok(out.gaps.includes('road_times'));
+    assert.equal(out.candidates.find((c) => c.uid === 'nocooler').fit, 'does_not_fit');
+    assert.equal(out.candidates.find((c) => c.uid === 'unknown').travel_mode_assumed, true);
   });
 
-  it('uses road time for timing when the routing service answers', async () => {
-    const roads = async (cells) => new Map(cells.map((c) => [c, c === ORIGIN ? 600 : 7200]));
-    const out = await suggest(db, { pickupId: 'p' }, 'pres', { now: T0, roadTimes: roads });
+  it('uses road times and the full trip check when routing answers', async () => {
+    const out = await suggest(db, { pickupId: 'p' }, 'pres', { now: T0,
+      routing: fixture({ [ORIGIN]: 600, [gridRingUnsafe(ORIGIN, 1)[0]]: 7200, [gridRingUnsafe(ORIGIN, 1)[1]]: 900 }, 900) });
     const byId = Object.fromEntries(out.candidates.map((c) => [c.uid, c]));
-    assert.equal(byId.nocooler.timing, 'can_make_pickup');
-    assert.equal(byId.fits.timing, 'too_far_for_pickup_cutoff');
+    assert.equal(byId.nocooler.timing, 'can_make_it'); assert.equal(byId.nocooler.road_minutes, 10);
+    assert.equal(byId.fits.timing, 'pickup_deadline');
+    assert.equal(byId.unknown.full_trip.status, 'feasible'); assert.equal(byId.unknown.full_trip.basis, 'road');
     assert.ok(!out.gaps.includes('road_times'));
-  });
-
-  it('runs the full rescueMatching trip check once every input is known', async () => {
-    await db.doc('pickups/p').update({ receiving_site: { id: 'site1', to_site_minutes: 15, food_categories: ['prepared_cold'],
-      remaining_packages: 20, opens_at: Timestamp.fromMillis(T0 - 60 * MIN), closes_at: Timestamp.fromMillis(T0 + 240 * MIN) } });
-    const roads = async (cells) => new Map(cells.map((c) => [c, 600]));
-    const out = await suggest(db, { pickupId: 'p' }, 'pres', { now: T0, roadTimes: roads });
-    const fits = out.candidates.find((c) => c.uid === 'fits');
-    assert.equal(fits.full_trip.status, 'feasible');
-    assert.ok(fits.full_trip.margin_minutes > 0);
-    assert.equal(out.candidates.find((c) => c.uid === 'nocooler').full_trip.status, 'cargo_requirements');
   });
 });

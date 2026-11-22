@@ -13,6 +13,7 @@ import Screen from '../../components/ui/Screen';
 import useAuthStore from '../../store/authStore';
 import { fetchEvents, createEvent, createRecurringEvents } from '../../services/database';
 import { notify } from '../../services/ui';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const PROJECT_COLORS = {
   iris: Colors.sage,
@@ -96,17 +97,13 @@ export default function PresEvents({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Chapter Events" subtitle="Upcoming events for your chapter" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={900}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
 
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <BrushText variant="screenTitle" style={styles.title}>Chapter Events</BrushText>
-            <Text style={styles.subtitle}>Upcoming events for your chapter</Text>
-          </View>
+          <View style={{ flex: 1 }} />
           <TouchableOpacity style={styles.newBtn} onPress={() => { setForm(blank); setShowCompose(true); }}>
             <Text style={styles.newBtnText}>+ New event</Text>
           </TouchableOpacity>
@@ -235,6 +232,7 @@ export default function PresEvents({ navigation }) {
           </View>
         </Modal>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

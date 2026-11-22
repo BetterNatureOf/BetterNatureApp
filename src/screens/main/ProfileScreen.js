@@ -19,6 +19,7 @@ import Screen from '../../components/ui/Screen';
 const MENU_ITEMS = [
   { key: 'agreements', label: 'Agreement Center', icon: 'file', screen: 'AgreementCenter' },
   { key: 'vehicle', label: 'Rescue vehicle', icon: 'truck', screen: 'VehicleSetup' },
+  { key: 'receiving', label: 'Receiving partner', icon: 'pin', screen: 'PartnerIncoming' },
   { key: 'refer', label: 'Bring a friend', icon: 'gift', screen: 'Refer' },
   { key: 'find', label: 'Find / switch chapter', icon: 'pin', screen: 'FindChapter' },
   { key: 'receipts', label: 'Tax receipts', icon: 'file', screen: 'MyTaxReceipts' },

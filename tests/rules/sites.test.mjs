@@ -57,6 +57,20 @@ describe('site checks', () => {
     assert.ok(S.siteFit(site({ hours: closed }), p, { arrivalBy: arrival(), now: T0 }).reasons.includes('closed_at_arrival'));
     assert.ok(S.siteFit(site({ food_categories: ['bakery'] }), p, { arrivalBy: arrival(), now: T0 }).reasons.includes('food_type_not_accepted'));
   });
+  it('blocks a date-specific closure and food the site can’t store', () => {
+    const p = pickup();
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date(arrival()));
+    assert.ok(S.siteFit(site({ closures: [{ date: day }] }), p, { arrivalBy: arrival(), now: T0 }).reasons.includes('closed_on_date'));
+    assert.ok(S.siteFit(site({ storage: ['ambient'] }), p, { arrivalBy: arrival(), now: T0 }).reasons.includes('no_cold_storage'));
+    assert.equal(S.siteFit(site({ storage: ['ambient', 'refrigerated'] }), p, { arrivalBy: arrival(), now: T0 }).ok, true);
+  });
+
+  it('a stale hold past its expiry no longer consumes capacity', async () => {
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date(arrival()));
+    await db.doc('receiving_sites/s1/reservations/old').set({ day, packages: 9, status: 'held', expires_at: Timestamp.fromMillis(T0 - MIN) });
+    assert.equal((await S.confirmDestination(db, { pickupId: 'p1', siteId: 's1', arrivalBy: arrival() }, 'pres', { now: T0 })).ok, true);
+  });
+
   it('an expired pause no longer blocks', () => {
     const fit = S.siteFit(site({ status: 'paused', paused_until: Timestamp.fromMillis(T0 - MIN) }), pickup(), { arrivalBy: arrival(), now: T0 });
     assert.equal(fit.ok, true);

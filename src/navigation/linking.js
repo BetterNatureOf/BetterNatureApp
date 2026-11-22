@@ -49,6 +49,7 @@ const screens = {
   VehicleSetup: 'profile/vehicle',
   ReceivingSites: 'admin/sites',
   RescueQueue: 'admin/queue',
+  PartnerIncoming: 'receiving',
   WebsiteContent: 'admin/website',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',
@@ -56,6 +57,7 @@ const screens = {
 
   RestDashboard: 'restaurant',
   ScheduleDonation: 'restaurant/post',
+  RecurringDonations: 'restaurant/recurring',
   DonationHistory: 'restaurant/history',
   TaxReceipts: 'restaurant/receipts',
 

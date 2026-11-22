@@ -22,6 +22,7 @@ import {
   createOrgMetric,
 } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 // Shared editor used by both executive ("org" mode, all metrics) and chapter
 // president ("chapter" mode, only their chapter). Tap a row to adjust its
@@ -115,14 +116,10 @@ export default function MetricsEditor({ navigation, route }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title={<>{mode === 'chapter' ? 'Chapter Metrics' : 'Impact Metrics'}</>} onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={900}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
-        <BrushText variant="screenTitle" style={styles.title}>
-          {mode === 'chapter' ? 'Chapter Metrics' : 'Impact Metrics'}
-        </BrushText>
         <Text style={styles.subtitle}>
           {mode === 'chapter'
             ? 'Numbers shown on your chapter dashboards. Auto-tracked metrics update as your team logs pickups and events — adjust the offset to correct or supplement them.'
@@ -308,6 +305,7 @@ export default function MetricsEditor({ navigation, route }) {
           </View>
         </View>
       </Modal>
+    </BrandSheet>
     </Screen>
   );
 }

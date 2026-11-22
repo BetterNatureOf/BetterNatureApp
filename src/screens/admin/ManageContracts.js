@@ -19,6 +19,7 @@ import { fetchAllMembers } from '../../services/database';
 import { CONTRACTS, roleForKind } from '../../services/contracts';
 import { notify, confirm } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const FILTERS = [
   { key: 'all',         label: 'All' },
@@ -118,16 +119,10 @@ export default function ManageContracts({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Manage contracts" subtitle="Every signed agreement across all accounts. View the full text + signature, search by name or business, revoke when a role ends." onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={920}>
-        <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
-          <Icon name="back" size={18} color={Colors.green} />
-          <Text style={styles.backText}>Back</Text>
-        </AnimatedPressable>
-        <BrushText variant="screenTitle" style={styles.title}>Manage contracts</BrushText>
-        <Text style={styles.subtitle}>
-          Every signed agreement across all accounts. View the full text + signature, search by name or business, revoke when a role ends.
-        </Text>
 
         <View style={styles.pills}>
           {FILTERS.map((f) => {
@@ -216,6 +211,7 @@ export default function ManageContracts({ navigation }) {
           </View>
         )}
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

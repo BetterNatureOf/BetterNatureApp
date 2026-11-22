@@ -18,12 +18,15 @@ import Button from '../../components/ui/Button';
 import useAuthStore from '../../store/authStore';
 import Icon from '../../components/ui/Icon';
 import { uploadIdDocument, getProfile } from '../../services/auth';
+import UploadButton from '../../components/ui/UploadButton';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 import { notify, notifyThen } from '../../services/ui';
 import Screen from '../../components/ui/Screen';
 
 export default function VerifyIdScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const [uploadState, setUploadState] = useState('idle');
   const [frontUri, setFrontUri] = useState(null);
   const [backUri,  setBackUri]  = useState(null);
   const [busy, setBusy] = useState(false);
@@ -50,9 +53,10 @@ export default function VerifyIdScreen({ navigation }) {
     if (!frontUri) return notify('Front of the ID', 'Take a photo of the FRONT of your ID first.');
     if (!backUri)  return notify('Back of the ID',  'Take a photo of the BACK of your ID too.');
     if (!user?.id) return notify('Not signed in');
-    setBusy(true);
+    setBusy(true); setUploadState('working');
     try {
       await uploadIdDocument(user.id, { frontUri, backUri });
+      setUploadState('done');
       const fresh = await getProfile(user.id);
       if (fresh && setUser) setUser(fresh);
       notifyThen(
@@ -61,21 +65,16 @@ export default function VerifyIdScreen({ navigation }) {
         () => navigation.goBack(),
       );
     } catch (e) {
+      setUploadState('error');
       notify('Upload failed', e?.message || 'Try again.');
     } finally { setBusy(false); }
   }
 
   return (
     <Body>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>‹ Back</Text>
-      </TouchableOpacity>
-      <BrushText variant="screenTitle" style={styles.title}>Verify your ID</BrushText>
-      <Text style={styles.subtitle}>
-        Two quick photos — the front and the back of any government-issued ID
-        (driver’s license, passport, or state ID). Stored privately and only used
-        for verification.
-      </Text>
+      <BrandHero kicker="Volunteer safety" title="Verify your ID" onBack={() => navigation.goBack()}
+        subtitle="Two quick photos: the front and back of any government-issued ID. Stored privately and only used for verification." />
+      <BrandSheet>
 
       <Well
         label="Front"
@@ -88,12 +87,11 @@ export default function VerifyIdScreen({ navigation }) {
         onPress={() => snapOrPick(setBackUri)}
       />
 
-      <Button
-        title={busy ? 'Uploading…' : 'Submit ID'}
-        onPress={submit}
-        loading={busy}
-        style={{ marginTop: 18 }}
-      />
+      <View style={{ marginTop: 18 }}>
+        <UploadButton label="Upload my ID" workingLabel="Uploading securely…" doneLabel="ID uploaded"
+          errorLabel="Upload failed — tap to retry" state={uploadState} onPress={submit} disabled={busy} />
+      </View>
+      </BrandSheet>
     </Body>
   );
 }
@@ -101,11 +99,11 @@ export default function VerifyIdScreen({ navigation }) {
 const Body = Platform.OS === 'web'
   ? ({ children }) => React.createElement(
       'div',
-      { style: { height: '100vh', width: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', backgroundColor: Colors.cream, padding: 24, paddingTop: 60, paddingBottom: 60, boxSizing: 'border-box' } },
+      { style: { height: '100vh', width: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', backgroundColor: Colors.cream, padding: 0, boxSizing: 'border-box' } },
       children
     )
   : ({ children }) => (
-      <Screen contentStyle={styles.content}>{children}</Screen>
+      <Screen contentStyle={{ padding: 0 }}>{children}</Screen>
     );
 
 function Well({ label, uri, onPress }) {

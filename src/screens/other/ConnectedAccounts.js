@@ -36,6 +36,7 @@ import {
 import { notify, notifyThen, confirm } from '../../services/ui';
 import { FEATURES } from '../../config/features';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 // Map Firebase provider IDs to UI metadata.
 const PROVIDERS = [
@@ -190,17 +191,10 @@ export default function ConnectedAccounts({ navigation }) {
   const visible = PROVIDERS.filter((p) => !p.gated || FEATURES[p.gated]);
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Connected accounts" subtitle="Link more than one sign-in method so you can log in whichever way is easiest. We’ll always tie them all to the same BetterNature account — your stats, role, and history stay put." onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={620}>
-        <AnimatedPressable onPress={() => navigation.goBack()} style={styles.back} scaleTo={0.97}>
-          <Icon name="back" size={18} color={Colors.green} />
-          <Text style={styles.backText}>Back</Text>
-        </AnimatedPressable>
-        <BrushText variant="screenTitle" style={styles.title}>Connected accounts</BrushText>
-        <Text style={styles.subtitle}>
-          Link more than one sign-in method so you can log in whichever way is easiest. We’ll always
-          tie them all to the same BetterNature account — your stats, role, and history stay put.
-        </Text>
 
         {visible.map((p) => {
           const linked = providers.includes(p.id);
@@ -323,6 +317,7 @@ export default function ConnectedAccounts({ navigation }) {
           whichever email is attached to your account — it works as long as your email is verified.
         </Text>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
@@ -8,8 +8,10 @@ import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import Screen from '../../components/ui/Screen';
 import useAuthStore from '../../store/authStore';
 import { sendBroadcast } from '../../services/broadcast';
-import { notify, confirm } from '../../services/ui';
+import { notify, notifyThen, confirm } from '../../services/ui';
+import PaperPlaneButton from '../../components/ui/PaperPlaneButton';
 import { isExec as isExecRole } from '../../services/roles';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 const AUDIENCES = [
   { key: 'bn',          label: 'BetterNature',           desc: 'Everyone in the org (members, presidents, execs)' },
@@ -26,6 +28,7 @@ export default function BroadcastScreen({ navigation }) {
   // pres (no exec role anywhere) is scoped to their chapter_id.
   const isExecLike = isExecRole(user);
   const presChapterId = !isExecLike ? (user?.chapter_id || null) : null;
+  const sentNote = useRef('');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [audience, setAudience] = useState('bn');
@@ -49,25 +52,19 @@ export default function BroadcastScreen({ navigation }) {
         sentBy: user?.id || null,
         chapterId: presChapterId, // null for execs (org-wide)
       });
-      if (!result?.ok) {
-        notify('Could not send', result?.reason || 'Something went wrong. Try again.');
-        return;
-      }
-      notify(
-        'Broadcast sent',
-        `${result.inappCount || 0} in-app · ${result.pushCount || 0} push queued · ${result.emailCount || 0} email queued.`
-      );
-      navigation.goBack();
+      if (!result?.ok) return { error: result?.reason || 'Couldn’t send — try again' };
+      sentNote.current = `${result.inappCount || 0} in-app · ${result.pushCount || 0} push queued · ${result.emailCount || 0} email queued.`;
+      return true;
     } catch (e) {
-      notify('Could not send', e?.message || 'Try again.');
+      return { error: e?.message || 'Couldn’t send — try again' };
     } finally { setLoading(false); }
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Broadcast" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={780}>
-        <Text style={styles.back} onPress={() => navigation.goBack()}>‹ Back</Text>
-        <BrushText variant="screenTitle" style={styles.title}>Broadcast</BrushText>
         <Text style={styles.subtitle}>
           {presChapterId
             ? `Goes to your chapter only — every other chapter stays untouched.`
@@ -113,8 +110,12 @@ export default function BroadcastScreen({ navigation }) {
           </Text>
         </View>
 
-        <Button title="Send broadcast" onPress={handleSend} loading={loading} style={styles.btn} />
+        <View style={styles.btn}>
+          <PaperPlaneButton title="Send broadcast" sentTitle="Broadcast sent" onPress={handleSend}
+            onSent={() => notifyThen('Broadcast sent', sentNote.current, () => navigation.goBack())} />
+        </View>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }

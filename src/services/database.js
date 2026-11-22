@@ -22,7 +22,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { auth, db, firebaseApp, isFirebaseConfigured } from '../config/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { serverFunction, pickupChanged } from './server';
 import pickupEligibility from '../../functions/lib/pickupEligibility';
 import {
   mockChapters,
@@ -507,7 +507,7 @@ export async function confirmPickupDestination(pickupId, { siteName, address, co
   }
   if (!Number.isFinite(arrivalBy)) throw new Error('Enter a valid receiving deadline.');
   const ref = doc(db, 'pickups', pickupId);
-  return runTransaction(db, async (tx) => {
+  const __result = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error('Offer not found.');
     const pickup = snap.data();
@@ -524,7 +524,7 @@ export async function confirmPickupDestination(pickupId, { siteName, address, co
     if (!Number.isFinite(pickup.estimated_weight_lbs) || pickup.estimated_weight_lbs <= 0) {
       throw new Error('Confirm the batch weight with the donor before opening this offer.');
     }
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       status: 'available',
       fridge_id: null,
       fridge_name: name,
@@ -541,12 +541,14 @@ export async function confirmPickupDestination(pickupId, { siteName, address, co
       },
     });
   });
+  pickupChanged(pickupId);
+  return __result;
 }
 
 // Staff record the receiving site's actual acceptance separately from
 // the destination reservation and the volunteer's delivery action.
 export async function assignPickupReceiver(pickupId, email) {
-  await httpsCallable(getFunctions(firebaseApp), 'assignRescueReceiver')({ pickupId, email });
+  await serverFunction('assignRescueReceiver')({ pickupId, email });
 }
 
 export async function rerouteHeldPickup(pickupId, { siteName, address, contact, arrivalBy, holdReportedAt }) {
@@ -578,7 +580,7 @@ export async function rerouteHeldPickup(pickupId, { siteName, address, contact, 
     if (previous.address.trim().toLowerCase() === siteAddress.toLowerCase()) {
       throw new Error('Enter a different receiving address.');
     }
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       safety_hold: null,
       receiver_uid: null,
       receiver_assigned_by: null,
@@ -599,6 +601,7 @@ export async function rerouteHeldPickup(pickupId, { siteName, address, contact, 
     });
     return pickup.claimed_by;
   });
+  pickupChanged(pickupId);
   if (volunteerId) {
     try {
       const { enqueueNotification } = await import('./notify');
@@ -640,12 +643,13 @@ export async function recordPickupReceipt(pickupId, { receiverName, weightLbs, f
     // Partial acceptance: what the site turned away keeps the run open
     // until a coordinator records where it went.
     const rejected = Number.isFinite(rejectedLbs) && rejectedLbs > 0 ? rejectedLbs : 0;
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       receiving_receipt: { receiver_name: name, weight_lbs: weightLbs, recorded_by: uid,
         recorded_at: serverTimestamp(), source: fromReceivingSite ? 'receiving_site' : 'coordinator',
         ...(rejected ? { rejected_weight_lbs: rejected, rejection_reason: String(rejectionReason || '').trim().slice(0, 200) } : {}) },
     });
   });
+  pickupChanged(pickupId);
 }
 
 export async function fetchPickupsAwaitingDestination(chapterId) {
@@ -778,107 +782,16 @@ export async function claimPickup(pickupId, userId) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     return pk ? { ...pk, status: 'claimed', claimed_by: userId } : null;
   }
-  const ref = doc(db, 'pickups', pickupId);
   if (!auth?.currentUser || auth.currentUser.uid !== userId) {
     throw new Error('Sign in as the volunteer claiming this pickup.');
   }
-  const claimedAt = serverTimestamp();
-  // ATOMIC claim — without this, two volunteers tapping "Claim" at
-  // the same moment both succeed; both drive to the restaurant; the
-  // restaurant fields two confused volunteers. A Firestore
-  // transaction reads + writes in one round-trip, so the second
-  // claimant lands in the `pk.status !== 'available'` branch and
-  // gets a friendly error instead of stomping the first volunteer.
-  // Read eligibility and the contact snapshot inside the same transaction.
-  // Rules independently enforce eligibility and the server claim timestamp.
-  let claimantPhone = '';
-  let claimantName = '';
-  const pk = await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Pickup not found');
-    const data = snap.data();
-    const uSnap = await tx.get(doc(db, 'users', userId));
-    if (!uSnap.exists() || !pickupEligibility.pickupEligible(uSnap.data())) {
-      throw new Error('An approved account, ID, volunteer agreement, and driver setup are required to claim.');
-    }
-    const u = uSnap.data();
-    claimantPhone = u.phone || '';
-    claimantName = u.name || u.full_name || '';
-    if (['claimed', 'enroute'].includes(data.status) && data.claimed_by === userId) {
-      return { id: snap.id, ...data, cached: true };
-    }
-    if (data.status === 'claimed' && data.claimed_by && data.claimed_by !== userId) {
-      throw new Error('Another volunteer just claimed this pickup. Try a different one.');
-    }
-    if (data.receiver_uid === userId) throw new Error('You are assigned to receive this rescue.');
-    if (data.chapter_id && u.chapter_id !== data.chapter_id) {
-      throw new Error('This rescue belongs to another chapter.');
-    }
-    if (!data.destination_confirmation) throw new Error('This offer is waiting for a receiving site.');
-    if ((pickupDeadline(data.destination_confirmation.arrival_by) ?? 0) <= Date.now()) {
-      throw new Error('The receiving window has closed.');
-    }
-    if (data.safety_hold || data.handoff_from_uid || data.verified_by_restaurant_at) throw new Error('This pickup needs coordinator review.');
-    if (data.status === 'completed') throw new Error('That pickup has already been delivered.');
-    if (data.status === 'cancelled') throw new Error('That pickup was cancelled.');
-    if (data.status !== 'available' || data.claimed_by) {
-      throw new Error('This pickup is already assigned. Return to Food pickups to see open routes.');
-    }
-    const deadline = pickupDeadline(data.destination_confirmation.pickup_by ?? data.pickup_window_until);
-    if ((deadline ?? 0) <= Date.now()) {
-      throw new Error('The pickup window has closed. Return to Food pickups to see open routes.');
-    }
-    tx.update(ref, {
-      status: 'claimed',
-      claimed_by: userId,
-      claimed_at: claimedAt,
-      claimant_phone: claimantPhone,
-      claimant_name: claimantName,
-    });
-    return {
-      id: snap.id, ...data,
-      status: 'claimed', claimed_by: userId, claimed_at: claimedAt,
-      claimant_phone: claimantPhone, claimant_name: claimantName,
-    };
-  });
-
-  if (pk.cached) return pk; // A repeated tap neither resets the clock nor queues duplicate notices.
-
-  // Smart reminder: confirmation push + email so the volunteer has
-  // the pickup details in their inbox. Pre-arrival scheduled reminders
-  // will be added once the dispatcher supports send_at — for now we
-  // queue an immediate confirmation only.
-  try {
-    const { enqueueNotification } = await import('./notify');
-    await enqueueNotification({
-      recipients: [userId],
-      kind: 'pickup',
-      title: 'You claimed a pickup',
-      body: `Pickup at ${pk.restaurant_name || 'the restaurant'}. Address: ${pk.restaurant_address || 'see app'}. Open the app for the route.`,
-      url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-      data: { type: 'pickup_claimed', pickupId },
-    });
-  } catch (e) { console.warn('claim notify', e); }
-
-  // #10 from drop-off audit — also push the restaurant so they know
-  // someone's coming. A2 R-followup #3: routed through the server-
-  // side queueBusinessNotification callable because the volunteer
-  // isn't the pickup's partner and can't direct-write outbox docs
-  // for them under the new self-only rule.
-  try {
-    if (pk.restaurant_id) {
-      const { queuePickupToPartner } = await import('./notify');
-      const who = claimantName || 'A volunteer';
-      await queuePickupToPartner(pickupId, 'claim', {
-        title: 'Your donation was claimed',
-        body: `${who} is on the way. You'll get another ping when they mark en route — tap Confirm the moment they arrive.`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_claimed_restaurant', pickupId },
-      });
-    }
-  } catch (e) { console.warn('claim notify restaurant', e); }
-
-  return pk;
+  // Claims are server-only: the callable enforces the exclusive offer,
+  // confirmed receiving site and capacity hold, eligibility, other
+  // assignments, vehicle fit and the complete journey in one transaction.
+  // Direct writes are refused by the Firestore rules.
+  const result = await respondToRescue(pickupId, 'accept');
+  const snap = await getDoc(doc(db, 'pickups', pickupId));
+  return snap.exists() ? { id: snap.id, ...snap.data(), cached: !!result?.cached } : null;
 }
 
 function releasedPickupStatus(pickup, now = Date.now()) {
@@ -914,6 +827,7 @@ async function notifyDonorOfRelease(pickupId, pickup, status, reason = '') {
 }
 
 // Release an uncollected pickup. Only reopen it while both windows are open.
+
 export async function cancelClaim(pickupId, reason = '') {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
@@ -936,7 +850,7 @@ export async function cancelClaim(pickupId, reason = '') {
       throw new Error('You can only release a pickup before you’ve hit the road.');
     }
     const status = releasedPickupStatus(data);
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       status,
       claimed_by: null,
       claimed_at: null,
@@ -954,6 +868,7 @@ export async function cancelClaim(pickupId, reason = '') {
     });
     return { pk: data, status };
   });
+  pickupChanged(pickupId);
   // recordPickupRelease owns accounting atomically and retries server-side.
   // dispatchPickupTransition persists and delivers the partner notification server-side.
   return { ...pk, status, claimed_by: null, claimed_at: null, claimant_name: null, claimant_phone: null };
@@ -982,13 +897,14 @@ export async function cancelPickup(pickupId, reason = '') {
     if (data.status === 'enroute' || data.verified_by_restaurant_at || !['available', 'claimed'].includes(data.status)) {
       throw new Error('A volunteer already picked up the food. Call them on the contact in the app — don\'t cancel here.');
     }
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       status: 'cancelled',
       cancel_reason: reason || null,
       cancelled_at: serverTimestamp(),
     });
     return data;
   });
+  pickupChanged(pickupId);
   // If a volunteer had claimed it, let them know — via push + email
   // so they don't drive to a restaurant that no longer has the food.
   // This is the highest-priority notification in the entire cancel
@@ -1043,11 +959,12 @@ export async function verifyPickupByRestaurant(pickupId, verifierUid) {
       // re-fire the volunteer notification.
       return;
     }
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       verified_by_restaurant_at: serverTimestamp(),
       verified_by_restaurant_uid: verifierUid || null,
     });
   });
+  pickupChanged(pickupId);
   // Ping the volunteer that the restaurant confirmed pickup. Gives
   // them a visible "half-way" milestone — the restaurant has signed
   // off, all that's left is the drop. Route through enqueueNotification
@@ -1115,9 +1032,10 @@ export async function setPickupEnroute(pickupId, { fridgeId } = {}) {
     if (data.status !== 'claimed') {
       throw new Error('This pickup isn\'t in a claimed state — nothing to mark en route.');
     }
-    tx.update(ref, updates);
+    tx.update(ref, { ...updates, updated_at: serverTimestamp() });
     return { id: snap.id, ...data, ...updates };
   });
+  pickupChanged(pickupId);
 
   // Notify the restaurant that someone is on the way. Restaurants are user
   // docs with role='restaurant', so we route the notification to
@@ -1206,7 +1124,7 @@ export async function releaseAbandonedPickup(pickupId, { reason = 'no_show_timeo
       throw new Error('Restaurant confirmed handoff — this isn\'t a no-show, needs a different resolution.');
     }
     const status = releasedPickupStatus(data);
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       status,
       claimed_by: null,
       claimed_at: null,
@@ -1220,6 +1138,7 @@ export async function releaseAbandonedPickup(pickupId, { reason = 'no_show_timeo
     });
     return { pickup: data, status };
   });
+  pickupChanged(pickupId);
   if (!release) return false;
   const { pickup, status } = release;
   const prevClaimant = pickup.claimed_by;
@@ -1294,8 +1213,9 @@ export async function holdPickup(pickupId, reason) {
       throw new Error('You can’t report an issue for this rescue.');
     }
     if (pickup.safety_hold) return;
-    tx.update(ref, { safety_hold: { reason, reported_by: uid, reported_at: serverTimestamp() } });
+    tx.update(ref, { updated_at: serverTimestamp(), safety_hold: { reason, reported_by: uid, reported_at: serverTimestamp() } });
   });
+  pickupChanged(pickupId);
 }
 
 // Executives record a disposition after confirming what physically happened.
@@ -1312,13 +1232,14 @@ export async function closeHeldPickup(pickupId, outcome) {
     if (!pickup.safety_hold || !['claimed', 'enroute'].includes(pickup.status)) {
       throw new Error('This pickup is no longer on hold.');
     }
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       status: 'cancelled',
       cancel_reason: outcome === 'returned_to_donor' ? 'Food returned to donor' : 'Food discarded',
       cancelled_at: serverTimestamp(),
       safety_resolution: { outcome, resolved_by: uid, resolved_at: serverTimestamp() },
     });
   });
+  pickupChanged(pickupId);
 }
 
 function canTakeCustody(member, chapterId) {
@@ -1333,7 +1254,7 @@ function canTakeCustody(member, chapterId) {
 // the check to that rescue's chapter and current assignment.
 export async function fetchCustodyVolunteers(chapterId, currentVolunteerId, pickupId) {
   if (!chapterId || useMock() || !pickupId) return [];
-  const { candidates } = (await httpsCallable(getFunctions(firebaseApp), 'listCustodyCandidates')({ pickupId })).data;
+  const { candidates } = (await serverFunction('listCustodyCandidates')({ pickupId })).data;
   return candidates.filter((c) => c.id !== currentVolunteerId);
 }
 
@@ -1363,7 +1284,7 @@ export async function transferPickupCustody(pickupId, fromUid, toUid, reportedAt
       throw new Error('This volunteer is no longer eligible. Choose another volunteer.');
     }
     const member = target.data();
-    tx.update(ref, {
+    tx.update(ref, { updated_at: serverTimestamp(),
       claimed_by: toUid,
       claimant_name: member.name || 'Volunteer',
       claimant_phone: member.phone || '',
@@ -1375,6 +1296,7 @@ export async function transferPickupCustody(pickupId, fromUid, toUid, reportedAt
       ...(last ? { custody_transfer_history: arrayUnion(last) } : {}),
     });
   });
+  pickupChanged(pickupId);
 }
 
 // #9 from drop-off audit — allow the fridge choice to change between
@@ -1400,7 +1322,7 @@ export async function updatePickupFridge(pickupId, fridgeId) {
     if (data.status !== 'enroute') {
       throw new Error('You can only change the fridge while a pickup is in progress.');
     }
-    tx.update(pkRef, {
+    tx.update(pkRef, { updated_at: serverTimestamp(),
       fridge_id: fridgeId,
       fridge_name: f.name || '',
       fridge_address: f.address || [f.city, f.state].filter(Boolean).join(', '),
@@ -1410,6 +1332,7 @@ export async function updatePickupFridge(pickupId, fridgeId) {
       fridge_changed_at: serverTimestamp(),
     });
   });
+  pickupChanged(pickupId);
 }
 
 // completePickup now takes optional dropoffPhotoUrl + fridgeId so the
@@ -1428,9 +1351,8 @@ export async function updatePickupFridge(pickupId, fridgeId) {
 // Server error reasons preserve the screen's existing recovery prompts.
 // Notification work is server-owned; no post-completion client queue is needed.
 async function invokePickupCompletion(payload) {
-  const { getFunctions, httpsCallable } = await import('firebase/functions');
   try {
-    return (await httpsCallable(getFunctions(), 'completePickupOperation')(payload)).data;
+    return (await serverFunction('completePickupOperation')(payload)).data;
   } catch (error) {
     if (error?.details?.reason) error.code = error.details.reason;
     throw error;
@@ -2214,7 +2136,7 @@ export async function saveReceivingSite(siteId, site) {
 // remaining capacity are checked and reserved in one transaction.
 export async function confirmRescueDestination(pickupId, siteId, arrivalBy) {
   try {
-    return (await httpsCallable(getFunctions(firebaseApp), 'confirmRescueDestination')({ pickupId, siteId, arrivalBy })).data;
+    return (await serverFunction('confirmRescueDestination')({ pickupId, siteId, arrivalBy })).data;
   } catch (e) {
     if (e?.details?.reasons) e.reasons = e.details.reasons;
     throw e;
@@ -2222,7 +2144,7 @@ export async function confirmRescueDestination(pickupId, siteId, arrivalBy) {
 }
 
 export async function recordRescueRemainder(pickupId, { outcome, note, siteName, acceptedLbs }) {
-  return (await httpsCallable(getFunctions(firebaseApp), 'recordRescueRemainder')({ pickupId, outcome, note, siteName, acceptedLbs })).data;
+  return (await serverFunction('recordRescueRemainder')({ pickupId, outcome, note, siteName, acceptedLbs })).data;
 }
 
 // What the volunteer can carry (functions/lib/rescueCargo.js reads it).
@@ -2239,22 +2161,71 @@ export async function saveVehicle(userId, { type, packageCapacity, weightCapacit
   return vehicle;
 }
 
+// ── Recurring donations (functions/donationSchedules.js) ──
+export async function listMySchedules(uid) {
+  if (!uid || useMock()) return [];
+  return snapToList(await getDocs(query(collection(db, 'donation_schedules'), where('owner_uid', '==', uid))));
+}
+export async function saveDonationSchedule(scheduleId, schedule) {
+  const data = { ...schedule, updated_at: serverTimestamp() };
+  if (scheduleId) { await setDoc(doc(db, 'donation_schedules', scheduleId), data); return scheduleId; }
+  return (await addDoc(collection(db, 'donation_schedules'), { ...data, created_at: serverTimestamp() })).id;
+}
+export async function listMyOccurrences(uid) {
+  if (!uid || useMock()) return [];
+  const snap = await getDocs(query(collection(db, 'donation_occurrences'), where('owner_uid', '==', uid), orderBy('ready_at', 'desc'), fbLimit(20)));
+  return snapToList(snap);
+}
+export async function confirmDonationOccurrence(occurrenceId, actual) {
+  return (await serverFunction('confirmDonationOccurrence')({ occurrenceId, ...actual })).data;
+}
+
+// ── Receiving partner requests (functions/partnerRequests.js) ──
+export async function listPartnerSites() {
+  return (await serverFunction('listPartnerSites')({})).data.sites;
+}
+export async function requestReceivingPartner(pickupId, { mode, siteId = null, offerToNetwork = false, respondWithinMin = 30 }) {
+  return (await serverFunction('requestReceivingPartner')({ pickupId, mode, siteId, offerToNetwork, respondWithinMin })).data;
+}
+export async function respondToPartnerRequest(pickupId, { response, siteId = null, arrivalBy = null, reason = '' }) {
+  return (await serverFunction('respondToPartnerRequest')({ pickupId, response, siteId, arrivalBy, reason })).data;
+}
+
+// Accept or decline a rescue (an offer, or directly from the map/list).
+// The server re-checks state, eligibility, fit, reservation and the
+// journey, and assigns atomically (functions/rescueOffers.js).
+export async function respondToRescue(pickupId, response, offerId = null) {
+  try {
+    return (await serverFunction('respondToRescueOffer')({ pickupId, response, ...(offerId ? { offerId } : {}) })).data;
+  } catch (e) {
+    if (e?.details?.reason) e.reason = e.details.reason;
+    throw e;
+  }
+}
+
+// Route preview for the assigned volunteer (server-side Mapbox Directions;
+// not stored). { status: 'ok', geometry, seconds, profile, origin } or
+// { status: 'unavailable', error }.
+export async function getRescueRoute(pickupId) {
+  return (await serverFunction('getRescueRoute')({ pickupId })).data;
+}
+
 // Coordinator-only ranked list of nearby volunteers for a rescue.
 export async function suggestRescueVolunteers(pickupId) {
-  return (await httpsCallable(getFunctions(firebaseApp), 'suggestRescueVolunteers')({ pickupId })).data;
+  return (await serverFunction('suggestRescueVolunteers')({ pickupId })).data;
 }
 
 // Verified impact from the activity ledger, with legacy profile
 // differences explained (functions/impactReports.js).
 export async function fetchVolunteerImpact(memberId) {
-  return (await httpsCallable(getFunctions(firebaseApp), 'volunteerImpact')({ memberId })).data;
+  return (await serverFunction('volunteerImpact')({ memberId })).data;
 }
 export async function fetchChapterImpact(chapterId) {
-  return (await httpsCallable(getFunctions(firebaseApp), 'chapterImpact')({ chapterId })).data;
+  return (await serverFunction('chapterImpact')({ chapterId })).data;
 }
 
 export async function manageVolunteerHistory(memberId, entry, change) {
-  const manage = httpsCallable(getFunctions(firebaseApp), 'manageVolunteerHistory');
+  const manage = serverFunction('manageVolunteerHistory');
   return (await manage({ memberId, ...(entry ? { entry } : {}), ...(change ? { change } : {}) })).data;
 }
 

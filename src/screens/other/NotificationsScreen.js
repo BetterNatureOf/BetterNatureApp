@@ -20,6 +20,7 @@ import Icon from '../../components/ui/Icon';
 import useNotifStore from '../../store/notifStore';
 import { markNotificationRead } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 // Icon per notification kind — Icon component for consistency with the
 // rest of the app instead of hand-painted emojis.
@@ -102,24 +103,20 @@ export default function NotificationsScreen({ navigation }) {
   const recent     = notifications.filter((n) => !isActionable(n));
 
   return (
-    <Screen contentStyle={styles.content}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>{'‹ Back'}</Text>
-        </TouchableOpacity>
-        {actionable.length > 0 || notifications.some((n) => !n.read) ? (
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Notifications" onBack={() => navigation.goBack()}
+        stats={actionable.length ? [{ value: actionable.length, label: 'need you', tone: 'alert' }] : []} />
+      <BrandSheet>
+      {actionable.length > 0 || notifications.some((n) => !n.read) ? (
+        <View style={{ alignItems: 'flex-end' }}>
           <TouchableOpacity onPress={() => {
             markAllRead();
             notifications.filter((n) => !n.read).forEach((n) => markNotificationRead(n.id).catch(() => {}));
           }}>
             <Text style={styles.markAll}>Mark all read</Text>
           </TouchableOpacity>
-        ) : null}
-      </View>
-
-      <BrushText variant="screenTitle" style={styles.title}>
-        Notifications
-      </BrushText>
+        </View>
+      ) : null}
 
       {notifications.length === 0 ? (
         <EmptyAll />
@@ -148,6 +145,7 @@ export default function NotificationsScreen({ navigation }) {
           ) : null}
         </>
       )}
+    </BrandSheet>
     </Screen>
   );
 }
@@ -169,9 +167,12 @@ function SectionHeader({ label, count, hint }) {
 function NotifRow({ notif, onPress, highlighted }) {
   const kind = iconFor(notif.kind || notif.type);
   const target = parseNotifUrl(notif.url);
+  // A rescue offer that expired, was declined or went to someone else is
+  // history, not something to act on.
+  const closedOffer = notif.data?.type === 'rescue_offer' && notif.data?.offer_status && notif.data.offer_status !== 'open';
   return (
     <TouchableOpacity
-      style={[styles.notifCard, highlighted && styles.notifCardHighlighted]}
+      style={[styles.notifCard, highlighted && !closedOffer && styles.notifCardHighlighted, closedOffer && { opacity: 0.6 }]}
       onPress={onPress}
       activeOpacity={0.82}
     >
@@ -186,7 +187,11 @@ function NotifRow({ notif, onPress, highlighted }) {
         {notif.body || notif.description ? (
           <Text style={styles.notifDesc} numberOfLines={2}>{notif.body || notif.description}</Text>
         ) : null}
-        {target && highlighted ? (
+        {closedOffer ? (
+          <Text style={styles.notifDesc}>{notif.data.offer_status === 'declined' ? 'You passed on this offer.'
+            : notif.data.offer_status === 'expired' ? 'This offer expired.' : 'Another volunteer took this rescue.'}</Text>
+        ) : null}
+        {target && highlighted && !closedOffer ? (
           <Text style={styles.notifCta}>
             {target.screen === 'PickupDetail' ? 'Open pickup →' : 'Open →'}
           </Text>

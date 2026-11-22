@@ -7,13 +7,17 @@ import { Colors } from '../../config/theme';
 import { suggestRescueVolunteers } from '../../services/database';
 
 const TIMING = {
-  can_make_pickup: 'Can reach the pickup in time',
-  too_far_for_pickup_cutoff: 'Too far to make the pickup cutoff',
-  unknown: 'Travel time unknown',
+  can_make_it: 'Can make both stops in time',
+  pickup_deadline: 'Can’t make the pickup cutoff',
+  delivery_deadline: 'Can’t make the receiving deadline',
+  volunteer_unavailable: 'Not free long enough',
+  unknown: 'Timing can’t be checked',
 };
+const MODE = { driving: 'drive', cycling: 'ride', walking: 'walk' };
 const FIT = { fits: 'Vehicle fits', does_not_fit: 'Vehicle doesn’t fit', unknown: 'Vehicle fit unknown' };
 const GAPS = {
-  road_times: 'road times (routing service not configured)',
+  road_times: 'road times (estimates are straight-line until Mapbox routing is configured)',
+  receiving_site_location: 'the receiving site’s map location',
   food_category: 'food type',
   packages: 'package count',
   receiving_site_details: 'receiving site hours and capacity',
@@ -45,11 +49,14 @@ export default function RescueSuggestions({ pickupId }) {
             <View key={c.uid} style={styles.row} accessibilityRole="text">
               <Text style={styles.name}>{c.name}</Text>
               <Text style={styles.meta}>
-                {c.road_minutes != null ? `${c.road_minutes} min drive` : `${c.distance_km} km away`} · {TIMING[c.timing]}
+                {c.estimate_minutes != null
+                  ? `${c.estimate_basis === 'road' ? '' : 'about '}${c.estimate_minutes} min ${MODE[c.travel_mode] || 'trip'} from their area${c.estimate_basis === 'road' ? ' (road estimate)' : ' (straight-line estimate)'}`
+                  : `${c.distance_km} km away`} · {TIMING[c.timing] || TIMING.unknown}
+                {c.travel_mode_assumed ? ' · vehicle not set, planned as driving' : ''}
               </Text>
               <Text style={[styles.meta, c.fit === 'does_not_fit' && styles.warn]}>
                 {FIT[c.fit]}{c.fit_problems.length ? ` (${c.fit_problems.join(', ')})` : ''}
-                {c.full_trip.status === 'feasible' ? ` · full trip fits with ${c.full_trip.margin_minutes} min to spare` : ''}
+                {c.full_trip.status === 'feasible' ? ` · could leave up to ${c.full_trip.slack_minutes} min from now` : ''}
               </Text>
             </View>
           ))}

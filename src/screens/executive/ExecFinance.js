@@ -4,6 +4,7 @@ import { Colors, Type, Radius, Shadows } from '../../config/theme';
 import BrushText from '../../components/ui/BrushText';
 import { fetchAllDonations } from '../../services/database';
 import Screen from '../../components/ui/Screen';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 function fmtMoney(n) {
   return `$${(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -45,13 +46,9 @@ export default function ExecFinance({ navigation }) {
   }, [donations, tab]);
 
   return (
-    <Screen contentStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>‹ Back</Text>
-      </TouchableOpacity>
-      <BrushText variant="screenTitle" style={styles.title}>
-        Donations & Finance
-      </BrushText>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Donations & Finance" onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <Text style={styles.subtitle}>Apple Pay activity across the org</Text>
 
       <View style={styles.heroCard}>
@@ -117,6 +114,7 @@ export default function ExecFinance({ navigation }) {
           </View>
         ))
       )}
+    </BrandSheet>
     </Screen>
   );
 }

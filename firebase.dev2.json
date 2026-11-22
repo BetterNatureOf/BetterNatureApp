@@ -1,0 +1,40 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20",
+    "predeploy": []
+  },
+  "emulators": {
+    "auth": {
+      "port": 9289
+    },
+    "functions": {
+      "port": 5201
+    },
+    "firestore": {
+      "port": 8280
+    },
+    "storage": {
+      "port": 9399
+    },
+    "hub": {
+      "port": 4600
+    },
+    "logging": {
+      "port": 4610
+    },
+    "eventarc": {
+      "port": 9799
+    },
+    "ui": {
+      "enabled": false
+    }
+  }
+}

@@ -37,6 +37,7 @@ import { getProfile } from '../../services/auth';
 import { normalizeCountry } from '../../services/countryCodes';
 import useAuthStore from '../../store/authStore';
 import ChapterApprovals from './ChapterApprovals';
+import { BrandHero, BrandSheet } from '../../components/ui/BrandHero';
 
 // Officer slots, in display order. chapter_pres kept as an alias for
 // chapter_president since older accounts used the short form.
@@ -494,19 +495,13 @@ export default function ManageChapters({ navigation }) {
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen contentStyle={{ padding: 0 }}>
+      <BrandHero title="Manage Chapters" subtitle={`${chapters.length} ${chapters.length === 1 ? 'chapter' : 'chapters'} · ${members.filter((m) => m.role !== 'restaurant').length} members · ${fridges.length} fridges`} onBack={() => navigation.goBack()} />
+      <BrandSheet>
       <ResponsiveContainer maxWidth={1100}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.back}>‹ Back</Text>
-        </TouchableOpacity>
 
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <BrushText variant="screenTitle" style={styles.title}>Manage Chapters</BrushText>
-            <Text style={styles.subtitle}>
-              {chapters.length} {chapters.length === 1 ? 'chapter' : 'chapters'} · {members.filter((m) => m.role !== 'restaurant').length} members · {fridges.length} fridges
-            </Text>
-          </View>
+          <View style={{ flex: 1 }} />
           <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
             <Text style={styles.addBtnText}>+ Add chapter</Text>
           </TouchableOpacity>
@@ -719,6 +714,7 @@ export default function ManageChapters({ navigation }) {
           </View>
         </Modal>
       </ResponsiveContainer>
+    </BrandSheet>
     </Screen>
   );
 }
