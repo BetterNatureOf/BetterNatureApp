@@ -137,12 +137,13 @@ deployment section says so.
     volunteer, delivery) for donors, coordinators and receivers; the receiving
     screen offers receive-by times after the pickup window and disables times
     when the site is closed; a web offline banner says taps aren't saved.
-11. **Still open.** Recall workflow (not implemented). Native offline banner
+11. **Exclusive offers + Mapbox — done (see section below).**
+12. **Still open.** Recall workflow (not implemented). Native offline banner
     (needs `@react-native-community/netinfo`). Possible double push (Expo
-    `sendPushOnNotification` plus the OneSignal dispatcher) — unchecked. Site
-    addresses aren't geocoded, so the drop-off leg is "unknown" and only the
-    pickup leg is timed. The legacy client claim path is still allowed by rules
-    for unsited rescues. No coordinator button to push a donor-declined request
+    `sendPushOnNotification` plus the OneSignal dispatcher) — unchecked. The Receiving
+    sites form has no address search, so a site's `lat`/`lng` must be set on
+    the record; without them the drop-off leg is unknown and dispatch hands
+    the rescue to a coordinator (`feasibility_unknown`) instead of offering it. No coordinator button to push a donor-declined request
     to the network. No site-level receiver assignment UI. Recurring donations
     not yet run in a browser. Native push, location and deep links not checked
     on a device.
@@ -198,16 +199,118 @@ notifications must go through `queueBusinessNotification` or server code.
   approximate trip and unknown drop-off leg → Val sees the offer banner and
   accepts → pickup `claimed_via: offer`, offer `accepted`, dispatch `assigned`.
 
+## Exclusive offers, shared policy and Mapbox (feat/rescue-offers, Nov 22)
+
+**Policy.** `functions/lib/rescuePolicy.js` is the only place the operating
+defaults live (planning defaults, not food-safety limits): one actionable
+offer at a time; 5 min maximum response; 10 min loading; 10 min unloading;
+5 min margin when every leg is a road estimate, 15 min when any leg is an
+approximation; partners answer within 30 min (and at least 15 min before the
+pickup window ends); recurring donations are confirmed 3 h before the
+window starts; capacity holds lapse 30 min after the receiving deadline;
+Mapbox is the routing/map provider. Tests assert these values.
+
+**Deadline meanings (UI and server).** `pickup_by` = collection complete
+(arrived and loaded). `arrival_by` = handoff complete (arrived and unloaded).
+Recurring `ready_time` = when the pickup window starts.
+
+**Trip planning.** `rescueMatching.journey` is the single planner used by
+dispatch, acceptance and coordinator suggestions: volunteer → donor → wait
+for readiness → load → site → wait for opening → unload, with the margin
+required before each deadline (never added twice). It returns the latest
+feasible start. A missing leg or deadline is `feasible: null` (never zero
+minutes, never "fits"); such rescues go to a coordinator. Starting points are
+the volunteer's shared H3 area, labeled approximate everywhere.
+
+**Dispatch states.**
+
+| `dispatch/state.status` | Meaning | Leaves when |
+| --- | --- | --- |
+| `searching` | One exclusive offer open, or about to be made | offer accepted → `assigned`; nobody feasible after widening → `escalated`; rescue closes → `closed` |
+| `searching` + `waiting_on` | The only feasible volunteer is answering another offer | that offer resolves (retry in 2 min) |
+| `assigned` | Claimed; start reminder scheduled | starts → `in_progress`; release → new generation `searching` |
+| `escalated` | Coordinator decides (`no_feasible_volunteer`, `no_acceptance`, `deadline_approaching`, `destination_unusable`, `feasibility_unknown`, `donor_location_missing`) | coordinator acts |
+| `closed` / `in_progress` | No longer dispatching | — |
+
+**Offer states.** `pickups/{id}/offers/{generation}_{uid}`: `open` →
+`accepted` | `declined` | `expired` | `withdrawn`. Each carries `offer_id`,
+generation, round, `expires_at = min(now + 5 min, last feasible start)` with
+`expiry_reason`, and the trip legs/margin used. The pickup carries
+`offer_hold` (expiry only, no identity) so others see it is spoken for.
+A volunteer holds at most one live offer across rescues; taking another
+rescue withdraws it.
+
+**Destination states.** `pending_destination` → partner request
+(`awaiting_partner` → `accepted` | `declined` | `expired`, with donor-allowed
+network fallback) or coordinator confirmation through
+`confirmRescueDestination` → `available` with a saved `site_id` and a held
+reservation. Reservation: `held` → `received` | `released` | `expired`
+(uncollected, past expiry) | `overdue` (collected, past expiry, still counts
+until a receipt, reroute or coordinator closure).
+
+**Claim paths audited.** Client claim writes and client destination
+confirmation are refused by the rules. `claimPickup` (the only client claim
+service) calls `respondToRescueOffer`, which refuses: someone else's live
+offer (`offered_elsewhere`), stale offer ids, expired offers, no saved site
+(`no_destination`), lapsed hold (`reservation`), paused site, closed window,
+safety hold, ineligible/other chapter/conflict, poor fit, busy volunteer,
+missing shared area for a direct take (`area_needed`), unknown or infeasible
+journey. Releases and handoffs stay pre-collection only; collected food
+goes through holds and custody transfer, never back to the open pool.
+
+**Routing.** `functions/dispatchRouting.js` exposes one provider interface:
+Mapbox (Matrix for candidate comparison, batched under 25 coordinates per
+request; Directions with `geometries=geojson&overview=full` for the
+accepted-trip preview), OSRM (driving only, existing setups), or none.
+Profiles follow the volunteer's vehicle (driving / cycling / walking; unknown
+vehicles are planned as driving and flagged). Errors (missing token, 401/403,
+429 with one retry, timeout, network, no route, null elements, partial
+batches, malformed bodies) come back as `unavailable`/`partial` with nulls,
+and callers fall back to labeled straight-line estimates. Only H3 cell
+centers and stop coordinates are sent; tokens travel only in the request
+and are never logged. Ordinary driving profiles are not described as
+traffic-aware. `getRescueRoute` returns the route on demand (not stored).
+
+**Maps.** `src/components/maps/RescueMap.js` (web) renders Mapbox GL JS
+v3.35.0 with Mapbox Standard quieted (faded theme, no POI/transit labels, no
+3D, warm land, restrained parks) when `EXPO_PUBLIC_MAPBOX_TOKEN` is set and
+WebGL works; otherwise a Leaflet/OSM fallback with the same overlays,
+labeled "Simplified map". Browse: clustered pickup counts, no labels per
+pickup, compact selection sheet, map and list built from the same list,
+selection kept across updates, "Use map center as my area" when location is
+denied. Offer: both stops, no connecting line, countdown, labeled estimate.
+Active: route line only from real Directions geometry, labeled "route
+preview … not turn-by-turn, not live traffic"; otherwise "Road route
+unavailable · stops shown without a connecting line"; Fit control; the
+camera never moves on its own after someone pans; Open in Apple/Google Maps.
+Native: `RescueMap.native.js` uses `@rnmapbox/maps` (config plugin added in
+app.json). It needs a development/production build — not Expo Go — and
+shows a plain notice with the list and addresses when the native module or
+token is missing.
+
+**Verified locally (demo-bn-rescue emulators, 375 px):** browse map with
+clusters and selection sheet; exclusive offer banner for Val; Overton and
+Mid-South stops in offer mode; live countdown and labeled straight-line
+estimate; accept through the server (pickup `claimed_via: offer`, offer
+`accepted`, `offer_hold` cleared, donor notified, dispatch `assigned`); the
+other rescues skipped Val while he held the offer (found and fixed: they now
+wait instead of escalating); active rescue with honest "road route
+unavailable"; coordinator queue shows the legacy typed-in destination;
+offline banner (found and fixed: it stretched to full height on web).
+
+**Not verified:** Mapbox GL rendering and Mapbox routing against the real
+API (no token on this machine; adapter tested with a fake fetch); native
+compilation and on-device interaction; push delivery.
+
 ## Configuration
 
-| Setting | Default | Notes |
+| Setting | Where | Notes |
 | --- | --- | --- |
-| `RESCUE_OFFER_BATCH` | 1 | volunteers offered at once, 1–3 |
-| `RESCUE_OFFER_TTL_MIN` | 5 | minutes to answer an offer |
-| `RESCUE_ROUTING_BASE_URL` / `_TOKEN` | unset | OSRM-compatible; unset = labeled approximate times |
-| partner `respondWithinMin` | 30 | 10–240, capped 15 min before pickup window ends |
-| recurring lead time | 3 h | `LEAD_MS` in donationSchedules.js |
-| reservation expiry | arrival_by + 30 min | receivingSites.js |
+| `EXPO_PUBLIC_MAPBOX_TOKEN` | app build env | public `pk.` token, URL/bundle-restricted |
+| `MAPBOX_SERVER_TOKEN` | Functions secret | Matrix + Directions; scoped, never in the app |
+| `RESCUE_ROUTING_BASE_URL` / `_TOKEN` | Functions env | optional OSRM fallback |
+| `@rnmapbox/maps` plugin | app.json | native builds; `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` env only if the native SDK download requires it |
+| Policy numbers | functions/lib/rescuePolicy.js | change there only |
 
 ## Local verification
 

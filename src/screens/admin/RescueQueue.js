@@ -19,7 +19,7 @@ import { confirm, notify } from '../../services/ui';
 import { buildQueue } from '../../../functions/lib/rescueQueue';
 
 const KIND_LABEL = {
-  held: 'On hold', remainder_pending: 'Food turned away', escalated: 'Needs a decision', late_pickup: 'Late',
+  held: 'On hold', remainder_pending: 'Food turned away', escalated: 'Needs a decision', legacy_destination: 'No saved site', late_pickup: 'Late',
   late_delivery: 'Late', near_deadline: 'Closing soon', awaiting_site: 'No receiving site', awaiting_partner: 'Awaiting partner', awaiting_receipt: 'Awaiting receipt',
   awaiting_donor: 'Awaiting donor',
 };

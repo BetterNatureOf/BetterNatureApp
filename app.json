@@ -80,7 +80,8 @@
       ],
       "expo-image-picker",
       "expo-asset",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "@rnmapbox/maps"
     ],
     "updates": {
       "url": "https://u.expo.dev/REPLACE_AFTER_EAS_INIT"

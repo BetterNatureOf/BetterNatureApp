@@ -426,6 +426,19 @@ async function runRound(db, pickupRef, s, p, { now, routing }) {
       cargo_unknown: result.unknownFit || 0, at: Timestamp.fromMillis(now) }, updated_at: FieldValue.serverTimestamp() });
   });
   const sk = result.skipped || {};
+  // Someone who could do it is busy answering another offer: wait for that
+  // offer to resolve (bounded by the deadline checks in advance) rather
+  // than calling it infeasible.
+  if (located && sk.has_offer > 0) {
+    const retryAt = now + EMPTY_ROUND_GAP_MS * 2;
+    await db.runTransaction(async (tx) => {
+      const st = (await tx.get(stateRef)).data();
+      if (st?.generation === s.generation && st.round === s.round && st.status === 'searching') {
+        tx.update(stateRef, { next_action_at: Timestamp.fromMillis(retryAt), waiting_on: 'volunteer_answering_other_offer', updated_at: FieldValue.serverTimestamp() });
+      }
+    });
+    return { action: 'waiting_for_volunteer', retryAt };
+  }
   const reason = !located ? 'donor_location_missing'
     : (s.alerted_count || 0) > 0 ? 'no_acceptance'
       : sk.unknown_travel > 0 && !sk.cannot_make_it ? 'feasibility_unknown' : 'no_feasible_volunteer';

@@ -23,6 +23,7 @@ const HOLD_TEXT = {
 };
 const ESCALATION_TEXT = {
   no_acceptance: 'No volunteer accepted after every search round',
+  no_feasible_volunteer: 'No available volunteer can make it in time',
   deadline_approaching: 'Deadline close and nobody has accepted',
   not_started: 'Assigned volunteer hasn’t started',
   destination_unusable: 'Receiving hold lapsed — reconfirm a site',

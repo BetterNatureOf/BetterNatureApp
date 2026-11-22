@@ -2191,6 +2191,13 @@ export async function respondToRescue(pickupId, response, offerId = null) {
   }
 }
 
+// Route preview for the assigned volunteer (server-side Mapbox Directions;
+// not stored). { status: 'ok', geometry, seconds, profile, origin } or
+// { status: 'unavailable', error }.
+export async function getRescueRoute(pickupId) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'getRescueRoute')({ pickupId })).data;
+}
+
 // Coordinator-only ranked list of nearby volunteers for a rescue.
 export async function suggestRescueVolunteers(pickupId) {
   return (await httpsCallable(getFunctions(firebaseApp), 'suggestRescueVolunteers')({ pickupId })).data;

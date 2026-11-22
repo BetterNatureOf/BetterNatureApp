@@ -16,6 +16,8 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ResponsiveContainer from '../../components/ui/ResponsiveContainer';
 import ActiveRescueMap from '../../components/maps/ActiveRescueMap';
+import RescueMap from '../../components/maps/RescueMap';
+import RescueOfferPanel from '../../components/pickup/RescueOfferPanel';
 import PickupCard from '../../components/pickup/PickupCard';
 import PickupTimeline from '../../components/pickup/PickupTimeline';
 import PickupContacts from '../../components/pickup/PickupContacts';
@@ -34,7 +36,7 @@ import { db } from '../../config/firebase';
 import { listReceivingSites, confirmRescueDestination, recordRescueRemainder, respondToRescue } from '../../services/database';
 import { collection as fsCollection, query as fsQuery, where as fsWhere } from 'firebase/firestore';
 import { describeSiteNow, siteOpenAt } from '../../services/receivingSiteText';
-import { confirmPickupDestination, rerouteHeldPickup, assignPickupReceiver, recordPickupReceipt, claimPickup, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge, holdPickup, closeHeldPickup, fetchCustodyVolunteers, transferPickupCustody } from '../../services/database';
+import { confirmPickupDestination, rerouteHeldPickup, assignPickupReceiver, recordPickupReceipt, setPickupEnroute, completePickup, cancelClaim, verifyPickupByRestaurant, updatePickupFridge, holdPickup, closeHeldPickup, fetchCustodyVolunteers, transferPickupCustody } from '../../services/database';
 import { uploadPickupPhoto } from '../../services/pickupPhotos';
 import * as ImagePicker from 'expo-image-picker';
 import { getProfile } from '../../services/auth';
@@ -81,13 +83,18 @@ export default function PickupDetail({ route, navigation }) {
   const needsSite = !!pickup?.chapter_id && !pickup?.destination_confirmation &&
     ['pending_destination', 'available'].includes(pickup?.status) &&
     hasRole(user, ['chapter_president', 'chapter_pres', 'executive', 'admin', 'super_admin']);
-  // This volunteer's live offer for the rescue, if dispatch made one.
-  const [myOffer, setMyOffer] = useState(null);
+  // This volunteer's offers for the rescue (server-owned). The newest one
+  // drives the panel: open and unexpired = actionable; otherwise we explain
+  // why it ended.
+  const [myOffers, setMyOffers] = useState([]);
   useEffect(() => {
     if (!pickup?.id || !user?.id || !db) return undefined;
-    return onSnapshot(fsQuery(fsCollection(db, 'pickups', pickup.id, 'offers'), fsWhere('uid', '==', user.id), fsWhere('status', '==', 'open')),
-      (snap) => setMyOffer(snap.docs[0] ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null), () => setMyOffer(null));
+    return onSnapshot(fsQuery(fsCollection(db, 'pickups', pickup.id, 'offers'), fsWhere('uid', '==', user.id)),
+      (snap) => setMyOffers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setMyOffers([]));
   }, [pickup?.id, user?.id]);
+  const latestOffer = myOffers.slice().sort((a, b) => (b.created_at?.toMillis?.() || 0) - (a.created_at?.toMillis?.() || 0))[0] || null;
+  const myOffer = latestOffer && latestOffer.status === 'open' && (latestOffer.expires_at?.toMillis?.() || 0) > Date.now() ? latestOffer : null;
+  const heldElsewhere = !myOffer && (pickup?.offer_hold?.expires_at?.toMillis?.() || 0) > Date.now() ? pickup.offer_hold.expires_at.toMillis() : null;
   useEffect(() => {
     if (!needsSite) return undefined;
     let alive = true;
@@ -234,8 +241,10 @@ export default function PickupDetail({ route, navigation }) {
     try {
       // Confirmed-site rescues are accepted through the server, which
       // re-checks the journey, reservation and eligibility atomically.
-      if (pickup.destination_confirmation) await respondToRescue(pickup.id, 'accept');
-      else await claimPickup(pickup.id, user.id);
+      // The server re-checks the offer, state, eligibility, fit, the
+      // receiving hold and the journey, and assigns atomically. Success is
+      // shown only after it answers.
+      await respondToRescue(pickup.id, 'accept', myOffer?.offer_id || null);
       await refresh();
       if (Platform.OS !== 'web') notify('Pickup claimed', 'Your next stop is ready.');
     } catch (e) {
@@ -247,8 +256,7 @@ export default function PickupDetail({ route, navigation }) {
   async function handleDeclineOffer() {
     setBusy(true);
     try {
-      await respondToRescue(pickup.id, 'decline');
-      setMyOffer(null);
+      await respondToRescue(pickup.id, 'decline', myOffer?.offer_id || null);
       if (navigation.canGoBack()) navigation.goBack(); else navigation.navigate('MainTabs', { screen: 'Rescue' });
     } catch (e) {
       notify('Could not pass on this offer', e?.message || 'Try again.');
@@ -615,7 +623,9 @@ export default function PickupDetail({ route, navigation }) {
   const offerExpired = pickup.status === 'available' && !waitingForSite && (offerDeadline ?? 0) <= Date.now();
   let cta = null;
   if (user?.id && !userIsRestaurant && !isReceiver && pickup.status === 'available' && !waitingForSite && !offerExpired) {
-    cta = { label: busy ? 'Accepting…' : 'Accept pickup', onPress: handleClaim, loading: busy };
+    cta = heldElsewhere
+      ? { label: 'Offered to another volunteer', onPress: () => {}, loading: false, disabled: true }
+      : { label: busy ? 'Accepting…' : myOffer ? 'Accept offer' : 'Accept pickup', onPress: handleClaim, loading: busy };
   } else if (isClaimant && pickup.status === 'claimed') {
     cta = { label: busy ? 'Updating…' : 'I’m on my way', onPress: handleEnroute, loading: busy };
   } else if (isClaimant && pickup.status === 'enroute' && !waitingForReceipt && !remainderPending) {
@@ -639,9 +649,9 @@ export default function PickupDetail({ route, navigation }) {
   const needsFridge = !onHold && isClaimant && pickup.status === 'claimed' && !pickup.fridge_id && !pickup.destination_confirmation;
   const reviewing = cta && pickup.status === 'available' && !staff && !onHold;
   const nextAction = cta && (
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled: cta.loading, busy: cta.loading }}
-      disabled={cta.loading} onPress={cta.onPress}
-      style={({ pressed }) => [styles.rescueAction, (pressed || cta.loading) && { opacity: 0.75 }]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled: cta.loading || cta.disabled, busy: cta.loading }}
+      disabled={cta.loading || cta.disabled} onPress={cta.onPress}
+      style={({ pressed }) => [styles.rescueAction, (pressed || cta.loading) && { opacity: 0.75 }, cta.disabled && { opacity: 0.45 }]}>
       <Text style={styles.rescueActionLabel}>{cta.label}</Text>
     </Pressable>
   );
@@ -725,7 +735,7 @@ export default function PickupDetail({ route, navigation }) {
             {!canReroute && (
               <View style={styles.sitePicker}>
                 {sites === null && <Text style={styles.sectionHelp}>Loading saved sites…</Text>}
-                {sites?.length === 0 && <Text style={styles.sectionHelp}>No saved sites yet. <Text style={styles.linkInline} onPress={() => navigation.navigate('ReceivingSites')}>Add one</Text>, or enter a one-time site below.</Text>}
+                {sites?.length === 0 && <Text style={styles.sectionHelp}>No saved sites yet. <Text style={styles.linkInline} onPress={() => navigation.navigate('ReceivingSites')}>Add one</Text> so volunteers can be offered this rescue — a saved site holds capacity and has a map location.</Text>}
                 {sites?.map((site) => {
                   const now = describeSiteNow(site);
                   const selected = siteId === site.id;
@@ -743,23 +753,21 @@ export default function PickupDetail({ route, navigation }) {
                     <Button title="Confirm site and open offer" onPress={handleConfirmSavedSite} loading={busy} />
                   </>
                 )}
-                {!siteId && <Text style={styles.orLine}>Or enter a one-time site</Text>}
               </View>
             )}
-            {(canReroute || !siteId) && (
+            {canReroute && (
               <>
                 <Input label="Receiving site" value={receivingSite} onChangeText={setReceivingSite} />
                 <Input label="Receiving address" value={receivingAddress} onChangeText={setReceivingAddress} />
                 <Input label="Staff member who accepted" value={receivingContact} onChangeText={setReceivingContact} />
                 <Input label="Receiving deadline (minutes from now)" keyboardType="number-pad" value={receivingMinutes} onChangeText={setReceivingMinutes} />
-                <Button title={canReroute ? 'Confirm backup and resume rescue' : 'Confirm destination and open offer'}
-                  onPress={() => handleConfirmDestination(canReroute)} loading={busy} />
+                <Button title="Confirm backup and resume rescue" onPress={() => handleConfirmDestination(true)} loading={busy} />
               </>
             )}
           </View>
         )}
         {arrivalBy !== null && !reviewing && !showTripMap && (
-          <Text style={styles.sectionHelp}>Confirmed receiving deadline: {new Date(arrivalBy).toLocaleString()}</Text>
+          <Text style={styles.sectionHelp}>Receiving deadline (handoff complete by): {new Date(arrivalBy).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</Text>
         )}
         {waitingForReceipt && !showTripMap && (
           <Text style={styles.sectionHelp}>{pickup.verified_by_restaurant_at
@@ -858,7 +866,11 @@ export default function PickupDetail({ route, navigation }) {
         {pickup.custody_transfer && (
           <Text style={styles.sectionHelp}>Coordinator recorded a volunteer handoff. Current assignment: {pickup.claimant_name || 'Replacement volunteer'}.</Text>
         )}
-        {showTripMap && <ActiveRescueMap stop={nextStop} droppingOff={droppingOff}
+        {showTripMap && <ActiveRescueMap pickupId={pickup.id} stop={nextStop} droppingOff={droppingOff}
+          stops={[
+            { kind: 'pickup', lat: pickup.restaurant_lat, lng: pickup.restaurant_lng, label: `Pickup: ${pickup.restaurant_name || 'donor'}` },
+            { kind: 'destination', lat: pickup.fridge_lat, lng: pickup.fridge_lng, label: `Drop-off: ${pickup.destination_confirmation?.site_name || pickup.fridge_name || 'receiving site'}` },
+          ]}
           action={actionInTrip ? nextAction : null}
           status={droppingOff
             ? [arrivalBy !== null ? `Drop off by ${rescueTime(arrivalBy)}` : '',
@@ -915,19 +927,17 @@ export default function PickupDetail({ route, navigation }) {
         {chapterCoordinator && pickup.status === 'available' && !!pickup.destination_confirmation && (
           <RescueSuggestions pickupId={pickup.id} />
         )}
-        {reviewing && myOffer && (
-          <View style={styles.offerBanner} accessibilityRole="alert">
-            <Text style={styles.offerTitle}>This rescue is offered to you</Text>
-            <Text style={styles.offerBody}>
-              Respond by {new Date(myOffer.expires_at?.toMillis ? myOffer.expires_at.toMillis() : myOffer.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
-              {myOffer.trip?.to_pickup_minutes != null ? ` About ${myOffer.trip.to_pickup_minutes} min to the pickup` : ''}
-              {myOffer.trip?.total_minutes != null ? `, about ${myOffer.trip.total_minutes} min for the whole trip` : ''}
-              {myOffer.trip?.basis === 'approximate' ? ' (estimated from your shared area, not a live route).' : myOffer.trip?.to_pickup_minutes != null ? ' (road estimate).' : ''}
-              {myOffer.trip?.dropoff_leg === 'unknown' ? ' Drop-off drive time unknown.' : ''}
-            </Text>
-            <Text style={styles.offerBody}>Passing is fine — it never counts against you.</Text>
-            <Button title="Pass on this one" variant="secondary" onPress={handleDeclineOffer} disabled={busy} />
-          </View>
+        {reviewing && (
+          <RescueMap mode="trip" height={Platform.OS === 'web' ? 'clamp(220px, 34dvh, 340px)' : 260}
+            ariaLabel="Map of the pickup and drop-off"
+            stops={[
+              { kind: 'pickup', lat: pickup.restaurant_lat, lng: pickup.restaurant_lng, label: `Pickup: ${pickup.restaurant_name || 'donor'}` },
+              { kind: 'destination', lat: pickup.fridge_lat, lng: pickup.fridge_lng, label: `Drop-off: ${pickup.destination_confirmation?.site_name || 'receiving site'}` },
+            ]} />
+        )}
+        {reviewing && <Text style={styles.reviewHint}>Stops only. The road route preview appears after you accept.</Text>}
+        {(reviewing || latestOffer) && pickup.status === 'available' && (
+          <RescueOfferPanel offer={myOffer} latest={latestOffer} heldUntil={heldElsewhere} busy={busy} onDecline={handleDeclineOffer} />
         )}
         {reviewing && (
           <View style={styles.reviewActions}>

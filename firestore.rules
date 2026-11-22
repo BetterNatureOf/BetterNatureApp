@@ -1033,6 +1033,11 @@ service cloud.firestore {
         allow write: if false;
       }
     }
+    // A volunteer can list their own offers across rescues (collection
+    // group query on uid), e.g. "you have an offer" on the Rescues screen.
+    match /{path=**}/offers/{offerId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
 
     // ── receiving_sites ──
     // Staffed centers, steward fridges and outreach partners. Contacts

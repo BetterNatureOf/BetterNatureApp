@@ -122,6 +122,17 @@ describe('one exclusive offer at a time', () => {
     assert.deepEqual(await openOfferUids(), ['near']);
   });
 
+  it('when the only feasible volunteer is answering another offer, dispatch waits instead of escalating', async () => {
+    await db.doc('pickups/other/offers/x_near').set({ uid: 'near', status: 'open', generation: 'x', expires_at: Timestamp.fromMillis(T0 + 3 * MIN) });
+    await share('near', cellAt(0));
+    const out = await open();
+    assert.equal(out.action, 'waiting_for_volunteer');
+    assert.equal((await state()).status, 'searching');
+    assert.deepEqual(await noticesOfType('rescue_escalation'), []);
+    await db.doc('pickups/other/offers/x_near').update({ status: 'declined' });
+    assert.deepEqual((await tick(2)).recipients, ['near']);
+  });
+
   it('a volunteer holding a live offer elsewhere is not offered a second rescue', async () => {
     await db.doc('pickups/other/offers/x_near').set({ uid: 'near', status: 'open', generation: 'x', expires_at: Timestamp.fromMillis(T0 + 3 * MIN) });
     await Promise.all([share('near', cellAt(0)), share('mid', cellAt(1))]);

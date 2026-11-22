@@ -60,11 +60,15 @@ async function upsertUser(key, { email, name, profile }) {
 
 const DONOR = { lat: 35.1495, lng: -90.049, address: '123 Main St, Memphis, TN' };
 const SITE = { site_name: 'Mid-South Pantry', address: '239 S Dudley St, Memphis, TN', contact: 'Pat · 901-555-0140' };
+const SITE_POINT = { lat: 35.1379, lng: -90.0255 };
 
-function destination(pickupByMin, arrivalByMin) {
-  return { ...SITE, confirmed_by: 'coordinator', confirmed_at: ts(-30), accepted_weight_lbs: 30,
-    pickup_by: ts(pickupByMin), arrival_by: ts(arrivalByMin) };
+// Saved-site destinations (what confirmRescueDestination writes). The
+// `legacy` variant mimics an older client's typed-in destination.
+function destination(pickupByMin, arrivalByMin, { legacy = false } = {}) {
+  return { ...SITE, ...(legacy ? {} : { site_id: 'site-midsouth' }), confirmed_by: 'coordinator', confirmed_at: ts(-30),
+    accepted_weight_lbs: 30, pickup_by: ts(pickupByMin), arrival_by: ts(arrivalByMin) };
 }
+const atSite = { fridge_name: SITE.site_name, fridge_address: SITE.address, fridge_lat: SITE_POINT.lat, fridge_lng: SITE_POINT.lng };
 
 function pickup(extra) {
   return {
@@ -89,28 +93,40 @@ function pickup(extra) {
 
   const pickups = {
     'demo-awaiting-site': pickup({ status: 'pending_destination', notes: 'Bread and pastries from today.' }),
-    'demo-open': pickup({ status: 'available', destination_confirmation: destination(110, 170), receiver_uid: uid.receiver }),
+    'demo-open': pickup({ status: 'available', destination_confirmation: destination(110, 170), receiver_uid: uid.receiver, ...atSite }),
     'demo-closing-soon': pickup({ status: 'available', restaurant_name: 'Green Table Kitchen (side door)',
-      destination_confirmation: destination(25, 70), receiver_uid: uid.receiver }),
+      destination_confirmation: destination(25, 70), receiver_uid: uid.receiver, ...atSite }),
+    'demo-open-bakery': pickup({ status: 'available', restaurant_id: 'r-south-bakery', restaurant_name: 'South Main Bakery',
+      restaurant_address: '410 S Main St, Memphis, TN', restaurant_lat: 35.1336, restaurant_lng: -90.0573,
+      restaurant_h3: cell(35.1336, -90.0573), food_category: 'bakery', packages: 3, estimated_weight_lbs: 18,
+      notes: 'Bread and pastries from today.', destination_confirmation: destination(100, 160), receiver_uid: uid.receiver, ...atSite }),
+    'demo-open-east': pickup({ status: 'available', restaurant_id: 'r-south-bakery', restaurant_name: 'Overton Square Café',
+      restaurant_address: '2110 Madison Ave, Memphis, TN', restaurant_lat: 35.1492, restaurant_lng: -89.9905,
+      restaurant_h3: cell(35.1492, -89.9905), food_category: 'produce', packages: 2, estimated_weight_lbs: 15,
+      notes: 'Produce boxes.', destination_confirmation: destination(90, 150), receiver_uid: uid.receiver, ...atSite }),
+    'demo-legacy-destination': pickup({ status: 'available', restaurant_name: 'Green Table Kitchen (older offer)',
+      destination_confirmation: destination(80, 140, { legacy: true }), receiver_uid: uid.receiver }),
     'demo-claimed': pickup({ status: 'claimed', claimed_by: uid.volunteer2, claimed_at: ts(-20), claimant_name: 'Vic Volunteer',
-      destination_confirmation: destination(40, 100), receiver_uid: uid.receiver }),
+      destination_confirmation: destination(40, 100), receiver_uid: uid.receiver, ...atSite }),
     'demo-awaiting-receipt': pickup({ status: 'enroute', claimed_by: uid.volunteer2, claimed_at: ts(-50), enroute_at: ts(-30),
       claimant_name: 'Vic Volunteer', verified_by_restaurant_at: ts(-25), verified_by_restaurant_uid: uid.donor,
-      destination_confirmation: destination(60, 90), receiver_uid: uid.receiver }),
+      destination_confirmation: destination(60, 90), receiver_uid: uid.receiver, ...atSite }),
   };
+  await db.doc('restaurants/r-south-bakery').set({ user_id: 'demo-other-donor', name: 'South Main Bakery', status: 'approved',
+    chapter_id: CHAPTER, address: '410 S Main St, Memphis, TN', lat: 35.1336, lng: -90.0573 });
   for (const [id, data] of Object.entries(pickups)) await db.doc(`pickups/${id}`).set(data);
   // Receiving sites: staffed pantry (hours, capacity, receiver), a steward
   // fridge without fixed hours, and a paused outreach partner.
   const week = (open, close, days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) =>
     Object.fromEntries(days.map((d) => [d, [{ open, close }]]));
   const sites = {
-    'site-midsouth': { name: 'Mid-South Pantry', type: 'staffed_center', chapter_id: CHAPTER, address: SITE.address,
+    'site-midsouth': { name: 'Mid-South Pantry', type: 'staffed_center', chapter_id: CHAPTER, address: SITE.address, ...SITE_POINT,
       timezone: 'America/Chicago', hours: week('06:00', '23:00'), status: 'active',
       food_categories: ['prepared_cold', 'prepared_hot', 'produce', 'bakery', 'packaged'],
       capacity: { packages_per_day: 20, weight_lbs_per_day: 300 }, receiver_uid: uid.receiver,
       contacts: [{ name: 'Pat', phone: '901-555-0140', role: 'receiving' }] },
     'site-cooper-fridge': { name: 'Cooper St community fridge', type: 'steward_fridge', chapter_id: CHAPTER,
-      address: '1500 Cooper St, Memphis, TN', status: 'active', food_categories: ['produce', 'packaged', 'bakery'],
+      address: '1500 Cooper St, Memphis, TN', lat: 35.1185, lng: -89.9915, status: 'active', food_categories: ['produce', 'packaged', 'bakery'],
       capacity: { packages_per_day: 6, weight_lbs_per_day: null }, contacts: [{ name: 'Sam (steward)', phone: '901-555-0177' }] },
     'site-outreach': { name: 'Hope Street outreach team', type: 'outreach_partner', chapter_id: CHAPTER,
       address: 'Downtown Memphis', status: 'paused', pause_reason: 'Van in the shop', food_categories: ['prepared_hot', 'prepared_cold'] },
@@ -118,6 +134,13 @@ function pickup(extra) {
   for (const [id, data] of Object.entries(sites)) {
     await db.recursiveDelete(db.doc(`receiving_sites/${id}`));
     await db.doc(`receiving_sites/${id}`).set(data);
+  }
+  // Capacity holds for every saved-site rescue (what confirmation reserves).
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date(now));
+  for (const [id, p] of Object.entries(pickups)) {
+    if (!p.destination_confirmation?.site_id) continue;
+    await db.doc(`receiving_sites/site-midsouth/reservations/${id}`).set({ pickup_id: id, day, packages: p.packages, weight_lbs: p.estimated_weight_lbs,
+      status: 'held', collected: !!p.verified_by_restaurant_at, expires_at: Timestamp.fromMillis(p.destination_confirmation.arrival_by.toMillis() + 30 * MIN) });
   }
   console.log(`Seeded ${projectId}: ${Object.keys(PEOPLE).length} accounts, ${Object.keys(pickups).length} rescues, 3 receiving sites.`);
   console.log('Sign in with any of:', Object.values(PEOPLE).map((p) => p.email).join(', '));
