@@ -7,7 +7,8 @@
 // token (MAPBOX_SERVER_TOKEN) never appears in client code.
 import { Colors } from './theme';
 
-export const MAPBOX_PUBLIC_TOKEN = (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_MAPBOX_TOKEN) || '';
+// Written literally so Expo inlines it at build time.
+export const MAPBOX_PUBLIC_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
 export const hasMapboxToken = () => /^pk\./.test(MAPBOX_PUBLIC_TOKEN);
 
 // Mapbox GL JS version and CDN (docs.mapbox.com/mapbox-gl-js/guides/install).
