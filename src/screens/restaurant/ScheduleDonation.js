@@ -440,8 +440,7 @@ export default function ScheduleDonation({ navigation }) {
           </>
         )}
 
-        <Text style={styles.sectionLabel}>Receiving site</Text>
-        <Text style={styles.optional}>A coordinator confirms where the food can go before volunteers see this offer.</Text>
+        <Text style={styles.optional}>Volunteers only see this after a receiving partner confirms they can take it.</Text>
 
         {/* Notes (optional) */}
         <Text style={styles.sectionLabel}>Notes <Text style={styles.optional}>(optional)</Text></Text>

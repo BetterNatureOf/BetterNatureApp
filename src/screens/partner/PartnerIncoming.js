@@ -3,7 +3,7 @@
 // deliveries on the way. Accepting reserves capacity on the server and
 // confirms the destination; volunteers are dispatched only after that.
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Colors, Type } from '../../config/theme';
@@ -14,11 +14,18 @@ import Button from '../../components/ui/Button';
 import useAuthStore from '../../store/authStore';
 import { respondToPartnerRequest } from '../../services/database';
 import { confirm, notify } from '../../services/ui';
-import { describeSiteNow } from '../../services/receivingSiteText';
+import { describeSiteNow, siteOpenAt } from '../../services/receivingSiteText';
 import { categoryOf } from '../../../functions/lib/rescueCargo';
 
 const toMs = (v) => (v?.toMillis ? v.toMillis() : typeof v === 'string' ? Date.parse(v) : null);
 const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+// First receiving time (30/60/120 min after the pickup window) the site is open.
+function defaultAfter(p, site) {
+  const base = Math.max(toMs(p.pickup_window_until) || Date.now(), Date.now());
+  const open = [60, 30, 120].find((a) => !site || siteOpenAt(site, base + a * 60_000) !== false);
+  return String(open || 60);
+}
 
 export default function PartnerIncoming({ navigation }) {
   const user = useAuthStore((s) => s.user);
@@ -52,9 +59,12 @@ export default function PartnerIncoming({ navigation }) {
 
   const accept = useCallback(async (p) => {
     const site = p.partner_request.mode === 'preferred' ? sites.find((s) => s.id === p.partner_request.site_id) : sites.find((s) => s.status !== 'paused') || sites[0];
-    const mins = parseInt(minutes[p.id] || '120', 10);
-    if (!site || !(mins >= 15 && mins <= 1440)) { notify('Check the receiving time', 'Enter how many minutes from now you can receive until (15–1440).'); return; }
-    const arrivalBy = Date.now() + mins * 60_000;
+    // Receiving deadline is set relative to the end of the donor's pickup
+    // window (the server requires it to be later than that).
+    const after = parseInt(minutes[p.id] || defaultAfter(p, site), 10);
+    const pickupEnd = toMs(p.pickup_window_until) || Date.now();
+    const arrivalBy = Math.max(pickupEnd, Date.now()) + after * 60_000;
+    if (!site) { notify('No site', 'Your account isn’t linked to a site that can receive this.'); return; }
     if (!await confirm('Accept this donation?', `${site.name} will receive it by ${clock(arrivalBy)}. Capacity is reserved now, then a volunteer is found.`)) return;
     setBusy(p.id);
     try { await respondToPartnerRequest(p.id, { response: 'accept', siteId: site.id, arrivalBy }); }
@@ -116,9 +126,22 @@ export default function PartnerIncoming({ navigation }) {
               {p.pickup_window_until ? ` · ready until ${clock(toMs(p.pickup_window_until))}` : ''}
             </Text>
             {!!p.notes && <Text style={styles.meta}>“{p.notes}”</Text>}
-            <Text style={styles.label}>You can receive until (minutes from now)</Text>
-            <TextInput style={styles.input} value={minutes[p.id] ?? '120'} onChangeText={(v) => setMinutes((m) => ({ ...m, [p.id]: v.replace(/[^\d]/g, '') }))}
-              keyboardType="number-pad" accessibilityLabel="Minutes from now you can receive until" />
+            <Text style={styles.label}>You can receive it until</Text>
+            <View style={styles.actions}>
+              {[30, 60, 120].map((after) => {
+                const at = Math.max(toMs(p.pickup_window_until) || Date.now(), Date.now()) + after * 60_000;
+                const target = p.partner_request.mode === 'preferred' ? sites.find((x) => x.id === p.partner_request.site_id) : sites[0];
+                const closed = target && siteOpenAt(target, at) === false;
+                const on = !closed && (minutes[p.id] || defaultAfter(p, target)) === String(after);
+                return (
+                  <TouchableOpacity key={after} disabled={closed} onPress={() => setMinutes((m) => ({ ...m, [p.id]: String(after) }))} accessibilityRole="radio"
+                    accessibilityState={{ selected: on, disabled: closed }} style={[styles.chip, on && styles.chipOn, closed && { opacity: 0.45 }]}>
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{clock(at)}{closed ? ' · closed' : ''}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.meta}>Times are after the donor’s pickup window ends, so the volunteer has time to reach you.</Text>
             <View style={styles.actions}>
               <Button title="Accept" onPress={() => accept(p)} loading={busy === p.id} />
               <Button title="Decline" variant="secondary" onPress={() => decline(p)} disabled={busy === p.id} />
@@ -135,7 +158,7 @@ export default function PartnerIncoming({ navigation }) {
               {p.status === 'available' ? 'Finding a volunteer' : p.status === 'claimed' ? `${p.claimant_name || 'Volunteer'} is heading to the donor` : `${p.claimant_name || 'Volunteer'} is on the way to you`}
               {p.destination_confirmation?.arrival_by ? ` · by ${clock(toMs(p.destination_confirmation.arrival_by))}` : ''}
             </Text>
-            <Text style={styles.link}>Open to record what you receive →</Text>
+            <Text style={styles.link}>{p.status === 'enroute' ? 'Open to record what you receive →' : 'Open details →'}</Text>
           </TouchableOpacity>
         ))}
       </ResponsiveContainer>
@@ -158,4 +181,8 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10, marginTop: 6, flexWrap: 'wrap' },
   empty: { ...Type.body, color: Colors.gray, marginBottom: 8 },
   link: { fontSize: 14, color: Colors.green, fontWeight: '700' },
+  chip: { borderWidth: 1, borderColor: Colors.grayLight, borderRadius: 999, paddingVertical: 9, paddingHorizontal: 14, minHeight: 44, justifyContent: 'center', backgroundColor: Colors.white },
+  chipOn: { backgroundColor: Colors.green, borderColor: Colors.green },
+  chipText: { fontSize: 14, fontWeight: '600', color: Colors.dark },
+  chipTextOn: { color: Colors.white },
 });

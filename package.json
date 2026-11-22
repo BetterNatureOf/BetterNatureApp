@@ -25,7 +25,10 @@
     "test:emulators": "npm run test:rules && npm run test:functions",
     "emulators": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:start --only auth,firestore,functions,storage --project demo-bn-local",
     "seed:emulators": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-bn-local node scripts/seed-emulator.cjs",
-    "web:emulators": "EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 expo start --web --port 8081"
+    "web:emulators": "EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 expo start --web --port 8081",
+    "emulators:alt": "PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH firebase emulators:start --config firebase.dev2.json --only auth,firestore,functions,storage --project demo-bn-rescue",
+    "seed:emulators:alt": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9289 GCLOUD_PROJECT=demo-bn-rescue node scripts/seed-emulator.cjs",
+    "web:emulators:alt": "EXPO_PUBLIC_USE_FIREBASE_EMULATORS=1 EXPO_PUBLIC_EMULATOR_PROJECT_ID=demo-bn-rescue EXPO_PUBLIC_AUTH_EMULATOR_PORT=9289 EXPO_PUBLIC_FIRESTORE_EMULATOR_PORT=8280 EXPO_PUBLIC_STORAGE_EMULATOR_PORT=9399 EXPO_PUBLIC_FUNCTIONS_EMULATOR_PORT=5201 expo start --web --port 8081"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

@@ -22,6 +22,7 @@ import PickupContacts from '../../components/pickup/PickupContacts';
 import { pickupDeadline, rescueOfferDeadline } from '../../services/rescueCells';
 import PickupCountdown from '../../components/pickup/PickupCountdown';
 import DispatchStatus from '../../components/pickup/DispatchStatus';
+import RescueProgress from '../../components/pickup/RescueProgress';
 import RescueSuggestions from '../../components/pickup/RescueSuggestions';
 import { cargoFit, describeFit, rescueCargo, categoryOf } from '../../../functions/lib/rescueCargo';
 import FridgePicker from '../../components/ui/FridgePicker';
@@ -707,6 +708,7 @@ export default function PickupDetail({ route, navigation }) {
             <Button title="Browse open pickups" variant="secondary" onPress={() => navigation.navigate('Pickups')} />
           </View>
         )}
+        {(chapterCoordinator || userIsRestaurant || isReceiver) && <RescueProgress pickup={pickup} />}
         {chapterCoordinator && ['available', 'claimed'].includes(pickup.status) && (
           <DispatchStatus pickupId={pickup.id} />
         )}

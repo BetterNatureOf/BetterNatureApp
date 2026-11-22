@@ -169,9 +169,12 @@ function SectionHeader({ label, count, hint }) {
 function NotifRow({ notif, onPress, highlighted }) {
   const kind = iconFor(notif.kind || notif.type);
   const target = parseNotifUrl(notif.url);
+  // A rescue offer that expired, was declined or went to someone else is
+  // history, not something to act on.
+  const closedOffer = notif.data?.type === 'rescue_offer' && notif.data?.offer_status && notif.data.offer_status !== 'open';
   return (
     <TouchableOpacity
-      style={[styles.notifCard, highlighted && styles.notifCardHighlighted]}
+      style={[styles.notifCard, highlighted && !closedOffer && styles.notifCardHighlighted, closedOffer && { opacity: 0.6 }]}
       onPress={onPress}
       activeOpacity={0.82}
     >
@@ -186,7 +189,11 @@ function NotifRow({ notif, onPress, highlighted }) {
         {notif.body || notif.description ? (
           <Text style={styles.notifDesc} numberOfLines={2}>{notif.body || notif.description}</Text>
         ) : null}
-        {target && highlighted ? (
+        {closedOffer ? (
+          <Text style={styles.notifDesc}>{notif.data.offer_status === 'declined' ? 'You passed on this offer.'
+            : notif.data.offer_status === 'expired' ? 'This offer expired.' : 'Another volunteer took this rescue.'}</Text>
+        ) : null}
+        {target && highlighted && !closedOffer ? (
           <Text style={styles.notifCta}>
             {target.screen === 'PickupDetail' ? 'Open pickup →' : 'Open →'}
           </Text>

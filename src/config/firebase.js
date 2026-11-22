@@ -16,6 +16,13 @@ const cfg = Constants.expoConfig?.extra?.firebase || {};
 export const usingEmulators = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATORS === '1';
 const EMULATOR_PROJECT = process.env.EXPO_PUBLIC_EMULATOR_PROJECT_ID || 'demo-bn-local';
 const EMULATOR_HOST = process.env.EXPO_PUBLIC_EMULATOR_HOST || '127.0.0.1';
+// Ports default to firebase.json; override to run a second local stack.
+const EMU_PORT = {
+  auth: Number(process.env.EXPO_PUBLIC_AUTH_EMULATOR_PORT || 9099),
+  firestore: Number(process.env.EXPO_PUBLIC_FIRESTORE_EMULATOR_PORT || 8080),
+  storage: Number(process.env.EXPO_PUBLIC_STORAGE_EMULATOR_PORT || 9199),
+  functions: Number(process.env.EXPO_PUBLIC_FUNCTIONS_EMULATOR_PORT || 5001),
+};
 if (usingEmulators && !EMULATOR_PROJECT.startsWith('demo-')) {
   throw new Error('Emulator mode requires a demo-* project id.');
 }
@@ -50,8 +57,8 @@ export const storage = isFirebaseConfigured ? getStorage(app) : null;
 
 if (usingEmulators && !globalThis.__bnEmulatorsConnected) {
   globalThis.__bnEmulatorsConnected = true;
-  connectAuthEmulator(auth, `http://${EMULATOR_HOST}:9099`, { disableWarnings: true });
-  connectFirestoreEmulator(db, EMULATOR_HOST, 8080);
-  connectStorageEmulator(storage, EMULATOR_HOST, 9199);
-  connectFunctionsEmulator(getFunctions(app), EMULATOR_HOST, 5001);
+  connectAuthEmulator(auth, `http://${EMULATOR_HOST}:${EMU_PORT.auth}`, { disableWarnings: true });
+  connectFirestoreEmulator(db, EMULATOR_HOST, EMU_PORT.firestore);
+  connectStorageEmulator(storage, EMULATOR_HOST, EMU_PORT.storage);
+  connectFunctionsEmulator(getFunctions(app), EMULATOR_HOST, EMU_PORT.functions);
 }

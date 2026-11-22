@@ -16,6 +16,7 @@ import { subscribeNotifications } from './src/services/database';
 import useAuth from './src/hooks/useAuth';
 import useFreshAppVersion from './src/hooks/useFreshAppVersion';
 import linking, { restoreBootDeepLink } from './src/navigation/linking';
+import OfflineBanner from './src/components/ui/OfflineBanner';
 import { injectWebFonts } from './src/config/webFonts';
 import ErrorBoundary from './src/components/ui/ErrorBoundary';
 import PasswordConfirmHost from './src/components/ui/PasswordConfirmHost';
@@ -168,6 +169,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <StatusBar style="dark" />
+      <OfflineBanner />
       <NavigationContainer
         key={branch}
         linking={linking}
