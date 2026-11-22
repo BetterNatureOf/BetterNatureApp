@@ -66,7 +66,9 @@ exports.countVolunteerSignup = functions.firestore
 exports.closeExpiredRescueOffers = functions.pubsub.schedule('every 5 minutes').onRun(async () => {
   const result = await expireOpenPickups(admin.firestore());
   const partners = await require('./partnerRequests').expirePartnerRequests(admin.firestore());
-  console.log('Expired rescue offers closed', result.expired, 'partner requests moved on', partners.moved);
+  const holds = await require('./receivingSites').sweepReservations(admin.firestore());
+  console.log('Expired rescue offers closed', result.expired, 'partner requests moved on', partners.moved,
+    'holds expired', holds.expired, 'holds overdue', holds.overdue);
 });
 
 exports.assignRescueReceiver = functions.https.onCall((data, context) =>
@@ -81,6 +83,9 @@ exports.reconcileSiteReservation = functions.runWith({ failurePolicy: true }).fi
   .document('pickups/{pickupId}')
   .onUpdate((change) => require('./receivingSites').reconcileReservation(admin.firestore(),
     change.after.ref, change.before.data(), change.after.data()));
+
+exports.getRescueRoute = functions.https.onCall((data, context) =>
+  require('./rescueRoute').getRescueRoute(admin.firestore(), data, context.auth?.uid));
 
 exports.listCustodyCandidates = functions.https.onCall((data, context) =>
   require('./custodyCandidates').listCustodyCandidates(admin.firestore(), data, context.auth?.uid));

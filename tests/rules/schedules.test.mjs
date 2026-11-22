@@ -72,11 +72,47 @@ describe('occurrences', () => {
     assert.equal((await S.materialize(db, { now: NOW })).created, 0);
   });
 
-  it('unconfirmed occurrences are marked missed after the window', async () => {
+  it('asks exactly three hours before the window starts, not earlier', async () => {
+    assert.equal((await S.materialize(db, { now: readyAt - 3 * 60 * MIN - MIN })).created, 0);
+    assert.equal((await S.materialize(db, { now: readyAt - 3 * 60 * MIN + MIN })).created, 1);
+    const occ = (await db.doc(`donation_occurrences/s1_${date}`).get()).data();
+    assert.equal(occ.confirm_requested_at.toMillis(), readyAt - 3 * 60 * MIN + MIN);
+  });
+
+  it('an occurrence first seen inside the lead time is requested immediately', async () => {
+    assert.equal((await S.materialize(db, { now: readyAt - 30 * MIN })).created, 1);
+    const notes = (await db.collection('notifications').get()).docs.map((d) => d.data().data?.type);
+    assert.deepEqual(notes, ['donation_occurrence']);
+  });
+
+  it('unconfirmed occurrences are marked missed when their window ends, never dispatched', async () => {
     await S.materialize(db, { now: NOW });
-    const out = await S.materialize(db, { now: readyAt + 2 * 60 * MIN + MIN });
+    assert.equal((await S.materialize(db, { now: readyAt + 3 * 60 * MIN - MIN })).missed, 0);   // window is 3 h
+    const out = await S.materialize(db, { now: readyAt + 3 * 60 * MIN + MIN });
     assert.equal(out.missed, 1);
     assert.equal((await db.doc(`donation_occurrences/s1_${date}`).get()).data().status, 'missed');
+    assert.equal((await db.collection('pickups').get()).size, 0);
+    assert.equal((await S.materialize(db, { now: readyAt + 4 * 60 * MIN })).missed, 0);          // rerun is a no-op
+    await assert.rejects(S.confirmOccurrence(db, { occurrenceId: `s1_${date}`, estimated_weight_lbs: 10 }, 'donor', { now: readyAt + 4 * 60 * MIN }), /already handled/);
+  });
+
+  it('pausing or cancelling the schedule skips open occurrences and blocks confirmation', async () => {
+    await S.materialize(db, { now: NOW });
+    await db.doc('donation_schedules/s1').update({ status: 'paused' });
+    await assert.rejects(S.confirmOccurrence(db, { occurrenceId: `s1_${date}`, estimated_weight_lbs: 10 }, 'donor', { now: NOW }), /paused or cancelled/);
+    const out = await S.materialize(db, { now: NOW + MIN });
+    assert.equal(out.skipped, 1);
+    assert.equal((await db.doc(`donation_occurrences/s1_${date}`).get()).data().skip_reason, 'Schedule paused');
+    await db.doc('donation_schedules/s1').update({ status: 'cancelled' });
+    assert.equal((await S.materialize(db, { now: NOW + 2 * MIN })).created, 0);
+  });
+
+  it('the donor can edit this occurrence’s start time; the window follows it', async () => {
+    await S.materialize(db, { now: NOW });
+    const out = await S.confirmOccurrence(db, { occurrenceId: `s1_${date}`, estimated_weight_lbs: 12, start_time: '16:30', ready_for_hours: 1 }, 'donor', { now: NOW });
+    const p = (await db.doc(`pickups/${out.pickupId}`).get()).data();
+    assert.equal(Date.parse(p.scheduled_for), Date.parse('2026-11-23T22:30:00Z'));      // 4:30 PM Chicago
+    assert.equal(Date.parse(p.pickup_window_until), Date.parse('2026-11-23T23:30:00Z'));
   });
 
   it('only the donor confirms; confirming creates one donation with measured-vs-estimate labels and asks partners', async () => {

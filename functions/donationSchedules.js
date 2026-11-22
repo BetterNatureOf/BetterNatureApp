@@ -8,45 +8,34 @@
 // saving change keeps the local ready time.
 //
 // donation_schedules/{id}
-//   restaurant_id, chapter_id, owner_uid, status: active | paused
-//   days: ['mon', ...], ready_time: 'HH:MM', timezone (IANA)
+//   restaurant_id, chapter_id, owner_uid, status: active | paused | cancelled
+//   days: ['mon', ...], ready_time: 'HH:MM' (when the pickup window starts), timezone (IANA)
 //   window_hours (how long the food stays available after ready time)
 //   template: { food_category, packages, estimated_weight_lbs, notes }
 //   destination: { mode: network | preferred | coordinator, site_id, offer_to_network }
 //   skip_dates: ['YYYY-MM-DD'], ends_on: 'YYYY-MM-DD' | null
 // donation_occurrences/{scheduleId}_{YYYY-MM-DD}
 //   status: awaiting_donor | confirmed | skipped | missed, ready_at, pickup_id
+//
+// The schedule is a template, not evidence food exists or that a partner
+// accepted it. The donor is asked 3 hours before the window starts
+// (immediately when an occurrence first appears inside that lead time).
+// Unconfirmed occurrences become `missed` when their window ends and are
+// never dispatched. Pausing or cancelling a schedule skips its open
+// occurrences.
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { HttpsError } = require('firebase-functions/v1/https');
 const { latLngToCell } = require('h3-js');
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const LEAD_MS = 3 * 60 * 60_000;     // ask the donor up to 3 h before ready time
-const MISS_AFTER_MS = 2 * 60 * 60_000;
+const { POLICY } = require('./lib/rescuePolicy');
+
+const LEAD_MS = POLICY.RECURRING_CONFIRM_LEAD_MIN * 60_000;
+const DEFAULT_WINDOW_H = 2;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Wall-clock parts of an instant in a timezone.
-function zoned(atMs, timeZone) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', weekday: 'short' })
-    .formatToParts(new Date(atMs)).map((x) => [x.type, x.value]));
-  return { y: +p.year, mo: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, s: +p.second,
-    weekday: p.weekday.toLowerCase().slice(0, 3), date: `${p.year}-${p.month}-${p.day}` };
-}
-
-// The UTC instant of a local date + time in a timezone (DST-aware).
-function localToUtc(date, hhmm, timeZone) {
-  const [y, mo, d] = date.split('-').map(Number);
-  const [h, mi] = hhmm.split(':').map(Number);
-  let guess = Date.UTC(y, mo - 1, d, h, mi);
-  for (let i = 0; i < 3; i++) {
-    const z = zoned(guess, timeZone);
-    const asUtc = Date.UTC(z.y, z.mo - 1, z.d, z.h, z.mi, z.s);
-    guess += Date.UTC(y, mo - 1, d, h, mi) - asUtc;
-  }
-  return guess;
-}
+const { zoned, localToUtc } = require('./lib/localTime');
 
 function addDays(date, n) {
   const [y, mo, d] = date.split('-').map(Number);
@@ -94,7 +83,10 @@ async function materialize(db, { now = Date.now() } = {}) {
         if ((await tx.get(ref)).exists) return false;
         tx.create(ref, { schedule_id: s.id, restaurant_id: schedule.restaurant_id, chapter_id: schedule.chapter_id,
           owner_uid: schedule.owner_uid, date: occ.date, ready_at: Timestamp.fromMillis(occ.readyAt),
-          status: 'awaiting_donor', template: schedule.template || {}, created_at: FieldValue.serverTimestamp() });
+          status: 'awaiting_donor', template: schedule.template || {}, timezone: schedule.timezone || 'America/Chicago',
+          window_hours: schedule.window_hours || DEFAULT_WINDOW_H,
+          missed_after: Timestamp.fromMillis(occ.readyAt + (schedule.window_hours || DEFAULT_WINDOW_H) * 3600_000),
+          confirm_requested_at: Timestamp.fromMillis(now), created_at: FieldValue.serverTimestamp() });
         notice(tx, db, `occ_${s.id}_${occ.date}`, schedule.owner_uid, 'Confirm today’s donation',
           `Your usual donation is due at ${new Date(occ.readyAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: schedule.timezone || 'America/Chicago' })}. Confirm what you actually have, or skip today.`,
           { type: 'donation_occurrence', scheduleId: s.id, date: occ.date });
@@ -103,10 +95,32 @@ async function materialize(db, { now = Date.now() } = {}) {
       if (made) created++;
     }
   }
-  const stale = await db.collection('donation_occurrences').where('status', '==', 'awaiting_donor')
-    .where('ready_at', '<=', Timestamp.fromMillis(now - MISS_AFTER_MS)).limit(100).get();
-  for (const d of stale.docs) { await d.ref.update({ status: 'missed', missed_at: FieldValue.serverTimestamp() }); missed++; }
-  return { created, missed };
+  // Open occurrences: missed after their window, skipped when the schedule
+  // was paused or cancelled. Each change is guarded, so reruns are no-ops.
+  const open = await db.collection('donation_occurrences').where('status', '==', 'awaiting_donor').limit(300).get();
+  let skipped = 0;
+  for (const d of open.docs) {
+    const occ = d.data();
+    const end = ms(occ.missed_after) || ms(occ.ready_at) + DEFAULT_WINDOW_H * 3600_000;
+    const sched = (await db.doc(`donation_schedules/${occ.schedule_id}`).get()).data();
+    const outcome = end <= now ? 'missed' : (!sched || sched.status !== 'active') ? 'skipped' : null;
+    if (!outcome) continue;
+    const changed = await db.runTransaction(async (tx) => {
+      const cur = (await tx.get(d.ref)).data();
+      if (cur?.status !== 'awaiting_donor') return false;
+      tx.update(d.ref, outcome === 'missed'
+        ? { status: 'missed', missed_at: Timestamp.fromMillis(now) }
+        : { status: 'skipped', skip_reason: sched?.status === 'cancelled' ? 'Schedule cancelled' : 'Schedule paused', skipped_at: Timestamp.fromMillis(now) });
+      if (outcome === 'missed') {
+        notice(tx, db, `occ_missed_${d.id}`, occ.owner_uid, 'Donation not confirmed',
+          'Nobody confirmed today’s recurring donation, so it wasn’t sent to partners or volunteers. Post it now if the food is still available.',
+          { type: 'donation_occurrence_missed', scheduleId: occ.schedule_id, date: occ.date });
+      }
+      return true;
+    });
+    if (changed) { if (outcome === 'missed') missed++; else skipped++; }
+  }
+  return { created, missed, skipped };
 }
 
 async function ownsRestaurant(db, restaurantId, uid) {
@@ -149,7 +163,12 @@ async function confirmOccurrence(db, data, uid, { now = Date.now(), requestPartn
     const cur = (await tx.get(ref)).data();
     if (cur.status === 'confirmed') return false;
     if (cur.status !== 'awaiting_donor') throw new HttpsError('failed-precondition', 'This donation was already handled.');
-    const readyAt = Math.max(now, ms(cur.ready_at));
+    if (schedule.status && schedule.status !== 'active') throw new HttpsError('failed-precondition', 'This schedule is paused or cancelled.');
+    // The donor may move today's window start (same local date).
+    let start = ms(cur.ready_at);
+    if (typeof data?.start_time === 'string' && HHMM.test(data.start_time)) start = localToUtc(cur.date, data.start_time, cur.timezone || schedule.timezone || 'America/Chicago');
+    if (start + readyHours * 3600_000 <= now) throw new HttpsError('failed-precondition', 'That window has already ended.');
+    const readyAt = Math.max(now, start);
     const until = readyAt + readyHours * 3600_000;
     const lat = restaurant.lat ?? null, lng = restaurant.lng ?? null;
     tx.create(pickupRef, {
@@ -162,7 +181,8 @@ async function confirmOccurrence(db, data, uid, { now = Date.now(), requestPartn
       occurrence_id: id, schedule_id: occ.schedule_id, created_by: uid, created_at: FieldValue.serverTimestamp(),
     });
     tx.update(ref, { status: 'confirmed', pickup_id: pickupRef.id, confirmed_by: uid, confirmed_at: FieldValue.serverTimestamp(),
-      actual: { estimated_weight_lbs: weight, packages, food_category: data?.food_category || null } });
+      actual: { estimated_weight_lbs: weight, packages, food_category: data?.food_category || null,
+        window_start: Timestamp.fromMillis(readyAt), window_end: Timestamp.fromMillis(until) } });
     return true;
   });
   if (created && schedule.destination?.mode && schedule.destination.mode !== 'coordinator' && requestPartner) {

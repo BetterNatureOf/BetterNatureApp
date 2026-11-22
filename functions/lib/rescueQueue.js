@@ -12,7 +12,7 @@ const ms = (v) => (v?.toMillis ? v.toMillis() : v?.seconds != null ? v.seconds *
   : typeof v === 'string' ? Date.parse(v) : Number.isFinite(v) ? v : NaN);
 
 const PRIORITY = {
-  held: 0, remainder_pending: 1, escalated: 2, late_pickup: 3, late_delivery: 4,
+  held: 0, remainder_pending: 1, escalated: 2, legacy_destination: 2, late_pickup: 3, late_delivery: 4,
   near_deadline: 5, awaiting_site: 6, awaiting_partner: 7, awaiting_receipt: 8, awaiting_donor: 9,
 };
 
@@ -25,6 +25,9 @@ const ESCALATION_TEXT = {
   no_acceptance: 'No volunteer accepted after every search round',
   deadline_approaching: 'Deadline close and nobody has accepted',
   not_started: 'Assigned volunteer hasn’t started',
+  destination_unusable: 'Receiving hold lapsed — reconfirm a site',
+  feasibility_unknown: 'Travel time unknown — assign by hand',
+  donor_location_missing: 'Donor location missing — assign by hand',
 };
 
 function classify(p, now) {
@@ -47,6 +50,13 @@ function classify(p, now) {
     return { kind: 'remainder_pending', title: `${p.receiving_receipt.rejected_weight_lbs} lb turned away`, owner: 'Coordinator',
       next: 'Record where the remaining food went', deadline: null, deadlineLabel: null };
   }
+  // Older clients could open an offer with a typed-in destination and no
+  // saved site. Those can't be claimed any more; a coordinator confirms a
+  // site (which reserves capacity) or closes the rescue.
+  if (p.status === 'available' && p.destination_confirmation && !p.destination_confirmation.site_id) {
+    return { kind: 'legacy_destination', title: 'Destination isn’t a saved receiving site', owner: 'Coordinator',
+      next: 'Confirm a saved site so volunteers can take it, or close the rescue', deadline: offerDeadline, deadlineLabel: 'Offer closes' };
+  }
   if (p.status === 'available' && d?.escalation && d.status === 'escalated') {
     return { kind: 'escalated', title: ESCALATION_TEXT[d.escalation.reason] || 'Needs a decision', owner: 'Coordinator',
       next: 'Call a volunteer directly, adjust the window with the donor, or cancel', deadline: offerDeadline, deadlineLabel: 'Offer closes' };
@@ -58,7 +68,8 @@ function classify(p, now) {
   }
   if (p.status === 'enroute' && Number.isFinite(arrivalBy) && now > arrivalBy && !p.receiving_receipt) {
     return { kind: 'late_delivery', title: 'Past the receiving deadline without a receipt', owner: claimant,
-      next: 'Call the volunteer and the receiving site', deadline: arrivalBy, deadlineLabel: 'Receiving deadline' };
+      next: p.verified_by_restaurant_at ? 'Call the volunteer and the site. The site’s capacity stays held until a receipt or closure.'
+        : 'Call the volunteer and the receiving site', deadline: arrivalBy, deadlineLabel: 'Receiving deadline' };
   }
   if (['pending_destination', 'available'].includes(p.status) && !p.destination_confirmation &&
       p.partner_request?.status === 'awaiting_partner') {

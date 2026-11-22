@@ -1,6 +1,11 @@
-// Rescue dispatch: bounded nearby alert rounds, expansion when nobody
-// accepts, recovery after a release, and coordinator escalation before
-// the deadline.
+// Rescue dispatch: one exclusive volunteer offer at a time, bounded search
+// expansion when nobody can or will take it, recovery after a release, and
+// coordinator escalation before the usable window closes.
+//
+// Offers: pickups/{id}/offers/{generation}_{uid} (server-only). Only the
+// offered volunteer can accept while the offer is open; acceptance runs in
+// rescueOffers.respond. The pickup carries `offer_hold` (expiry only, no
+// identity) so other volunteers see the rescue is spoken for.
 //
 // State lives at pickups/{id}/dispatch/state (server-only, readable by
 // chapter staff). Each time an offer (re)opens a new *generation*
@@ -13,17 +18,18 @@
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { latLngToCell, gridDisk, cellToLatLng, greatCircleDistance } = require('h3-js');
 const { pickupEligible } = require('./lib/pickupEligibility');
-const { pickupRoadTimes } = require('./dispatchRouting');
+const { routingProvider } = require('./dispatchRouting');
 const { cargoFit } = require('./lib/rescueCargo');
-const { journey, approximateMinutes } = require('./rescueMatching');
+const { POLICY } = require('./lib/rescuePolicy');
+const { journey, tripInputs, siteLeg, pickupLegs, travelProfile } = require('./rescueMatching');
 
 const MINUTE = 60_000;
 const RESOLUTION = 7;                 // ~1.2 km hex edge
-// Offer process defaults (documented in docs/rescue-system-status.md).
-// RESCUE_OFFER_BATCH: volunteers offered at once (1–3, default 1).
-// RESCUE_OFFER_TTL_MIN: minutes a volunteer has to respond (default 5).
-const OFFER_BATCH = Math.min(3, Math.max(1, parseInt(process.env.RESCUE_OFFER_BATCH || '1', 10) || 1));
-const OFFER_TTL_MS = Math.max(1, parseInt(process.env.RESCUE_OFFER_TTL_MIN || '5', 10) || 5) * 60_000;
+// Offer policy (lib/rescuePolicy.js): one volunteer at a time, at most
+// five minutes, and never past that volunteer's last feasible start.
+const OFFER_TTL_MS = POLICY.OFFER_MAX_RESPONSE_MIN * MINUTE;
+const OFFER_MIN_MS = POLICY.OFFER_MIN_RESPONSE_MIN * MINUTE;
+const MAX_OFFERS_PER_GENERATION = 12;
 const RECENT_OFFER_MS = 30 * 60_000;  // soft fairness tie-break, never an exclusion
 const ROUNDS = [                      // k = grid-disk radius in res-7 cells (search widens)
   { k: 2, limit: 8 },                 // ~5 km
@@ -53,10 +59,17 @@ function offerDeadline(p) {
     ms(p?.destination_confirmation?.arrival_by));
 }
 
-// An offer volunteers can still accept.
+// A rescue volunteers can still take: open, unclaimed, not held, and with
+// a confirmed saved receiving site (a free-text destination from older
+// clients is not usable; the coordinator queue lists those).
 function offerIsOpen(p, now) {
-  return p?.status === 'available' && !!p.chapter_id && !p.claimed_by && !!p.destination_confirmation &&
-    !p.safety_hold && !p.verified_by_restaurant_at && !p.handoff_from_uid && offerDeadline(p) > now;
+  return p?.status === 'available' && !!p.chapter_id && !p.claimed_by && !!p.destination_confirmation?.site_id &&
+    !p.safety_hold && !p.verified_by_restaurant_at && offerDeadline(p) > now;
+}
+
+// The receiving site's capacity hold for this rescue is still usable.
+function reservationUsable(res, now) {
+  return res?.status === 'held' && !(Number.isFinite(ms(res.expires_at)) && ms(res.expires_at) <= now);
 }
 
 // The event that most recently (re)opened the offer, and who to skip.
@@ -113,7 +126,7 @@ async function coordinatorsFor(db, chapterId) {
 
 // ── Trigger: pickups/{id} onUpdate/onCreate ─────────────────────────
 // Starts a generation when an offer (re)opens; tracks claim / start.
-async function onPickupChange(db, pickupRef, after, { now = Date.now(), roadTimes = pickupRoadTimes } = {}) {
+async function onPickupChange(db, pickupRef, after, { now = Date.now(), routing = routingProvider() } = {}) {
   const stateRef = pickupRef.collection('dispatch').doc('state');
   await noticeNoShowRelease(db, pickupRef, after);
   const gen = currentGeneration(after);
@@ -133,7 +146,7 @@ async function onPickupChange(db, pickupRef, after, { now = Date.now(), roadTime
       });
       return true;
     });
-    if (started) return advance(db, pickupRef, { now, roadTimes });
+    if (started) return advance(db, pickupRef, { now, routing });
     return { action: 'none' };
   }
   // Claimed: watch for a volunteer who hasn't left before the cutoff.
@@ -149,7 +162,7 @@ async function onPickupChange(db, pickupRef, after, { now = Date.now(), roadTime
       tx.update(stateRef, { status: 'assigned', assigned_to: pickup.claimed_by, start_reminder_at: null,
         next_action_at: Number.isFinite(pickupBy) ? Timestamp.fromMillis(pickupBy - START_REMINDER_BEFORE_MS) : null,
         updated_at: FieldValue.serverTimestamp() });
-      return { action: 'assigned', generation: s.generation, keep: pickup.claimed_by };
+      return { action: 'assigned', generation: s.generation, keep: pickup.claimed_by, claimer: pickup.claimed_by };
     }
     if (['searching', 'assigned', 'escalated'].includes(s.status) && !offerIsOpen(pickup, now)) {
       tx.update(stateRef, { status: pickup?.status === 'enroute' ? 'in_progress' : 'closed',
@@ -161,6 +174,7 @@ async function onPickupChange(db, pickupRef, after, { now = Date.now(), roadTime
   if (outcome.generation && outcome.action !== 'none' || (outcome.generation && after?.status !== 'available')) {
     await closeOffers(db, pickupRef, outcome.generation, 'withdrawn', now, outcome.keep || after?.claimed_by || null);
   }
+  if (outcome.claimer) await closeOffersForVolunteer(db, outcome.claimer, pickupRef.id, now);
   return outcome;
 }
 
@@ -190,7 +204,7 @@ async function noticeNoShowRelease(db, pickupRef, p) {
 }
 
 // ── Scheduler step for one pickup ───────────────────────────────────
-async function advance(db, pickupRef, { now = Date.now(), roadTimes = pickupRoadTimes } = {}) {
+async function advance(db, pickupRef, { now = Date.now(), routing = routingProvider() } = {}) {
   const stateRef = pickupRef.collection('dispatch').doc('state');
   const [stateSnap, pickupSnap] = await Promise.all([stateRef.get(), pickupRef.get()]);
   if (!stateSnap.exists || !pickupSnap.exists) return { action: 'none' };
@@ -209,9 +223,10 @@ async function advance(db, pickupRef, { now = Date.now(), roadTimes = pickupRoad
   if (open.length) await closeOffers(db, pickupRef, s.generation, 'expired', now);
 
   const deadline = offerDeadline(p);
+  if ((s.alerted_count || 0) >= MAX_OFFERS_PER_GENERATION) return escalate(db, pickupRef, s.generation, 'no_acceptance', { now });
   if (deadline - now <= ESCALATE_BEFORE_MS) return escalate(db, pickupRef, s.generation, 'deadline_approaching', { now });
   if (deadline - now <= MIN_ALERT_LEAD_MS) return escalate(db, pickupRef, s.generation, 'deadline_approaching', { now });
-  return runRound(db, pickupRef, s, p, { now, roadTimes });
+  return runRound(db, pickupRef, s, p, { now, routing });
 }
 
 async function openOffers(db, pickupRef, generation) {
@@ -221,21 +236,37 @@ async function openOffers(db, pickupRef, generation) {
 
 // Close every open offer in a generation (expired / withdrawn) and take
 // the matching notifications out of the actionable UI.
-async function closeOffers(db, pickupRef, generation, status, now, exceptUid = null) {
-  const docs = (await openOffers(db, pickupRef, generation)).filter((d) => d.data().uid !== exceptUid);
+async function closeOffers(db, pickupRef, generation, status, now, exceptUid = null, onlyId = null) {
+  const docs = (await openOffers(db, pickupRef, generation))
+    .filter((d) => d.data().uid !== exceptUid && (!onlyId || d.id === onlyId));
   for (const d of docs) {
     await db.runTransaction(async (tx) => {
       const fresh = await tx.get(d.ref);
       if (fresh.data()?.status !== 'open') return;
       const noteRef = db.collection('notifications').doc(fresh.data().notification_id);
       const note = await tx.get(noteRef);
+      const pk = await tx.get(pickupRef);
       tx.update(d.ref, { status, closed_at: Timestamp.fromMillis(now) });
+      if (pk.data()?.offer_hold?.offer_id === fresh.data().offer_id) tx.update(pickupRef, { offer_hold: null });
       if (note.exists) {
         tx.update(noteRef, { 'data.offer_status': status, title: status === 'expired' ? 'Rescue offer expired' : 'Rescue no longer available' });
       }
     });
   }
   return docs.length;
+}
+
+// A volunteer took another rescue: their open offers elsewhere close.
+async function closeOffersForVolunteer(db, uid, exceptPickupId, now) {
+  const snap = await db.collectionGroup('offers').where('uid', '==', uid).where('status', '==', 'open').get();
+  let n = 0;
+  for (const d of snap.docs) {
+    const pickupRef = d.ref.parent.parent;
+    if (pickupRef.id === exceptPickupId) continue;
+    n += await closeOffers(db, pickupRef, d.data().generation, 'withdrawn', now, null, d.id);
+    await pickupRef.collection('dispatch').doc('state').update({ next_action_at: Timestamp.fromMillis(now) }).catch(() => {});
+  }
+  return n;
 }
 
 async function closeIf(db, stateRef, generation, predicate, now) {
@@ -247,47 +278,59 @@ async function closeIf(db, stateRef, generation, predicate, now) {
   });
 }
 
-// One offer round: shortlist by H3 proximity, then require a feasible
-// complete journey, then offer the best candidate(s). Widens the search
-// ring only when the current ring has nobody left who can make it.
-async function runRound(db, pickupRef, s, p, { now, roadTimes }) {
-  const lat = p.restaurant_lat, lng = p.restaurant_lng;
+// One offer round. H3 rings only build the shortlist; every candidate must
+// then pass eligibility, chapter, cargo fit, "no other rescue or live
+// offer", and a complete feasible journey from their shared area. The best
+// single candidate gets an exclusive offer that ends at five minutes or at
+// their last feasible start, whichever is sooner. The ring widens only when
+// nobody in the current ring can do it.
+async function runRound(db, pickupRef, s, p, { now, routing }) {
   const stateRef = pickupRef.collection('dispatch').doc('state');
-  const located = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-  const pickupBy = ms(p.destination_confirmation?.pickup_by ?? p.pickup_window_until);
-  const arrivalBy = ms(p.destination_confirmation?.arrival_by);
-  const siteKm = Number.isFinite(p.fridge_lat) && Number.isFinite(p.fridge_lng) && located
-    ? greatCircleDistance([lat, lng], [p.fridge_lat, p.fridge_lng], 'km') : null;
-  const toSite = siteKm == null ? null : { minutes: approximateMinutes(siteKm), basis: 'approximate' };
+  const inputs = tripInputs(p, null);
+  const located = !!inputs.donor;
+  const siteId = p.destination_confirmation?.site_id;
+  const site = siteId ? (await db.doc(`receiving_sites/${siteId}`).get()).data() : null;
+  Object.assign(inputs, tripInputs(p, site));
 
   let ringIndex = s.ring_index || 0;
-  let cells = [], candidates = [], times = new Map(), routing = 'none';
+  let cells = [], candidates = [], legs = new Map(), siteLegs = new Map(), routingStatus = 'none', profiles = new Map();
   // Network and wide reads stay outside the transaction (retries re-run it).
   async function load(index) {
-    cells = gridDisk(latLngToCell(lat, lng, RESOLUTION), ROUNDS[index].k);
-    candidates = (await availabilityNear(db, cells)).slice(0, MAX_CANDIDATES);
-    times = new Map();
-    routing = 'none';
-    if (candidates.length) {
-      try { times = await roadTimes(cells, [lat, lng]); } catch { times = new Map(); }
-      routing = times.size ? 'road' : 'approximate';
+    cells = gridDisk(latLngToCell(inputs.donor[0], inputs.donor[1], RESOLUTION), ROUNDS[index].k);
+    const near = await availabilityNear(db, cells);
+    // Nearest areas first, so a wide ring never crowds out close volunteers.
+    near.sort((a, b) => greatCircleDistance(inputs.donor, cellToLatLng(a.data().cell), 'km') -
+      greatCircleDistance(inputs.donor, cellToLatLng(b.data().cell), 'km') || a.id.localeCompare(b.id));
+    candidates = near.slice(0, MAX_CANDIDATES);
+    profiles = new Map();
+    for (let i = 0; i < candidates.length; i += 100) {
+      const users = await db.getAll(...candidates.slice(i, i + 100).map((c) => db.collection('users').doc(c.id)));
+      users.forEach((u) => profiles.set(u.id, travelProfile(u.data()).profile));
     }
+    const wants = candidates.map((c) => ({ cell: c.data().cell, profile: profiles.get(c.id) || 'driving' }));
+    const out = await pickupLegs(routing, inputs, wants);
+    legs = out.legs; routingStatus = out.status;
+    siteLegs = new Map();
+    for (const profile of new Set(wants.map((w) => w.profile))) siteLegs.set(profile, await siteLeg(routing, inputs, profile));
   }
   if (located) await load(ringIndex);
 
   const result = await db.runTransaction(async (tx) => {
     const [stSnap, pkSnap] = await Promise.all([tx.get(stateRef), tx.get(pickupRef)]);
     const st = stSnap.data(), current = pkSnap.data();
-    // Another runner already took this round, or the offer changed.
+    // Another runner already took this round, or the rescue changed.
     if (!st || st.status !== 'searching' || st.generation !== s.generation || st.round !== s.round) return { action: 'skipped' };
     const gen = currentGeneration(current);
     if (!offerIsOpen(current, now) || !gen || gen.key !== st.generation) return { action: 'skipped' };
+    const res = (await tx.get(db.doc(`receiving_sites/${current.destination_confirmation.site_id}/reservations/${pickupRef.id}`))).data();
+    if (!reservationUsable(res, now)) return { action: 'unusable_destination' };
 
     const ring = new Set(cells);
     const excluded = new Set([...(st.excluded_uids || []), current.receiver_uid, current.restaurant_user_id,
       current.restaurant_id, current.released_by, current.abandoned_prior_claimant].filter(Boolean));
     const genId = safeId(st.generation);
-    const skipped = { excluded: 0, already_offered: 0, stale: 0, ineligible: 0, busy: 0, does_not_fit: 0, cannot_make_it: 0, unknown_travel: 0 };
+    const skipped = { excluded: 0, already_offered: 0, stale: 0, ineligible: 0, busy: 0, has_offer: 0, does_not_fit: 0,
+      cannot_make_it: 0, unknown_travel: 0 };
     let unknownFit = 0;
     const feasible = [];
     for (const c of candidates) {
@@ -305,58 +348,64 @@ async function runRound(db, pickupRef, s, p, { now, roadTimes }) {
       const busy = await tx.get(db.collection('pickups').where('claimed_by', '==', uid)
         .where('status', 'in', ['claimed', 'enroute']).limit(1));
       if (!busy.empty) { skipped.busy++; continue; }
-      const seconds = times.get(avail.cell);
-      const km = greatCircleDistance([lat, lng], cellToLatLng(avail.cell), 'km');
-      const toPickup = seconds !== undefined ? { minutes: Math.ceil(seconds / 60), basis: 'road' }
-        : { minutes: approximateMinutes(km), basis: 'approximate' };
-      const trip = { ...journey({ now, toPickup, toSite, pickupBy, arrivalBy }), toPickupBasis: toPickup.basis };
-      if (trip.feasible === false) { skipped.cannot_make_it++; continue; }
+      // One live offer per volunteer, across all rescues.
+      const held = await tx.get(db.collectionGroup('offers').where('uid', '==', uid).where('status', '==', 'open'));
+      if (held.docs.some((o) => ms(o.data().expires_at) > now)) { skipped.has_offer++; continue; }
+      const { profile, assumed } = travelProfile(user);
+      const toPickup = legs.get(`${profile}|${avail.cell}`) || null;
+      const trip = journey({ now, toPickup, toSite: siteLegs.get(profile) || null, readyAt: inputs.readyAt,
+        pickupBy: inputs.pickupBy, arrivalBy: inputs.arrivalBy, siteOpensAt: inputs.siteOpensAt });
       if (trip.feasible === null) { skipped.unknown_travel++; continue; }
+      if (trip.feasible === false || trip.latestStartAt - now < OFFER_MIN_MS) { skipped.cannot_make_it++; continue; }
       if (fit.status === 'unknown') unknownFit++;
       const recent = ms(user.last_rescue_offer_at) > now - RECENT_OFFER_MS;
-      feasible.push({ uid, user, offerRef, trip, km, recent });
+      feasible.push({ uid, user, offerRef, trip, profile, assumed, recent });
     }
-    // Earliest completion first, then lighter travel, then people who
-    // haven't just been offered something else, then a stable id order.
-    feasible.sort((a, b) => (a.trip.finishAt ?? a.trip.loadedAt) - (b.trip.finishAt ?? b.trip.loadedAt) ||
-      a.trip.toPickupMinutes - b.trip.toPickupMinutes || Number(a.recent) - Number(b.recent) || a.uid.localeCompare(b.uid));
-    const chosen = feasible.slice(0, OFFER_BATCH);
-    if (!chosen.length) return { action: 'empty', skipped, unknownFit };
+    // Earliest handoff, then less driving, then more slack, then people who
+    // weren't just offered something, then a stable id order.
+    feasible.sort((a, b) => a.trip.finishAt - b.trip.finishAt ||
+      a.trip.toPickupMinutes - b.trip.toPickupMinutes || b.trip.slackMinutes - a.trip.slackMinutes ||
+      Number(a.recent) - Number(b.recent) || a.uid.localeCompare(b.uid));
+    const chosen = feasible[0];
+    if (!chosen) return { action: 'empty', skipped, unknownFit };
 
-    // Offer expires at the TTL or when this volunteer could no longer
-    // make the pickup cutoff, whichever is sooner.
     const roundNo = st.round + 1;
-    for (const { uid, user, offerRef, trip } of chosen) {
-      const latestStart = pickupBy - (trip.toPickupMinutes + 10) * 60_000;
-      const expiresAt = Math.max(now + 60_000, Math.min(now + OFFER_TTL_MS, latestStart));
-      const noteId = `rescue_offer_${safeId(pickupRef.id)}_${genId}_${safeId(uid)}`;
-      tx.create(offerRef, {
-        uid, generation: st.generation, round: roundNo, status: 'open',
-        expires_at: Timestamp.fromMillis(expiresAt), created_at: Timestamp.fromMillis(now), notification_id: noteId,
-        trip: { basis: trip.basis, to_pickup_basis: trip.toPickupBasis, to_pickup_minutes: trip.toPickupMinutes, to_site_minutes: trip.toSiteMinutes ?? null,
-          total_minutes: trip.totalMinutes ?? null, dropoff_leg: trip.partial ? 'unknown' : 'estimated' },
-      });
-      tx.set(db.collection('users').doc(uid), { last_rescue_offer_at: Timestamp.fromMillis(now) }, { merge: true });
-      writeNotice(tx, db, noteId, {
-        uid, kind: ALERT_KIND, title: 'Rescue offer for you',
-        body: 'A nearby rescue fits your route. Review the stops and timing, then accept or pass.',
-        url: pickupUrl(pickupRef.id),
-        data: { type: 'rescue_offer', pickupId: pickupRef.id, offer_status: 'open', expires_at: new Date(expiresAt).toISOString() },
-        push: user.push_enabled === true && !!user.onesignal_player_id,
-      });
-    }
-    const soonest = Math.min(...chosen.map(({ trip }) => Math.max(now + 60_000,
-      Math.min(now + OFFER_TTL_MS, pickupBy - (trip.toPickupMinutes + 10) * 60_000))));
-    tx.update(stateRef, {
-      round: roundNo, ring_index: ringIndex, alerted_count: (st.alerted_count || 0) + chosen.length,
-      last_round: { round: roundNo, radius_cells: ROUNDS[ringIndex].k, recipients: chosen.length, offered: chosen.map((c) => c.uid),
-        ranking: 'journey', routing, location: located ? 'known' : 'missing', skipped, cargo_unknown: unknownFit,
-        at: Timestamp.fromMillis(now) },
-      next_action_at: Timestamp.fromMillis(soonest), updated_at: FieldValue.serverTimestamp(),
+    const { uid, user, offerRef, trip, profile, assumed } = chosen;
+    const expiresAt = Math.min(now + OFFER_TTL_MS, trip.latestStartAt);
+    const noteId = `rescue_offer_${safeId(pickupRef.id)}_${genId}_${safeId(uid)}`;
+    const offerId = `${genId}_${safeId(uid)}`;
+    tx.create(offerRef, {
+      offer_id: offerId, pickup_id: pickupRef.id, uid, generation: st.generation, round: roundNo, status: 'open',
+      expires_at: Timestamp.fromMillis(expiresAt), created_at: Timestamp.fromMillis(now), notification_id: noteId,
+      expiry_reason: expiresAt < now + OFFER_TTL_MS ? 'last_feasible_start' : 'response_window',
+      trip: { basis: trip.basis, profile, profile_assumed: assumed, legs: trip.legs, margin_minutes: trip.marginMinutes,
+        to_pickup_minutes: trip.toPickupMinutes, to_site_minutes: trip.toSiteMinutes, wait_minutes: trip.waitMinutes,
+        total_minutes: trip.totalMinutes, latest_start_at: Timestamp.fromMillis(trip.latestStartAt),
+        origin: 'approximate_area' },
     });
-    return { action: 'round', round: roundNo, recipients: chosen.map((c) => c.uid) };
+    tx.set(db.collection('users').doc(uid), { last_rescue_offer_at: Timestamp.fromMillis(now) }, { merge: true });
+    // Everyone else sees the rescue is spoken for until this time (no identity).
+    tx.update(pickupRef, { offer_hold: { expires_at: Timestamp.fromMillis(expiresAt), offer_id: offerId } });
+    const pushable = user.push_enabled === true && !!user.onesignal_player_id;
+    writeNotice(tx, db, noteId, {
+      uid, kind: ALERT_KIND, title: 'Rescue offer for you',
+      body: 'A nearby rescue fits your route. Review the stops and timing, then accept or pass.',
+      url: pickupUrl(pickupRef.id),
+      data: { type: 'rescue_offer', pickupId: pickupRef.id, offer_id: offerId, offer_status: 'open', expires_at: new Date(expiresAt).toISOString() },
+      push: pushable,
+    });
+    tx.update(stateRef, {
+      round: roundNo, ring_index: ringIndex, alerted_count: (st.alerted_count || 0) + 1,
+      current_offer: { uid, offer_id: offerId, expires_at: Timestamp.fromMillis(expiresAt), push: pushable ? 'queued' : 'in_app_only' },
+      last_round: { round: roundNo, radius_cells: ROUNDS[ringIndex].k, recipients: 1, offered: [uid],
+        ranking: 'journey', routing: routingStatus, location: located ? 'known' : 'missing', skipped, cargo_unknown: unknownFit,
+        at: Timestamp.fromMillis(now) },
+      next_action_at: Timestamp.fromMillis(expiresAt), updated_at: FieldValue.serverTimestamp(),
+    });
+    return { action: 'round', round: roundNo, recipients: [uid], expiresAt };
   });
 
+  if (result.action === 'unusable_destination') return escalate(db, pickupRef, s.generation, 'destination_unusable', { now });
   if (result.action !== 'empty') return result;
   // Nobody feasible in this ring: widen while there is a wider ring.
   if (located && ringIndex < ROUNDS.length - 1) {
@@ -366,17 +415,21 @@ async function runRound(db, pickupRef, s, p, { now, roadTimes }) {
         tx.update(stateRef, { ring_index: ringIndex + 1, updated_at: FieldValue.serverTimestamp() });
       }
     });
-    return runRound(db, pickupRef, { ...s, ring_index: ringIndex + 1 }, p, { now, roadTimes });
+    return runRound(db, pickupRef, { ...s, ring_index: ringIndex + 1 }, p, { now, routing });
   }
   // Searched as wide as allowed. Record why, then hand to a coordinator.
   await db.runTransaction(async (tx) => {
     const st = (await tx.get(stateRef)).data();
     if (st?.generation !== s.generation || st.round !== s.round) return;
-    tx.update(stateRef, { last_round: { round: st.round, radius_cells: ROUNDS[ringIndex].k, recipients: 0, offered: [],
-      ranking: 'journey', routing, location: located ? 'known' : 'missing', skipped: result.skipped,
-      cargo_unknown: result.unknownFit, at: Timestamp.fromMillis(now) }, updated_at: FieldValue.serverTimestamp() });
+    tx.update(stateRef, { last_round: { round: st.round, radius_cells: located ? ROUNDS[ringIndex].k : null, recipients: 0, offered: [],
+      ranking: 'journey', routing: routingStatus, location: located ? 'known' : 'missing', skipped: result.skipped || null,
+      cargo_unknown: result.unknownFit || 0, at: Timestamp.fromMillis(now) }, updated_at: FieldValue.serverTimestamp() });
   });
-  return escalate(db, pickupRef, s.generation, (s.alerted_count || 0) > 0 ? 'no_acceptance' : 'no_feasible_volunteer', { now });
+  const sk = result.skipped || {};
+  const reason = !located ? 'donor_location_missing'
+    : (s.alerted_count || 0) > 0 ? 'no_acceptance'
+      : sk.unknown_travel > 0 && !sk.cannot_make_it ? 'feasibility_unknown' : 'no_feasible_volunteer';
+  return escalate(db, pickupRef, s.generation, reason, { now });
 }
 
 async function escalate(db, pickupRef, generation, reason, { now }) {
@@ -386,7 +439,13 @@ async function escalate(db, pickupRef, generation, reason, { now }) {
   return db.runTransaction(async (tx) => {
     const st = (await tx.get(stateRef)).data();
     if (!st || st.generation !== generation || st.escalation) return { action: 'none' };
-    const body = reason === 'no_feasible_volunteer'
+    const body = reason === 'destination_unusable'
+      ? 'The receiving site’s capacity hold lapsed or the destination is no longer usable. Reconfirm a site or close the rescue.'
+      : reason === 'feasibility_unknown'
+      ? 'Travel times for this rescue couldn’t be established, so it wasn’t offered automatically. Assign a volunteer yourself or close it.'
+      : reason === 'donor_location_missing'
+      ? 'The donor’s location is missing, so nearby volunteers can’t be found. Assign a volunteer yourself.'
+      : reason === 'no_feasible_volunteer'
       ? 'No available volunteer nearby can complete this rescue in time. Review it and decide the next step.'
       : reason === 'no_acceptance'
       ? 'No nearby volunteer has accepted this rescue. Review it and decide the next step.'
@@ -433,14 +492,14 @@ async function startReminder(db, pickupRef, s, { now }) {
 }
 
 // ── Scheduler: everything due now ───────────────────────────────────
-async function advanceDue(db, { now = Date.now(), roadTimes = pickupRoadTimes, limit = 50 } = {}) {
+async function advanceDue(db, { now = Date.now(), routing = routingProvider(), limit = 50 } = {}) {
   const due = await db.collectionGroup('dispatch')
     .where('next_action_at', '<=', Timestamp.fromMillis(now)).limit(limit).get();
   const results = [];
   for (const doc of due.docs) {
     if (doc.id !== 'state') continue;
     try {
-      results.push({ pickupId: doc.ref.parent.parent.id, ...(await advance(db, doc.ref.parent.parent, { now, roadTimes })) });
+      results.push({ pickupId: doc.ref.parent.parent.id, ...(await advance(db, doc.ref.parent.parent, { now, routing })) });
     } catch (error) {
       // One bad pickup must not block the rest; the next run retries it.
       console.error('rescue dispatch advance failed', doc.ref.parent.parent.id, error);
@@ -451,7 +510,7 @@ async function advanceDue(db, { now = Date.now(), roadTimes = pickupRoadTimes, l
 }
 
 module.exports = {
-  ROUNDS, ESCALATE_BEFORE_MS, START_REMINDER_BEFORE_MS, AVAILABILITY_MS, OFFER_BATCH, OFFER_TTL_MS,
+  ROUNDS, ESCALATE_BEFORE_MS, START_REMINDER_BEFORE_MS, AVAILABILITY_MS, OFFER_TTL_MS, OFFER_MIN_MS, reservationUsable, closeOffersForVolunteer,
   offerDeadline, offerIsOpen, currentGeneration, wantsAlert,
   onPickupChange, advance, advanceDue, closeOffers, openOffers, writeNotice, safeId, pickupUrl,
 };

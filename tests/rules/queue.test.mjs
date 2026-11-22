@@ -10,7 +10,7 @@ const { buildQueue } = require('./lib/rescueQueue.js');
 const MIN = 60_000;
 const NOW = Date.parse('2026-11-21T18:00:00Z');
 const at = (m) => new Date(NOW + m * MIN).toISOString();
-const dest = (pickupMin, arrivalMin) => ({ site_name: 'S', pickup_by: at(pickupMin), arrival_by: at(arrivalMin) });
+const dest = (pickupMin, arrivalMin) => ({ site_name: 'S', site_id: 's', pickup_by: at(pickupMin), arrival_by: at(arrivalMin) });
 
 describe('rescue queue', () => {
   const pickups = [
@@ -40,6 +40,16 @@ describe('rescue queue', () => {
     assert.match(items.find((i) => i.id === 'held').next, /custody transfer/);
     assert.equal(items.find((i) => i.id === 'nosite').deadlineLabel, 'Donor cutoff');
     assert.equal(items.find((i) => i.id === 'closing').owner, 'Dispatch · round 2');
+  });
+
+  it('an older offer with a typed-in destination goes to the coordinator, not volunteers', () => {
+    const { items } = buildQueue([{ id: 'legacy', status: 'available', destination_confirmation: { site_name: 'Typed', pickup_by: at(60), arrival_by: at(120) } }], NOW);
+    assert.equal(items[0].kind, 'legacy_destination'); assert.match(items[0].next, /saved site/);
+  });
+
+  it('a late delivery after collection keeps the site’s capacity held until resolved', () => {
+    const { items } = buildQueue([{ id: 'o', status: 'enroute', verified_by_restaurant_at: at(-60), destination_confirmation: dest(-90, -10) }], NOW);
+    assert.equal(items[0].kind, 'late_delivery'); assert.match(items[0].next, /capacity stays held/);
   });
 
   it('a late run after collection is never offered as a no-show release', () => {

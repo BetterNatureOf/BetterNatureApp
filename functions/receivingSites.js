@@ -11,7 +11,15 @@
 //   receiver_uid (staff member or fridge steward who confirms receipts),
 //   contacts: [{ name, phone, role }]
 // receiving_sites/{siteId}/reservations/{pickupId}
-//   day (site-local YYYY-MM-DD), packages, weight_lbs, status: held | released | received
+//   day (site-local YYYY-MM-DD), packages, weight_lbs,
+//   status: held | released | expired | overdue | received,
+//   expires_at (arrival_by + 30 min), collected (donor confirmed collection)
+//
+// Capacity accounting: held, overdue and received reservations count.
+// A hold that passes expires_at before collection stops counting and is
+// marked expired. A hold whose food was already collected never silently
+// frees capacity: it becomes `overdue` (still counted) until a receipt,
+// reroute or coordinator closure resolves it.
 //
 // Confirmation against a saved site runs here so capacity is checked and
 // reserved atomically. A trigger settles reservations on every path
@@ -19,6 +27,8 @@
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { HttpsError } = require('firebase-functions/v1/https');
 const { rescueCargo } = require('./lib/rescueCargo');
+const { POLICY } = require('./lib/rescuePolicy');
+const GRACE_MS = POLICY.RESERVATION_GRACE_MIN * 60_000;
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const SITE_TYPES = ['staffed_center', 'steward_fridge', 'outreach_partner'];
@@ -112,9 +122,9 @@ async function usedOnDay(tx, siteRef, day, excludePickupId, now = Date.now()) {
   let packages = 0, weight = 0;
   snap.docs.forEach((d) => {
     const r = d.data();
-    if (d.id === excludePickupId || !['held', 'received'].includes(r.status)) return;
-    // A hold past its expiry (rescue never progressed) no longer counts.
-    if (r.status === 'held' && Number.isFinite(ms(r.expires_at)) && ms(r.expires_at) < now) return;
+    if (d.id === excludePickupId || !['held', 'overdue', 'received'].includes(r.status)) return;
+    // An uncollected hold past its expiry no longer counts; collected food does.
+    if (r.status === 'held' && !r.collected && Number.isFinite(ms(r.expires_at)) && ms(r.expires_at) <= now) return;
     packages += r.status === 'received' ? (r.accepted_packages ?? r.packages ?? 0) : (r.packages || 0);
     weight += r.status === 'received' ? (r.accepted_weight_lbs ?? r.weight_lbs ?? 0) : (r.weight_lbs || 0);
   });
@@ -167,7 +177,7 @@ async function confirmDestination(db, data, uid, { now = Date.now(), authorize =
     tx.set(siteRef.collection('reservations').doc(pickupId), {
       pickup_id: pickupId, day, packages: cargo.packages, weight_lbs: cargo.weight, status: 'held',
       // Held until the receiving deadline (+30 min grace for a late run).
-      expires_at: Timestamp.fromMillis(arrivalBy + 30 * 60_000),
+      expires_at: Timestamp.fromMillis(arrivalBy + GRACE_MS), collected: false,
       created_by: uid, created_at: FieldValue.serverTimestamp(),
     });
     const contact = site.contacts?.[0] ? `${site.contacts[0].name}${site.contacts[0].phone ? ` · ${site.contacts[0].phone}` : ''}` : site.name;
@@ -255,6 +265,9 @@ async function reconcileReservation(db, pickupRef, before, after) {
   const resRef = (siteId) => db.doc(`receiving_sites/${siteId}/reservations/${pickupRef.id}`);
   if (prevSite && prevSite !== nextSite) ops.push([resRef(prevSite), { status: 'released', released_reason: 'destination_changed' }]);
   if (nextSite && after.status === 'cancelled') ops.push([resRef(nextSite), { status: 'released', released_reason: 'cancelled' }]);
+  if (nextSite && after.verified_by_restaurant_at && !before?.verified_by_restaurant_at) {
+    ops.push([resRef(nextSite), { collected: true }]);
+  }
   if (nextSite && after.receiving_receipt && !before?.receiving_receipt) {
     ops.push([resRef(nextSite), { status: 'received', accepted_weight_lbs: Number(after.receiving_receipt.weight_lbs) || 0,
       rejected_weight_lbs: Number(after.receiving_receipt.rejected_weight_lbs) || 0 }]);
@@ -262,15 +275,45 @@ async function reconcileReservation(db, pickupRef, before, after) {
   for (const [ref, change] of ops) {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
-      if (!snap.exists || snap.data().status === change.status) return;
-      if (snap.data().status === 'received' && change.status === 'released') return;
+      if (!snap.exists) return;
+      const cur = snap.data();
+      if (change.collected) { if (!cur.collected && ['held', 'overdue'].includes(cur.status)) tx.update(ref, { collected: true, updated_at: FieldValue.serverTimestamp() }); return; }
+      if (cur.status === change.status) return;
+      if (cur.status === 'received' && change.status === 'released') return;
       tx.update(ref, { ...change, updated_at: FieldValue.serverTimestamp() });
     });
   }
   return ops.length;
 }
 
-module.exports = {
+// ── Scheduler: holds past expires_at ─────────────────────────────────
+// Uncollected → expired (capacity frees; dispatch stops offering it).
+// Collected but not received → overdue (capacity stays held; the rescue
+// queue shows the late delivery until someone resolves it).
+async function sweepReservations(db, { now = Date.now(), limit = 100 } = {}) {
+  const snap = await db.collectionGroup('reservations').where('status', '==', 'held')
+    .where('expires_at', '<=', Timestamp.fromMillis(now)).limit(limit).get();
+  const out = { expired: 0, overdue: 0 };
+  for (const d of snap.docs) {
+    const pickupRef = db.doc(`pickups/${d.id}`);
+    const result = await db.runTransaction(async (tx) => {
+      const [res, pk] = await Promise.all([tx.get(d.ref), tx.get(pickupRef)]);
+      const r = res.data(), p = pk.data();
+      if (r?.status !== 'held' || !(ms(r.expires_at) <= now)) return null;
+      const collected = r.collected || !!p?.verified_by_restaurant_at;
+      if (collected && !p?.receiving_receipt && p?.status !== 'cancelled') {
+        tx.update(d.ref, { status: 'overdue', collected: true, overdue_at: Timestamp.fromMillis(now), updated_at: FieldValue.serverTimestamp() });
+        return 'overdue';
+      }
+      tx.update(d.ref, { status: 'expired', released_reason: 'expired_before_collection', updated_at: FieldValue.serverTimestamp() });
+      return 'expired';
+    });
+    if (result) out[result]++;
+  }
+  return out;
+}
+
+module.exports = { sweepReservations,
   SITE_TYPES, REMAINDER_OUTCOMES, localParts, isOpenAt, isPaused, siteFit, canCoordinate,
   confirmDestination, recordRemainder, deliverableWeight, reconcileReservation,
 };

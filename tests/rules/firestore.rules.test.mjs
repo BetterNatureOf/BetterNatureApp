@@ -261,8 +261,13 @@ describe('pickups: claiming', () => {
   });
   // (claims also require an approved restaurant; seeded below)
 
-  it('approved volunteer in the same chapter can claim (positive control)', async () => {
-    await assertSucceeds(updateDoc(doc(as('volA'), 'pickups/pAvail'), claim('volA')));
+  it('even an approved volunteer in the same chapter cannot claim by direct write (claims are server-only)', async () => {
+    await assertFails(updateDoc(doc(as('volA'), 'pickups/pAvail'), claim('volA')));
+  });
+
+  it('an old client cannot bypass an exclusive offer with a direct write', async () => {
+    await assertFails(updateDoc(doc(as('volA'), 'pickups/pAvail'), { ...claim('volA'), claimant_phone: '' }));
+    await assertFails(updateDoc(doc(as('volA'), 'pickups/pAvail'), { offer_hold: null }));
   });
 
   it('volunteer from another chapter cannot claim', async () => {
@@ -603,12 +608,13 @@ describe('receiving sites', () => {
   it('sites must have a valid type', async () => {
     await assertFails(setDoc(doc(as('presA'), 'receiving_sites/new'), site({ type: 'warehouse' })));
   });
-  it('a client cannot attach a saved site (that path checks and reserves capacity)', async () => {
+  it('a client cannot open an offer: saved sites go through the callable that reserves capacity', async () => {
     const dest = (extra) => ({ site_name: 'Pantry', address: 'A', contact: 'Pat', confirmed_by: 'presA',
       confirmed_at: serverTimestamp(), accepted_weight_lbs: 40, pickup_by: Timestamp.fromMillis(Date.now() + HOUR),
       arrival_by: Timestamp.fromMillis(Date.now() + 2 * HOUR), ...extra });
     await assertFails(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({ site_id: 'sA' }) }));
-    await assertSucceeds(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({}) }));
+    // A typed-in destination can't open an offer from the client either.
+    await assertFails(updateDoc(doc(as('presA'), 'pickups/pPending'), { status: 'available', destination_confirmation: dest({}) }));
   });
   it('reservations are server-only', async () => {
     await assertSucceeds(getDoc(doc(as('presA'), 'receiving_sites/sA/reservations/pAvail')));

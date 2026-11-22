@@ -1,162 +1,128 @@
-// Evaluates trusted road estimates for coordinator review. All times are
-// epoch milliseconds and all durations are minutes. Missing operational
-// data makes a candidate ineligible rather than an optimistic estimate.
-const MINUTE = 60_000;
+// Complete-trip planning: the single implementation used by live dispatch,
+// offer acceptance and coordinator suggestions.
+//
+//   volunteer → donor → (wait until food is ready) → loading
+//             → receiving site → (wait until it opens) → unloading
+//
+// Times are epoch milliseconds; durations are minutes. Policy numbers come
+// from lib/rescuePolicy.js. Deadline meanings:
+//   pickupBy   collection complete (arrived and loaded)
+//   arrivalBy  handoff complete (arrived and unloaded)
+// The margin (5 min when every leg is a road estimate, 15 min when any leg
+// is a straight-line approximation) is required before each deadline; it is
+// not added twice.
+//
+// A missing leg is never treated as zero minutes and never as "fits":
+// the result is `feasible: null` and dispatch hands the rescue to a
+// coordinator instead of offering it.
+const { greatCircleDistance, cellToLatLng } = require('h3-js');
+const { POLICY, MINUTE_MS, marginMinutes, approximateMinutes, travelProfile } = require('./lib/rescuePolicy');
+const { zoned, localToUtc } = require('./lib/localTime');
 
-function evaluateRescue({ rescue, site, volunteer, travel, now }) {
-  if (rescue.status !== 'available' || volunteer.chapterId !== rescue.chapterId ||
-      site.chapterId !== rescue.chapterId || !site.approved ||
-      volunteer.activeRescue || volunteer.eligible !== true) return { reason: 'not_assignable' };
+const MINUTE = MINUTE_MS;
+const leg = (minutes, basis) => (Number.isFinite(minutes) && minutes >= 0 ? { minutes, basis } : null);
 
-  const deadlines = [now, rescue.readyAt, rescue.pickupBy, site.opensAt, site.closesAt, volunteer.availableUntil];
-  const durations = [travel?.toPickup, travel?.toSite, rescue.loadingMinutes, site.unloadingMinutes, travel?.buffer];
-  if (deadlines.some((value) => !Number.isFinite(value)) ||
-      durations.some((value) => !Number.isFinite(value) || value < 0) ||
-      !rescue.foodCategory || !Number.isInteger(rescue.packages) || rescue.packages < 1 ||
-      !Number.isInteger(volunteer.packageCapacity) || volunteer.packageCapacity < 0 ||
-      !Number.isFinite(rescue.weight) || rescue.weight <= 0 ||
-      !Number.isFinite(volunteer.weightCapacity) || volunteer.weightCapacity < 0 ||
-      !Array.isArray(rescue.requiredEquipment) ||
-      !Array.isArray(rescue.transportModes) || !rescue.transportModes.length ||
-      !Array.isArray(volunteer.equipment) || !Array.isArray(site.foodCategories) ||
-      !Object.hasOwn(rescue, 'handlingMinutes') || !Object.hasOwn(site, 'remainingPackages')) {
-    return { reason: 'missing_route_data' };
+function journey({ now, toPickup, toSite, readyAt, pickupBy, arrivalBy, siteOpensAt, availableUntil }) {
+  if (!Number.isFinite(pickupBy) || !Number.isFinite(arrivalBy)) return { feasible: null, reason: 'deadline_unknown' };
+  if (!toPickup || !Number.isFinite(toPickup.minutes)) return { feasible: null, reason: 'pickup_leg_unknown' };
+  if (!toSite || !Number.isFinite(toSite.minutes)) return { feasible: null, reason: 'dropoff_leg_unknown' };
+  const approximate = toPickup.basis !== 'road' || toSite.basis !== 'road';
+  const marginMin = marginMinutes(approximate);
+  const m = marginMin * MINUTE;
+  const P = toPickup.minutes * MINUTE, S = toSite.minutes * MINUTE;
+  const L = POLICY.LOADING_MIN * MINUTE, U = POLICY.UNLOADING_MIN * MINUTE;
+  const ready = Number.isFinite(readyAt) ? readyAt : -Infinity;
+  const opens = Number.isFinite(siteOpensAt) ? siteOpensAt : -Infinity;
+  const handoffDeadline = Math.min(arrivalBy, Number.isFinite(availableUntil) ? availableUntil : Infinity);
+
+  const arrivesDonorAt = now + P;
+  const loadedAt = Math.max(arrivesDonorAt, ready) + L;
+  const arrivesSiteAt = loadedAt + S;
+  const finishAt = Math.max(arrivesSiteAt, opens) + U;
+  const base = {
+    basis: approximate ? 'approximate' : 'road', marginMinutes: marginMin,
+    toPickupMinutes: toPickup.minutes, toSiteMinutes: toSite.minutes,
+    legs: { to_pickup: toPickup.basis, to_site: toSite.basis },
+    loadedAt, finishAt,
+    waitMinutes: Math.round((Math.max(ready - arrivesDonorAt, 0) + Math.max(opens - arrivesSiteAt, 0)) / MINUTE),
+    totalMinutes: Math.round((finishAt - now) / MINUTE),
+  };
+  if (loadedAt > pickupBy - m) return { ...base, feasible: false, reason: 'pickup_deadline' };
+  if (finishAt > handoffDeadline - m) {
+    return { ...base, feasible: false, reason: availableUntil < arrivalBy ? 'volunteer_unavailable' : 'delivery_deadline' };
   }
+  // Latest departure that still meets both deadlines with the margin.
+  // Waiting for readiness or opening only absorbs a later start.
+  const latestStartAt = Math.min(pickupBy - m - L - P, handoffDeadline - m - U - S - L - P);
+  return { ...base, feasible: true, latestStartAt, slackMinutes: Math.floor((latestStartAt - now) / MINUTE) };
+}
 
-  if (!site.foodCategories.includes(rescue.foodCategory) ||
-      (site.remainingPackages !== null &&
-        (!Number.isInteger(site.remainingPackages) || site.remainingPackages < rescue.packages))) {
-    return { reason: 'site_cannot_accept' };
+// Opening time of the site's hours slot that contains `atMs`, in the
+// site's timezone. null when hours are unknown or it isn't open then.
+function siteOpensBefore(site, atMs) {
+  if (!site?.hours || !Number.isFinite(atMs)) return null;
+  const tz = site.timezone || 'America/Chicago';
+  const z = zoned(atMs, tz);
+  const slots = Array.isArray(site.hours[z.weekday]) ? site.hours[z.weekday] : [];
+  const minutes = z.h * 60 + z.mi;
+  for (const s of slots) {
+    const [oh, om] = String(s.open).split(':').map(Number), [ch, cm] = String(s.close).split(':').map(Number);
+    if (minutes >= oh * 60 + om && minutes < ch * 60 + cm) return localToUtc(z.date, s.open, tz);
   }
-  if (volunteer.packageCapacity < rescue.packages || volunteer.weightCapacity < rescue.weight ||
-      !rescue.transportModes.includes(volunteer.transportMode) ||
-      rescue.requiredEquipment.some((item) => !volunteer.equipment.includes(item))) {
-    return { reason: 'cargo_requirements' };
-  }
-  if (rescue.handlingMinutes !== null &&
-      (!Number.isFinite(rescue.handlingMinutes) || rescue.handlingMinutes <= 0)) {
-    return { reason: 'missing_route_data' };
-  }
+  return null;
+}
 
-  const arrivesPickupAt = now + travel.toPickup * MINUTE;
-  const loadedAt = Math.max(arrivesPickupAt, rescue.readyAt) + rescue.loadingMinutes * MINUTE;
-  if (loadedAt > rescue.pickupBy) return { reason: 'pickup_deadline' };
-
-  const arrivesSiteAt = loadedAt + travel.toSite * MINUTE;
-  const finishAt = Math.max(arrivesSiteAt, site.opensAt) + (site.unloadingMinutes + travel.buffer) * MINUTE;
-  const handlingDeadline = rescue.handlingMinutes === null ? Infinity : loadedAt + rescue.handlingMinutes * MINUTE;
-  const margin = Math.min(rescue.pickupBy - loadedAt, site.closesAt - finishAt,
-    volunteer.availableUntil - finishAt, handlingDeadline - finishAt);
-  if (margin < 0) return { reason: 'delivery_deadline' };
-
+// Rescue timing inputs from a pickup document (and its site, when loaded).
+const toMs = (v) => (v?.toMillis ? v.toMillis() : typeof v === 'string' ? Date.parse(v) : Number.isFinite(v) ? v : NaN);
+function tripInputs(pickup, site) {
+  const d = pickup?.destination_confirmation || {};
+  const arrivalBy = toMs(d.arrival_by);
   return {
-    finishAt,
-    marginMinutes: margin / MINUTE,
-    driveMinutes: travel.toPickup + travel.toSite,
-    waitMinutes: (Math.max(rescue.readyAt - arrivesPickupAt, 0) + Math.max(site.opensAt - arrivesSiteAt, 0)) / MINUTE,
+    readyAt: toMs(pickup?.scheduled_for ?? pickup?.ready_at),
+    pickupBy: toMs(d.pickup_by ?? pickup?.pickup_window_until),
+    arrivalBy,
+    siteOpensAt: site ? siteOpensBefore(site, arrivalBy) : null,
+    donor: Number.isFinite(pickup?.restaurant_lat) && Number.isFinite(pickup?.restaurant_lng) ? [pickup.restaurant_lat, pickup.restaurant_lng] : null,
+    site: Number.isFinite(pickup?.fridge_lat) && Number.isFinite(pickup?.fridge_lng) ? [pickup.fridge_lat, pickup.fridge_lng] : null,
   };
 }
 
-// This ranks one approved site per rescue. It never claims a pickup or
-// sends a notification. Reserve volunteers and site capacity in this
-// suggestion batch so a coordinator doesn't get contradictory options.
-function suggestRescues(candidates, now) {
-  const rescues = new Map();
-  for (const candidate of candidates) {
-    const { rescue, site, volunteer } = candidate;
-    const options = rescues.get(rescue.id) || { id: rescue.id, options: [], reasons: new Set() };
-    const result = evaluateRescue({ ...candidate, now });
-    if (result.reason) options.reasons.add(result.reason);
-    else options.options.push({ rescue, site, volunteer, ...result });
-    rescues.set(rescue.id, options);
-  }
-
-  const used = new Set();
-  const reservedPackages = new Map();
-  const suggestions = [];
-  const needsCoverage = [];
-  function remaining(option) {
-    const { site, rescue, volunteer } = option;
-    return !used.has(volunteer.id) && (site.remainingPackages === null ||
-      (reservedPackages.get(site.id) || 0) + rescue.packages <= site.remainingPackages);
-  }
-
-  while (rescues.size) {
-    const [next] = [...rescues.values()].map((route) => {
-      const options = route.options.filter(remaining);
-      return { ...route, options, urgency: Math.min(...options.map((option) => option.marginMinutes)) };
-    }).sort((a, b) =>
-      a.options.length - b.options.length || a.urgency - b.urgency || a.id.localeCompare(b.id)
-    );
-    rescues.delete(next.id);
-    if (!next.options.length) {
-      needsCoverage.push({ rescueId: next.id, reasons: next.reasons.size ? [...next.reasons] : ['no_remaining_match'] });
-      continue;
-    }
-    next.options.sort((a, b) => b.marginMinutes - a.marginMinutes ||
-      a.driveMinutes - b.driveMinutes || a.waitMinutes - b.waitMinutes ||
-      (a.volunteer.recentOffers ?? 0) - (b.volunteer.recentOffers ?? 0) ||
-      a.volunteer.id.localeCompare(b.volunteer.id));
-    const { rescue, volunteer, site, finishAt, marginMinutes } = next.options[0];
-    used.add(volunteer.id);
-    reservedPackages.set(site.id, (reservedPackages.get(site.id) || 0) + rescue.packages);
-    suggestions.push({ rescueId: rescue.id, volunteerId: volunteer.id, siteId: site.id, finishAt, marginMinutes });
-  }
-
-  return { suggestions, needsCoverage };
-}
-
-// ── Complete-journey check used by live dispatch ─────────────────────
-// volunteer → donor → receiving site, with loading, unloading and an
-// uncertainty buffer. Travel legs are minutes with a `basis`:
-//   road         from the routing service (OSRM-compatible)
-//   approximate  straight-line distance × circuity at a conservative
-//                city speed — labeled as an estimate, never shown as an ETA
-// A missing leg stays unknown; it is never assumed to fit.
-const JOURNEY_DEFAULTS = {
-  loadingMinutes: 10, unloadingMinutes: 10,
-  bufferMinutes: { road: 5, approximate: 15 },
-  approxKmh: 30, circuity: 1.35,
-};
-
-function approximateMinutes(km, cfg = JOURNEY_DEFAULTS) {
-  if (!Number.isFinite(km) || km < 0) return null;
-  return Math.ceil((km * cfg.circuity / cfg.approxKmh) * 60);
-}
-
-function journey({ now, toPickup, toSite, pickupBy, arrivalBy }, cfg = JOURNEY_DEFAULTS) {
-  if (!toPickup || !Number.isFinite(toPickup.minutes) || !Number.isFinite(pickupBy)) {
-    return { feasible: null, reason: 'pickup_leg_unknown' };
-  }
-  const approx = toPickup.basis !== 'road' || (toSite && toSite.basis !== 'road');
-  const buffer = cfg.bufferMinutes[approx ? 'approximate' : 'road'] * MINUTE;
-  const loadedAt = now + toPickup.minutes * MINUTE + cfg.loadingMinutes * MINUTE;
-  if (loadedAt > pickupBy - buffer) return { feasible: false, reason: 'pickup_deadline', loadedAt };
-  if (!toSite || !Number.isFinite(toSite.minutes) || !Number.isFinite(arrivalBy)) {
-    return { feasible: true, partial: true, reason: 'dropoff_leg_unknown', loadedAt,
-      toPickupMinutes: toPickup.minutes, basis: approx ? 'approximate' : 'road' };
-  }
-  const finishAt = loadedAt + toSite.minutes * MINUTE + cfg.unloadingMinutes * MINUTE;
-  if (finishAt > arrivalBy - buffer) return { feasible: false, reason: 'delivery_deadline', loadedAt, finishAt };
-  return { feasible: true, partial: false, loadedAt, finishAt,
-    marginMinutes: Math.floor((Math.min(pickupBy - (loadedAt - cfg.loadingMinutes * MINUTE), arrivalBy - finishAt)) / MINUTE),
-    toPickupMinutes: toPickup.minutes, toSiteMinutes: toSite.minutes,
-    totalMinutes: Math.round((finishAt - now) / MINUTE), basis: approx ? 'approximate' : 'road' };
-}
-
-module.exports = { evaluateRescue, suggestRescues, journey, approximateMinutes, JOURNEY_DEFAULTS };
-
-// Local shadow runs accept a JSON snapshot on stdin. No Firebase reads or
-// writes are made and the output includes IDs and timings only.
-if (require.main === module) {
+// Donor → site leg for a travel mode: road time when the provider answers,
+// otherwise a labeled straight-line estimate, otherwise unknown.
+async function siteLeg(routing, inputs, profile) {
+  if (!inputs.donor || !inputs.site) return null;
   try {
-    const { candidates, now } = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
-    if (!Array.isArray(candidates) || !Number.isFinite(now)) {
-      throw new Error('Provide a candidates array and an epoch-millisecond now value.');
-    }
-    console.log(JSON.stringify(suggestRescues(candidates, now), null, 2));
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 1;
-  }
+    const r = await routing.matrix({ origins: [inputs.donor], destination: inputs.site, profile });
+    if (Number.isFinite(r?.seconds?.[0])) return leg(Math.ceil(r.seconds[0] / 60), 'road');
+  } catch { /* fall through to the estimate */ }
+  return leg(approximateMinutes(greatCircleDistance(inputs.donor, inputs.site, 'km'), profile), 'approximate');
 }
+
+// Volunteer → donor legs for many volunteer area cells at once, by mode.
+// Returns Map key `${profile}|${cell}` → leg.
+async function pickupLegs(routing, inputs, wants) {
+  const out = new Map();
+  if (!inputs.donor) return { legs: out, status: 'no_donor_location' };
+  const byProfile = new Map();
+  for (const { cell, profile } of wants) {
+    if (!byProfile.has(profile)) byProfile.set(profile, new Set());
+    byProfile.get(profile).add(cell);
+  }
+  const statuses = [];
+  for (const [profile, cellSet] of byProfile) {
+    const cells = [...cellSet];
+    let r;
+    try { r = await routing.matrix({ origins: cells.map((c) => cellToLatLng(c)), destination: inputs.donor, profile }); }
+    catch { r = { status: 'unavailable', error: 'network', seconds: [] }; }
+    statuses.push(r.status === 'ok' ? 'road' : r.status === 'partial' ? 'partial' : 'approximate');
+    cells.forEach((c, i) => {
+      const s = r?.seconds?.[i];
+      out.set(`${profile}|${c}`, Number.isFinite(s) ? leg(Math.ceil(s / 60), 'road')
+        : leg(approximateMinutes(greatCircleDistance(cellToLatLng(c), inputs.donor, 'km'), profile), 'approximate'));
+    });
+  }
+  const status = !statuses.length ? 'none' : statuses.every((s) => s === 'road') ? 'road' : statuses.every((s) => s === 'approximate') ? 'approximate' : 'mixed';
+  return { legs: out, status };
+}
+
+module.exports = { journey, siteOpensBefore, tripInputs, siteLeg, pickupLegs, travelProfile, approximateMinutes };

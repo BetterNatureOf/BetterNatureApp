@@ -16,9 +16,15 @@
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { HttpsError } = require('firebase-functions/v1/https');
 const S = require('./receivingSites');
+const { POLICY } = require('./lib/rescuePolicy');
 
 const MINUTE = 60_000;
-const DEFAULT_RESPOND_MIN = 30;
+// Partners answer within 30 minutes at most, and never later than 15
+// minutes before the donor's pickup window ends.
+const DEFAULT_RESPOND_MIN = POLICY.PARTNER_MAX_RESPONSE_MIN;
+const LATEST_BEFORE_END_MS = POLICY.PARTNER_LATEST_BEFORE_PICKUP_END_MIN * MINUTE;
+const respondDeadline = (now, pickup, minutes = DEFAULT_RESPOND_MIN) =>
+  Math.min(now + Math.min(minutes, POLICY.PARTNER_MAX_RESPONSE_MIN) * MINUTE, ms(pickup.pickup_window_until) - LATEST_BEFORE_END_MS);
 const ms = (v) => (v?.toMillis ? v.toMillis() : typeof v === 'string' ? Date.parse(v) : Number.isFinite(v) ? v : NaN);
 const url = (id) => `https://app.betternatureofficial.org/#/pickups/${encodeURIComponent(id)}`;
 
@@ -55,7 +61,7 @@ async function requestPartner(db, data, uid, { now = Date.now() } = {}) {
   const pickupId = typeof data?.pickupId === 'string' ? data.pickupId : '';
   const mode = data?.mode;
   const siteId = typeof data?.siteId === 'string' ? data.siteId : null;
-  const respondMin = Math.min(240, Math.max(10, parseInt(data?.respondWithinMin, 10) || DEFAULT_RESPOND_MIN));
+  const respondMin = Math.min(POLICY.PARTNER_MAX_RESPONSE_MIN, Math.max(5, parseInt(data?.respondWithinMin, 10) || DEFAULT_RESPOND_MIN));
   if (!pickupId || pickupId.includes('/') || !['preferred', 'network'].includes(mode) || (mode === 'preferred' && (!siteId || siteId.includes('/')))) {
     throw new HttpsError('invalid-argument', 'Choose a partner or the BN network.');
   }
@@ -79,7 +85,7 @@ async function requestPartner(db, data, uid, { now = Date.now() } = {}) {
         throw new HttpsError('failed-precondition', 'That partner can’t take requests right now.');
       }
     }
-    const respondBy = Math.min(now + respondMin * MINUTE, ms(pickup.pickup_window_until) - 15 * MINUTE);
+    const respondBy = respondDeadline(now, pickup, respondMin);
     if (!(respondBy > now)) throw new HttpsError('failed-precondition', 'The pickup window is too close to ask a partner first.');
     tx.update(pickupRef, { partner_request: {
       mode, site_id: siteId, site_name: site?.name || null, respond_by: Timestamp.fromMillis(respondBy),
@@ -102,7 +108,7 @@ function afterNoAnswer(tx, db, pickupRef, pickup, outcome, reason, now) {
   const history = [...(req.history || []), { site_id: req.site_id || null, outcome, reason: reason || null, at: Timestamp.fromMillis(now) }];
   if (req.mode === 'preferred' && req.offer_to_network) {
     tx.update(pickupRef, { partner_request: { ...req, mode: 'network', site_id: null, site_name: null, status: 'awaiting_partner',
-      respond_by: Timestamp.fromMillis(Math.min(now + DEFAULT_RESPOND_MIN * MINUTE, ms(pickup.pickup_window_until) - 15 * MINUTE)), history } });
+      respond_by: Timestamp.fromMillis(respondDeadline(now, pickup)), history } });
     return 'network';
   }
   tx.update(pickupRef, { partner_request: { ...req, status: outcome, history } });
@@ -159,7 +165,8 @@ async function respondPartner(db, data, uid, { now = Date.now() } = {}) {
   const result = await S.confirmDestination(db, { pickupId, siteId: chosen, arrivalBy }, uid, {
     now,
     authorize: (caller, pk, site, callerUid) => (site && site.receiver_uid === callerUid && site.chapter_id === pk.chapter_id &&
-      pk.partner_request?.status === 'awaiting_partner' && (pk.partner_request.mode === 'network' || pk.partner_request.site_id === chosen))
+      pk.partner_request?.status === 'awaiting_partner' && ms(pk.partner_request.respond_by) > now &&
+      (pk.partner_request.mode === 'network' || pk.partner_request.site_id === chosen))
       || S.canCoordinate(caller, pk.chapter_id),
     extraUpdate: (pk, site) => ({ partner_request: { ...pk.partner_request, status: 'accepted', accepted_by: uid,
       accepted_site_id: chosen, accepted_site_name: site.name, accepted_at: Timestamp.fromMillis(now) } }),

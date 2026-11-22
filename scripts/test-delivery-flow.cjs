@@ -11,6 +11,9 @@ const admin = functionsRequire('firebase-admin');
 const F = require('firebase/firestore');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
 const eligibility = require('../functions/lib/pickupEligibility');
+// Claims are server-only now: the client service calls respondToRescueOffer,
+// whose real implementation runs here against the same emulator.
+const { respond } = require('../functions/rescueOffers');
 const projectId = process.env.GCLOUD_PROJECT || 'demo-a2';
 if (!projectId.startsWith('demo-') || !process.env.FIRESTORE_EMULATOR_HOST) throw new Error('Demo Firestore emulator required');
 admin.initializeApp({ projectId });
@@ -39,7 +42,7 @@ const approved = { role: 'member', name: 'Alice', phone: 'fixture-phone', member
 const HOUR = 3600000;
 const at = (ms) => admin.firestore.Timestamp.fromMillis(Date.now() + ms);
 // Offer with a confirmed receiving site (the normal rescue path).
-const destination = () => ({ site_name: 'Fixture Pantry', address: 'Fixture Site', contact: 'Fixture desk',
+const destination = () => ({ site_name: 'Fixture Pantry', site_id: 'site1', address: 'Fixture Site', contact: 'Fixture desk',
   confirmed_by: 'pres', confirmed_at: at(-HOUR), accepted_weight_lbs: 20, pickup_by: at(2 * HOUR), arrival_by: at(3 * HOUR) });
 // Pre-destination offers created before the receiving-site workflow.
 const LEGACY = { destination_confirmation: null, receiver_uid: null };
@@ -63,6 +66,10 @@ function service(uid) {
   const deps = { ...F, db: client(uid), auth: { currentUser: { uid } }, useMock: () => false,
     isFirebaseConfigured: true, pickupEligibility: eligibility,
     rescueCell: cells.rescueCell, pickupDeadline: cells.pickupDeadline, firebaseApp: {},
+    respondToRescue: async (pickupId, response) => {
+      try { return await respond(db, { pickupId, response }, uid, { advance: async () => {} }); }
+      catch (e) { throw new Error(e.message); }
+    },
     loadModule: async (name) => name === './publicProfiles' ? { fetchPublicProfile: async () => ({ display_name: uid }) } : notify,
     console: { warn: () => {} } };
   const api = new Function(...Object.keys(deps), `${actual}; return { ${names.join(',')} };`)(...Object.values(deps));
@@ -82,7 +89,11 @@ async function seed(pickup = {}, user = {}) {
     db.doc('users/foreign').set({ role: 'restaurant', restaurant_id: 'r', restaurant_status: 'approved' }),
     db.doc('restaurants/r').set({ user_id: 'partner', name: 'Food Partner', status: 'approved' }),
     db.doc('fridges/f').set({ name: 'Fixture Fridge', address: 'Fixture Destination', active: true, lat: 35, lng: -90 }),
+    db.doc('receiving_sites/site1').set({ name: 'Fixture Pantry', type: 'staffed_center', chapter_id: 'chapter', status: 'active', lat: 35.01, lng: -90 }),
+    db.doc('receiving_sites/site1/reservations/p').set({ status: 'held', expires_at: at(4 * HOUR), collected: false }),
+    ...['alice', 'bob', 'eve', 'far', 'site'].map((uid) => db.doc(`rescue_availability/${uid}`).set({ cell: '872659ae0ffffff', updated_at: at(-60000) })),
     db.doc('pickups/p').set({ status: 'available', claimed_by: null, restaurant_id: 'r',
+      restaurant_lat: 35, restaurant_lng: -90, fridge_lat: 35.01, fridge_lng: -90,
       chapter_id: 'chapter', estimated_weight_lbs: 20, receiver_uid: 'site',
       pickup_window_until: new Date(Date.now() + 2 * HOUR).toISOString(),
       destination_confirmation: destination(), ...pickup }),
@@ -98,9 +109,9 @@ const claimWrite = (uid, timestamp = stamp()) => F.updateDoc(F.doc(client(uid), 
   env = await initializeTestEnvironment({ projectId, firestore: { host, port: Number(port),
     rules: fs.readFileSync(require.resolve('../firestore.rules'), 'utf8') } });
   try {
-    await test('approved volunteer has self-profile access and can claim via SDK', async () => {
+    await test('approved volunteer has self-profile access; raw SDK claims are refused (server-only)', async () => {
       await assertSucceeds(F.getDoc(F.doc(client('alice'),'users/alice')));
-      await assertSucceeds(claimWrite('alice'));
+      await assertFails(claimWrite('alice'));
     });
     await test('two real client claims produce one owner', async () => {
       const a = service('alice'), b = service('bob');
@@ -131,7 +142,7 @@ const claimWrite = (uid, timestamp = stamp()) => F.updateDoc(F.doc(client(uid), 
       await test(`raw SDK ${name} claimant denied and shared eligibility agrees`, async () => {
         const user = { ...approved, ...change }; await db.doc('users/alice').set(user);
         assert.equal(eligibility.pickupEligible(user), false); await assertFails(claimWrite('alice'));
-        await assert.rejects(service('alice').claimPickup('p','alice'), /required to claim/);
+        await assert.rejects(service('alice').claimPickup('p','alice'), /required/);
       });
     }
     await test('executive cannot bypass missing personal approval while volunteering', async () => {
@@ -140,12 +151,12 @@ const claimWrite = (uid, timestamp = stamp()) => F.updateDoc(F.doc(client(uid), 
     for (const role of ['executive','chapter_pres','chapter_vp','chapter_treas','chapter_vol_coord','chapter_sec']) {
       await test(`approved ${role} can volunteer with its own evidence`, async () => {
         const user = { ...approved, role, member_status:'pending' }; await db.doc('users/alice').set(user);
-        assert.equal(eligibility.pickupEligible(user), true); await assertSucceeds(claimWrite('alice'));
+        assert.equal(eligibility.pickupEligible(user), true); await assertFails(claimWrite('alice'));
       });
     }
     await test('approved business exemption agrees across policy and rules', async () => {
       const user={role:'restaurant',restaurant_status:'approved',member_status:'approved',chapter_id:'chapter'};
-      await db.doc('users/alice').set(user); assert.equal(eligibility.pickupEligible(user),true); await assertSucceeds(claimWrite('alice'));
+      await db.doc('users/alice').set(user); assert.equal(eligibility.pickupEligible(user),true); await assertFails(claimWrite('alice'));
     });
     await test('client-supplied claim clock denied', async () => {
       await assertFails(claimWrite('alice','2099-01-01T00:00:00Z'));
@@ -207,12 +218,13 @@ const claimWrite = (uid, timestamp = stamp()) => F.updateDoc(F.doc(client(uid), 
       const pk=await read('pickups/p');assert.equal(typeof pk.enroute_at.toMillis,'function');assert.equal(pk.fridge_id,'f');
       await assert.rejects(service('bob').setPickupEnroute('p'), /Only the current volunteer/);
     }, LEGACY_CLAIMED());
-    await test('legacy offer without a receiving site cannot be claimed until a coordinator confirms one', async () => {
+    await test('legacy offer without a saved receiving site cannot be claimed, and a typed-in destination no longer opens it', async () => {
       await assertFails(claimWrite('alice'));
-      await assert.rejects(service('alice').claimPickup('p','alice'), /waiting for a receiving site/);
-      await service('pres').confirmPickupDestination('p',{siteName:'Fixture Pantry',address:'Fixture Site',contact:'Desk',
-        arrivalBy:Date.now() + 3 * HOUR});
-      await service('alice').claimPickup('p','alice');assert.equal((await read('pickups/p')).claimed_by,'alice');
+      await assert.rejects(service('alice').claimPickup('p','alice'), /confirmed receiving site/);
+      await assert.rejects(service('pres').confirmPickupDestination('p',{siteName:'Fixture Pantry',address:'Fixture Site',contact:'Desk',
+        arrivalBy:Date.now() + 3 * HOUR}));
+      await assert.rejects(service('alice').claimPickup('p','alice'), /confirmed receiving site/);
+      assert.equal((await read('pickups/p')).claimed_by, null);
     }, LEGACY);
     await test('confirmed destination cannot be swapped for a fridge at start or mid-run', async () => {
       await service('alice').claimPickup('p','alice');
@@ -272,15 +284,16 @@ const claimWrite = (uid, timestamp = stamp()) => F.updateDoc(F.doc(client(uid), 
       const pk=await read('pickups/p');assert.equal(pk.status,'cancelled');
       assert.equal(pk.safety_resolution.outcome,'returned_to_donor');assert.equal(pk.safety_resolution.resolved_by,'pres');
     });
-    await test('only the chapter coordinator opens an offer, with a valid receiving window', async () => {
+    await test('nobody opens an offer from the client; claims stay closed until a saved site is confirmed', async () => {
       await db.doc('pickups/p').update({ status:'pending_destination', destination_confirmation:null, receiver_uid:null });
       const later = Date.now() + 3 * HOUR;
       await assert.rejects(service('alice').confirmPickupDestination('p',{siteName:'S',address:'A',contact:'C',arrivalBy:later}));
       await assert.rejects(service('otherpres').confirmPickupDestination('p',{siteName:'S',address:'A',contact:'C',arrivalBy:later}));
       await assertFails(claimWrite('alice'));
-      await service('pres').confirmPickupDestination('p',{siteName:'Fixture Pantry',address:'Fixture Site',contact:'Desk',arrivalBy:later});
-      const pk=await read('pickups/p');assert.equal(pk.status,'available');assert.equal(pk.destination_confirmation.confirmed_by,'pres');
-      await service('alice').claimPickup('p','alice');assert.equal((await read('pickups/p')).claimed_by,'alice');
+      // Even the chapter coordinator can't open it from the client: saved
+      // sites go through confirmRescueDestination (capacity hold).
+      await assert.rejects(service('pres').confirmPickupDestination('p',{siteName:'Fixture Pantry',address:'Fixture Site',contact:'Desk',arrivalBy:later}));
+      assert.equal((await read('pickups/p')).status,'pending_destination');
     });
     await test('chapter boundary, receiver, and closed windows block claims', async () => {
       await assertFails(claimWrite('far'));

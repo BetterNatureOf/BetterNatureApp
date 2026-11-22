@@ -778,107 +778,16 @@ export async function claimPickup(pickupId, userId) {
     const pk = mockPickups.find((p) => p.id === pickupId);
     return pk ? { ...pk, status: 'claimed', claimed_by: userId } : null;
   }
-  const ref = doc(db, 'pickups', pickupId);
   if (!auth?.currentUser || auth.currentUser.uid !== userId) {
     throw new Error('Sign in as the volunteer claiming this pickup.');
   }
-  const claimedAt = serverTimestamp();
-  // ATOMIC claim — without this, two volunteers tapping "Claim" at
-  // the same moment both succeed; both drive to the restaurant; the
-  // restaurant fields two confused volunteers. A Firestore
-  // transaction reads + writes in one round-trip, so the second
-  // claimant lands in the `pk.status !== 'available'` branch and
-  // gets a friendly error instead of stomping the first volunteer.
-  // Read eligibility and the contact snapshot inside the same transaction.
-  // Rules independently enforce eligibility and the server claim timestamp.
-  let claimantPhone = '';
-  let claimantName = '';
-  const pk = await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Pickup not found');
-    const data = snap.data();
-    const uSnap = await tx.get(doc(db, 'users', userId));
-    if (!uSnap.exists() || !pickupEligibility.pickupEligible(uSnap.data())) {
-      throw new Error('An approved account, ID, volunteer agreement, and driver setup are required to claim.');
-    }
-    const u = uSnap.data();
-    claimantPhone = u.phone || '';
-    claimantName = u.name || u.full_name || '';
-    if (['claimed', 'enroute'].includes(data.status) && data.claimed_by === userId) {
-      return { id: snap.id, ...data, cached: true };
-    }
-    if (data.status === 'claimed' && data.claimed_by && data.claimed_by !== userId) {
-      throw new Error('Another volunteer just claimed this pickup. Try a different one.');
-    }
-    if (data.receiver_uid === userId) throw new Error('You are assigned to receive this rescue.');
-    if (data.chapter_id && u.chapter_id !== data.chapter_id) {
-      throw new Error('This rescue belongs to another chapter.');
-    }
-    if (!data.destination_confirmation) throw new Error('This offer is waiting for a receiving site.');
-    if ((pickupDeadline(data.destination_confirmation.arrival_by) ?? 0) <= Date.now()) {
-      throw new Error('The receiving window has closed.');
-    }
-    if (data.safety_hold || data.handoff_from_uid || data.verified_by_restaurant_at) throw new Error('This pickup needs coordinator review.');
-    if (data.status === 'completed') throw new Error('That pickup has already been delivered.');
-    if (data.status === 'cancelled') throw new Error('That pickup was cancelled.');
-    if (data.status !== 'available' || data.claimed_by) {
-      throw new Error('This pickup is already assigned. Return to Food pickups to see open routes.');
-    }
-    const deadline = pickupDeadline(data.destination_confirmation.pickup_by ?? data.pickup_window_until);
-    if ((deadline ?? 0) <= Date.now()) {
-      throw new Error('The pickup window has closed. Return to Food pickups to see open routes.');
-    }
-    tx.update(ref, {
-      status: 'claimed',
-      claimed_by: userId,
-      claimed_at: claimedAt,
-      claimant_phone: claimantPhone,
-      claimant_name: claimantName,
-    });
-    return {
-      id: snap.id, ...data,
-      status: 'claimed', claimed_by: userId, claimed_at: claimedAt,
-      claimant_phone: claimantPhone, claimant_name: claimantName,
-    };
-  });
-
-  if (pk.cached) return pk; // A repeated tap neither resets the clock nor queues duplicate notices.
-
-  // Smart reminder: confirmation push + email so the volunteer has
-  // the pickup details in their inbox. Pre-arrival scheduled reminders
-  // will be added once the dispatcher supports send_at — for now we
-  // queue an immediate confirmation only.
-  try {
-    const { enqueueNotification } = await import('./notify');
-    await enqueueNotification({
-      recipients: [userId],
-      kind: 'pickup',
-      title: 'You claimed a pickup',
-      body: `Pickup at ${pk.restaurant_name || 'the restaurant'}. Address: ${pk.restaurant_address || 'see app'}. Open the app for the route.`,
-      url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-      data: { type: 'pickup_claimed', pickupId },
-    });
-  } catch (e) { console.warn('claim notify', e); }
-
-  // #10 from drop-off audit — also push the restaurant so they know
-  // someone's coming. A2 R-followup #3: routed through the server-
-  // side queueBusinessNotification callable because the volunteer
-  // isn't the pickup's partner and can't direct-write outbox docs
-  // for them under the new self-only rule.
-  try {
-    if (pk.restaurant_id) {
-      const { queuePickupToPartner } = await import('./notify');
-      const who = claimantName || 'A volunteer';
-      await queuePickupToPartner(pickupId, 'claim', {
-        title: 'Your donation was claimed',
-        body: `${who} is on the way. You'll get another ping when they mark en route — tap Confirm the moment they arrive.`,
-        url: `https://app.betternatureofficial.org/#/pickups/${pickupId}`,
-        data: { type: 'pickup_claimed_restaurant', pickupId },
-      });
-    }
-  } catch (e) { console.warn('claim notify restaurant', e); }
-
-  return pk;
+  // Claims are server-only: the callable enforces the exclusive offer,
+  // confirmed receiving site and capacity hold, eligibility, other
+  // assignments, vehicle fit and the complete journey in one transaction.
+  // Direct writes are refused by the Firestore rules.
+  const result = await respondToRescue(pickupId, 'accept');
+  const snap = await getDoc(doc(db, 'pickups', pickupId));
+  return snap.exists() ? { id: snap.id, ...snap.data(), cached: !!result?.cached } : null;
 }
 
 function releasedPickupStatus(pickup, now = Date.now()) {
@@ -914,6 +823,7 @@ async function notifyDonorOfRelease(pickupId, pickup, status, reason = '') {
 }
 
 // Release an uncollected pickup. Only reopen it while both windows are open.
+
 export async function cancelClaim(pickupId, reason = '') {
   if (useMock()) {
     const pk = mockPickups.find((p) => p.id === pickupId);
@@ -2272,9 +2182,9 @@ export async function respondToPartnerRequest(pickupId, { response, siteId = nul
 // Accept or decline a rescue (an offer, or directly from the map/list).
 // The server re-checks state, eligibility, fit, reservation and the
 // journey, and assigns atomically (functions/rescueOffers.js).
-export async function respondToRescue(pickupId, response) {
+export async function respondToRescue(pickupId, response, offerId = null) {
   try {
-    return (await httpsCallable(getFunctions(firebaseApp), 'respondToRescueOffer')({ pickupId, response })).data;
+    return (await httpsCallable(getFunctions(firebaseApp), 'respondToRescueOffer')({ pickupId, response, ...(offerId ? { offerId } : {}) })).data;
   } catch (e) {
     if (e?.details?.reason) e.reason = e.details.reason;
     throw e;
