@@ -2,7 +2,8 @@
 //   POST /<callable>   Firebase callable protocol: { data } → { result } | { error }
 //   GET  /health       liveness
 //   POST /tick         run the schedule now (header x-trigger-key = MANUAL_TRIGGER_KEY)
-//   cron * * * * *     the schedule
+//   cron * * * * *     the schedule (queues jobs)
+//   queue              runs one queued job per invocation
 import engine from './engine.js';
 import google from './google.js';
 
@@ -30,7 +31,7 @@ export default {
     if (request.method === 'GET' && name === 'health') return json({ ok: true }, 200, headers);
 
     let db;
-    try { db = engine.setup(env); } catch (e) { console.error('setup', e.message); return json({ error: { status: 'INTERNAL', message: 'Server not configured.' } }, 500, headers); }
+    try { db = engine.setup(env); engine.useQueue(env.JOBS); } catch (e) { console.error('setup', e.message); return json({ error: { status: 'INTERNAL', message: 'Server not configured.' } }, 500, headers); }
 
     if (request.method === 'POST' && name === 'tick') {
       if (!env.MANUAL_TRIGGER_KEY || request.headers.get('x-trigger-key') !== env.MANUAL_TRIGGER_KEY) return json({ error: 'forbidden' }, 403, headers);
@@ -66,6 +67,23 @@ export default {
 
   async scheduled(event, env, ctx) {
     const db = engine.setup(env);
+    engine.useQueue(env.JOBS);
     ctx.waitUntil(engine.tick(db, { now: event.scheduledTime }).then((log) => console.log('tick', JSON.stringify(log))));
+  },
+
+  // One job per invocation (max_batch_size = 1), so each gets its own
+  // request budget. Failed jobs retry (max_retries in wrangler.toml).
+  async queue(batch, env) {
+    const db = engine.setup(env);
+    engine.useQueue(env.JOBS);
+    for (const message of batch.messages) {
+      try {
+        await engine.runJob(db, message.body);
+        message.ack();
+      } catch (e) {
+        console.error('job failed', JSON.stringify(message.body), e?.message);
+        message.retry();
+      }
+    }
   },
 };

@@ -113,10 +113,13 @@ async function syncIdReview(db, uid) {
   });
 }
 
+// Each step may return a plain value (e.g. null when it doesn't apply),
+// so wrap before catching; one failure never stops the others.
+const safely = (label, uid, work) => Promise.resolve().then(work).catch((e) => console.error(label, uid, e?.message));
 async function onUserSeen(db, uid, data) {
-  await fn('lib/publicProfileProjection').reconcile(db, uid).catch((e) => console.error('profile sync', uid, e.message));
-  await fn('referralCredit').creditReferral(db, uid, null, data).catch((e) => console.error('referral', uid, e.message));
-  await fn('impactCounters').volunteerSignedUp(db, uid, data).catch((e) => console.error('signup count', uid, e.message));
+  await safely('profile sync', uid, () => fn('lib/publicProfileProjection').reconcile(db, uid));
+  await safely('referral', uid, () => fn('referralCredit').creditReferral(db, uid, null, data));
+  await safely('signup count', uid, () => fn('impactCounters').volunteerSignedUp(db, uid, data));
 }
 
 const isExecUser = (u) => !!u && !u.disabled && [u.role, ...(u.roles || [])].some((r) => ['executive', 'admin', 'super_admin'].includes(r));
@@ -145,7 +148,8 @@ const CALLABLES = {
   // right after it writes, instead of waiting for a trigger.
   pickupChanged: async (db, d, c) => {
     if (!c.uid) throw new HttpsError('unauthenticated', 'Sign in first.');
-    return processPickup(db, d?.pickupId);
+    const id = typeof d?.pickupId === 'string' && d.pickupId && !d.pickupId.includes('/') ? d.pickupId : null;
+    return { queued: id ? await enqueue(db, { t: 'pickup', id }) : 0 };
   },
   syncMyPublicProfile: async (db, d, c) => {
     if (!c.uid) throw new HttpsError('unauthenticated', 'Sign in first.');
@@ -161,12 +165,58 @@ const CALLABLES = {
   },
 };
 
+// ── job queue ────────────────────────────────────────────────────────────
+// A free Worker run may make ~50 outgoing requests, so follow-up work is
+// queued as small jobs (Cloudflare Queues, free tier) and each job runs in
+// its own invocation. Without a queue binding (tests, local dev without
+// queues) jobs run inline.
+let queue = null;
+function useQueue(q) { queue = q || null; }
+async function enqueue(db, jobs, { now = Date.now() } = {}) {
+  const list = (Array.isArray(jobs) ? jobs : [jobs]).filter(Boolean);
+  if (!list.length) return 0;
+  if (!queue) { for (const j of list) await runJob(db, j, { now }); return list.length; }
+  for (let i = 0; i < list.length; i += 100) await queue.sendBatch(list.slice(i, i + 100).map((body) => ({ body })));
+  return list.length;
+}
+
+async function runJob(db, job, { now = Date.now() } = {}) {
+  switch (job?.t) {
+    case 'pickup': return processPickup(db, job.id);
+    case 'advance': return fn('rescueDispatch').advance(db, db.doc(`pickups/${job.id}`), { now });
+    case 'completion': return dispatchCompletion(db, job.id);
+    case 'user': {
+      const snap = await db.doc(`users/${job.id}`).get();
+      if (snap.exists) await onUserSeen(db, job.id, snap.data());
+      return { ok: true };
+    }
+    case 'activity': {
+      const snap = await db.doc(`member_activity/${job.id}`).get();
+      return snap.exists ? fn('impactCounters').eventCheckedIn(db, job.id, snap.data()) : null;
+    }
+    case 'review': return syncIdReview(db, job.id);
+    case 'task': return runTask(db, job.name, { now });
+    default: return { ignored: true };
+  }
+}
+
+// Bounded maintenance tasks; each runs as its own job.
+async function runTask(db, name, { now }) {
+  if (name === 'expireOffers') return fn('pickupExpiry').expireOpenPickups(db, now, { limit: 6 });
+  if (name === 'expirePartners') return fn('partnerRequests').expirePartnerRequests(db, { now, limit: 8 });
+  if (name === 'sweepHolds') return fn('receivingSites').sweepReservations(db, { now, limit: 8 });
+  if (name === 'dedup') return fn('sweepNotificationDedup').sweepNotificationDedup({});
+  if (name === 'recurring') return fn('donationSchedules').materialize(db, { now });
+  return { ignored: true };
+}
+
 // Work to do after a callable succeeds (what a trigger used to do).
 async function afterCall(db, name, data) {
   const pickupId = typeof data?.pickupId === 'string' ? data.pickupId : typeof data?.pickup_id === 'string' ? data.pickup_id : null;
-  if (name === 'completePickupOperation' && pickupId) await dispatchCompletion(db, pickupId);
-  if (name === 'confirmDonationOccurrence') return;
-  if (pickupId && name !== 'pickupChanged') await processPickup(db, pickupId);
+  const jobs = [];
+  if (name === 'completePickupOperation' && pickupId) jobs.push({ t: 'completion', id: pickupId });
+  if (pickupId && name !== 'pickupChanged' && name !== 'confirmDonationOccurrence') jobs.push({ t: 'pickup', id: pickupId });
+  return enqueue(db, jobs);
 }
 
 async function call(db, name, data, ctx) {
@@ -199,28 +249,26 @@ async function tick(db, { now = Date.now(), only = null } = {}) {
     if (!due(name, every)) return;
     try { log[name] = await work(); } catch (e) { log[name] = { error: e.message }; console.error(name, e); }
   };
-  await run('pickups', 1, () => pollCollection(db, 'pickups', 'pickups', 'updated_at', (d) => processPickup(db, d.id)));
-  await run('dispatch', 1, async () => (await fn('rescueDispatch').advanceDue(db, { now })).length);
-  await run('newUsers', 1, () => pollCollection(db, 'users', 'users', 'created_at', (d) => onUserSeen(db, d.id, d.data())));
-  await run('activity', 1, () => pollCollection(db, 'activity', 'member_activity', 'created_at',
-    (d) => fn('impactCounters').eventCheckedIn(db, d.id, d.data())));
-  await run('expiry', 5, async () => ({
-    offers: (await fn('pickupExpiry').expireOpenPickups(db)).expired,
-    partners: (await fn('partnerRequests').expirePartnerRequests(db, { now })).moved,
-    holds: await fn('receivingSites').sweepReservations(db, { now }),
-  }));
-  await run('dedup', 5, () => fn('sweepNotificationDedup').sweepNotificationDedup({}));
-  await run('recurring', 15, () => fn('donationSchedules').materialize(db, { now }));
-  // Full sweeps every 6 hours catch anything a ping or poll missed.
-  if (only ? only.includes('sweep') : (minute === 7 && hour % 6 === 0)) {
+  // Each poll only queues jobs; the jobs do the reads and writes.
+  await run('pickups', 1, () => pollCollection(db, 'pickups', 'pickups', 'updated_at', (d) => enqueue(db, { t: 'pickup', id: d.id }, { now })));
+  await run('dispatch', 1, async () => {
+    const dueSnap = await db.collectionGroup('dispatch').where('next_action_at', '<=', Timestamp.fromMillis(now)).limit(50).get();
+    return enqueue(db, dueSnap.docs.filter((d) => d.id === 'state').map((d) => ({ t: 'advance', id: d.ref.parent.parent.id })), { now });
+  });
+  await run('newUsers', 1, () => pollCollection(db, 'users', 'users', 'created_at', (d) => enqueue(db, { t: 'user', id: d.id }, { now })));
+  await run('activity', 1, () => pollCollection(db, 'activity', 'member_activity', 'created_at', (d) => enqueue(db, { t: 'activity', id: d.id }, { now })));
+  await run('expiry', 5, () => enqueue(db, ['expireOffers', 'expirePartners', 'sweepHolds'].map((name) => ({ t: 'task', name })), { now }));
+  await run('dedup', 5, () => enqueue(db, { t: 'task', name: 'dedup' }, { now }));
+  await run('recurring', 15, () => enqueue(db, { t: 'task', name: 'recurring' }, { now }));
+  // Daily full sweep (09:07 UTC), one job per user / ID review.
+  if (only ? only.includes('sweep') : (minute === 7 && hour === 9)) {
     await run('sweep', 1, async () => {
-      let users = 0, reviews = 0;
-      for (const d of (await db.collection('users').get()).docs) { await onUserSeen(db, d.id, d.data()); users++; }
-      for (const d of (await db.collection('id_reviews').get()).docs) { if (await syncIdReview(db, d.id)) reviews++; }
-      return { users, reviews };
+      const users = (await db.collection('users').get()).docs.map((d) => ({ t: 'user', id: d.id }));
+      const reviews = (await db.collection('id_reviews').get()).docs.map((d) => ({ t: 'review', id: d.id }));
+      return { users: await enqueue(db, users, { now }), reviews: await enqueue(db, reviews, { now }) };
     });
   }
   return log;
 }
 
-module.exports = { setup, call, afterCall, tick, processPickup, syncIdReview, CALLABLES, stampPickups };
+module.exports = { setup, call, afterCall, tick, processPickup, syncIdReview, CALLABLES, stampPickups, useQueue, enqueue, runJob };
