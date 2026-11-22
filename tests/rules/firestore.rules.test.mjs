@@ -646,3 +646,20 @@ describe('partner requests and receiver availability', () => {
     await assertFails(updateDoc(doc(as('volA'), 'receiving_sites/sA'), { status: 'paused' }));
   });
 });
+
+describe('recurring donation schedules', () => {
+  const schedule = (extra = {}) => ({ restaurant_id: 'r1', chapter_id: CH_A, owner_uid: 'rest', status: 'active',
+    days: ['mon'], ready_time: '15:00', timezone: 'America/Chicago', window_hours: 3,
+    template: { estimated_weight_lbs: 20 }, destination: { mode: 'network' }, ...extra });
+  it('the donor can save a schedule for their own restaurant', async () => {
+    await assertSucceeds(setDoc(doc(as('rest'), 'donation_schedules/s1'), schedule()));
+  });
+  it('nobody else can, and occurrences are server-only', async () => {
+    await assertFails(setDoc(doc(as('restOther'), 'donation_schedules/s2'), schedule({ owner_uid: 'restOther' })));
+    await assertFails(setDoc(doc(as('volA'), 'donation_schedules/s3'), schedule({ owner_uid: 'volA' })));
+    await assertFails(setDoc(doc(as('rest'), 'donation_occurrences/x'), { owner_uid: 'rest', status: 'confirmed' }));
+  });
+  it('invalid times are refused', async () => {
+    await assertFails(setDoc(doc(as('rest'), 'donation_schedules/s4'), schedule({ ready_time: '25:00' })));
+  });
+});

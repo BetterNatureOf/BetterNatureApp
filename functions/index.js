@@ -98,6 +98,15 @@ exports.requestReceivingPartner = functions.https.onCall((data, context) =>
 exports.respondToPartnerRequest = functions.https.onCall((data, context) =>
   require('./partnerRequests').respondPartner(admin.firestore(), data, context.auth?.uid));
 
+// Recurring donations (see donationSchedules.js).
+exports.materializeDonationOccurrences = functions.pubsub.schedule('every 15 minutes').onRun(async () => {
+  const out = await require('./donationSchedules').materialize(admin.firestore());
+  if (out.created || out.missed) console.log('Donation occurrences', JSON.stringify(out));
+});
+exports.confirmDonationOccurrence = functions.https.onCall((data, context) =>
+  require('./donationSchedules').confirmOccurrence(admin.firestore(), data, context.auth?.uid,
+    { requestPartner: require('./partnerRequests').requestPartner }));
+
 exports.respondToRescueOffer = functions.https.onCall((data, context) =>
   require('./rescueOffers').respond(admin.firestore(), data, context.auth?.uid));
 

@@ -1065,6 +1065,34 @@ service cloud.firestore {
       }
     }
 
+    // ── donation_schedules / donation_occurrences ──
+    // A donor's recurring template. Occurrences are created and closed
+    // by donationSchedules functions; the donor confirms or skips each one
+    // through confirmDonationOccurrence.
+    function validSchedule(d) {
+      return d.restaurant_id is string && d.chapter_id is string && d.owner_uid == request.auth.uid
+        && d.status in ['active', 'paused']
+        && d.days is list && d.days.size() > 0 && d.days.size() <= 7
+        && d.ready_time is string && d.ready_time.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && d.timezone is string && d.window_hours is number && d.window_hours > 0 && d.window_hours <= 12
+        && d.template is map && d.destination is map
+        && (!('skip_dates' in d) || (d.skip_dates is list && d.skip_dates.size() <= 60));
+    }
+    match /donation_schedules/{scheduleId} {
+      allow read: if (isSignedIn() && resource.data.owner_uid == request.auth.uid)
+        || isPresOfChapter(resource.data.get('chapter_id', null));
+      allow create: if isSignedIn() && validSchedule(request.resource.data)
+        && ownsPickupRestaurant(request.resource.data.restaurant_id);
+      allow update: if isSignedIn() && resource.data.owner_uid == request.auth.uid
+        && request.resource.data.restaurant_id == resource.data.restaurant_id && validSchedule(request.resource.data);
+      allow delete: if isSignedIn() && resource.data.owner_uid == request.auth.uid;
+    }
+    match /donation_occurrences/{occurrenceId} {
+      allow read: if (isSignedIn() && resource.data.owner_uid == request.auth.uid)
+        || isPresOfChapter(resource.data.get('chapter_id', null));
+      allow write: if false;
+    }
+
     // ── restaurants ──
     // A new restaurant signup creates their own doc (with
     // status:'pending' and user_id matching their auth uid) so the

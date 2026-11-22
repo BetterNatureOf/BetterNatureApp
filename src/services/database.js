@@ -2239,6 +2239,25 @@ export async function saveVehicle(userId, { type, packageCapacity, weightCapacit
   return vehicle;
 }
 
+// ── Recurring donations (functions/donationSchedules.js) ──
+export async function listMySchedules(uid) {
+  if (!uid || useMock()) return [];
+  return snapToList(await getDocs(query(collection(db, 'donation_schedules'), where('owner_uid', '==', uid))));
+}
+export async function saveDonationSchedule(scheduleId, schedule) {
+  const data = { ...schedule, updated_at: serverTimestamp() };
+  if (scheduleId) { await setDoc(doc(db, 'donation_schedules', scheduleId), data); return scheduleId; }
+  return (await addDoc(collection(db, 'donation_schedules'), { ...data, created_at: serverTimestamp() })).id;
+}
+export async function listMyOccurrences(uid) {
+  if (!uid || useMock()) return [];
+  const snap = await getDocs(query(collection(db, 'donation_occurrences'), where('owner_uid', '==', uid), orderBy('ready_at', 'desc'), fbLimit(20)));
+  return snapToList(snap);
+}
+export async function confirmDonationOccurrence(occurrenceId, actual) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'confirmDonationOccurrence')({ occurrenceId, ...actual })).data;
+}
+
 // ── Receiving partner requests (functions/partnerRequests.js) ──
 export async function listPartnerSites() {
   return (await httpsCallable(getFunctions(firebaseApp), 'listPartnerSites')({})).data.sites;

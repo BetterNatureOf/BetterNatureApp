@@ -204,6 +204,11 @@ export default function RestDashboard({ navigation }) {
           />
         )}
 
+        <TouchableOpacity onPress={() => navigation.navigate('RecurringDonations')} accessibilityRole="button"
+            style={{ paddingVertical: 12, minHeight: 44, alignSelf: 'flex-start' }}>
+            <Text style={{ color: Colors.green, fontWeight: '700', fontSize: 15 }}>Recurring donations →</Text>
+          </TouchableOpacity>
+
         {/* Supporting content — recent posts + impact + tools */}
         {(pickups.length > 0) && (
           <RecentPostsCard
