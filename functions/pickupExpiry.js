@@ -17,7 +17,7 @@ function canExpire(pickup, now) {
     (Number.isFinite(arrivalBy) && arrivalBy <= now);
 }
 
-async function expireOpenPickups(db, now = Date.now()) {
+async function expireOpenPickups(db, now = Date.now(), { limit = BATCH_SIZE } = {}) {
   const pickups = db.collection('pickups');
   const open = pickups.where('status', 'in', ['available', 'pending_destination']);
   const cutoff = Timestamp.fromMillis(now);
@@ -29,7 +29,7 @@ async function expireOpenPickups(db, now = Date.now()) {
     ['pickup_window_until', cutoff.toDate().toISOString()],
   ];
   const pages = await Promise.all(windows.map(([field, value]) =>
-    open.where(field, '<=', value).limit(BATCH_SIZE).get()));
+    open.where(field, '<=', value).limit(limit).get()));
   const candidates = new Map(pages.flatMap((page) => page.docs.map((doc) => [doc.id, doc])));
   let expired = 0;
 

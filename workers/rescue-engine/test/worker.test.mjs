@@ -112,9 +112,52 @@ describe('schedule', () => {
     assert.equal(res.status, 403);
   });
 
+  it('the 6-hourly sweep handles every user, including ones no handler applies to', async () => {
+    await db.doc('users/restaurant1').set({ role: 'restaurant', name: 'Shop' });   // signup counter skips this one
+    const res = await worker.fetch(new Request('https://engine.test/tick?only=sweep', { method: 'POST', headers: { 'x-trigger-key': 'k' } }), env, ctx);
+    const out = await res.json();
+    assert.equal(out.sweep.error, undefined);
+    assert.equal(out.sweep.users, 3);
+    assert.ok((await db.doc('public_profiles/val').get()).exists);
+  });
+
   it('settles a hold from current state: cancelling releases it', async () => {
     await db.doc('pickups/p').update({ status: 'cancelled' });
     await engine.processPickup(db, 'p');
     assert.equal((await db.doc('receiving_sites/site1/reservations/p').get()).data().status, 'released');
+  });
+});
+
+describe('free-plan request budget and queue', () => {
+  it('a busy dispatch round (10 nearby candidates) stays well under 50 requests', async () => {
+    const T = Date.now();
+    for (let i = 0; i < 10; i++) {
+      await db.doc(`users/v${i}`).set(volunteer({ name: `V${i}` }));
+      await db.doc(`rescue_availability/v${i}`).set({ cell: latLngToCell(LAT + i * 0.002, LNG, 7), updated_at: Timestamp.fromMillis(T - MIN) });
+    }
+    let calls = 0;
+    const counting = (...args) => { calls++; return fetch(...args); };
+    const counted = engine.setup(env, { fetchImpl: counting });
+    calls = 0;
+    await engine.processPickup(counted, 'p');      // opens dispatch and runs the first round
+    engine.setup(env);
+    assert.ok(calls < 40, `used ${calls} requests`);
+    assert.equal((await db.collection('pickups/p/offers').get()).size, 1);
+  });
+
+  it('the schedule only queues jobs; the queue consumer runs each one', async () => {
+    const sent = [];
+    const JOBS = { sendBatch: async (msgs) => { sent.push(...msgs.map((m) => m.body)); } };
+    const qenv = { ...env, JOBS };
+    await db.doc('pickups/p').update({ status: 'available', claimed_by: null, released_by: 'val', released_at: Timestamp.now(), updated_at: Timestamp.now() });
+    const res = await worker.fetch(new Request('https://engine.test/tick?only=pickups,expiry', { method: 'POST', headers: { 'x-trigger-key': 'k' } }), qenv, ctx);
+    assert.equal(res.status, 200);
+    assert.deepEqual(sent.map((j) => j.t).sort(), ['pickup', 'task', 'task', 'task']);
+    assert.equal((await db.collection('pickup_releases').get()).size, 0);   // nothing done inline
+    const acked = [];
+    await worker.queue({ messages: sent.map((body) => ({ body, ack: () => acked.push(body.t), retry: () => {} })) }, qenv);
+    assert.equal(acked.length, 4);
+    assert.equal((await db.collection('pickup_releases').get()).size, 1);
+    engine.useQueue(null);
   });
 });

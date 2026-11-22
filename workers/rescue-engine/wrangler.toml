@@ -11,6 +11,18 @@ crons = ["* * * * *"]
 
 # functions/*.js is reused as-is; these aliases swap the Google SDKs for
 # small REST shims at bundle time.
+# Free-tier Cloudflare Queue: follow-up work runs as one job per
+# invocation so each stays under the ~50 requests a free run may make.
+[[queues.producers]]
+binding = "JOBS"
+queue = "bn-rescue-jobs"
+
+[[queues.consumers]]
+queue = "bn-rescue-jobs"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+
 [alias]
 "firebase-admin" = "./src/shim/admin.js"
 "firebase-admin/firestore" = "./src/shim/admin-firestore.js"

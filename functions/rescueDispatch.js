@@ -333,24 +333,33 @@ async function runRound(db, pickupRef, s, p, { now, routing }) {
       cannot_make_it: 0, unknown_travel: 0 };
     let unknownFit = 0;
     const feasible = [];
-    for (const c of candidates) {
-      const uid = c.id;
-      const avail = (await tx.get(c.ref)).data();
+    // Batched reads (a free Worker run allows ~50 requests): every
+    // candidate's area, existing offer and profile in one read, then who is
+    // already on a rescue in this chapter and who holds a live offer.
+    const n = candidates.length;
+    const offerRefs = candidates.map((c) => pickupRef.collection('offers').doc(`${genId}_${safeId(c.id)}`));
+    const snaps = n ? await tx.getAll(...candidates.map((c) => c.ref), ...offerRefs,
+      ...candidates.map((c) => db.collection('users').doc(c.id))) : [];
+    const active = n ? await tx.get(db.collection('pickups').where('chapter_id', '==', current.chapter_id)
+      .where('status', 'in', ['claimed', 'enroute'])) : { docs: [] };
+    const busyUids = new Set(active.docs.map((d) => d.data().claimed_by).filter(Boolean));
+    const openOffersNow = n ? await tx.get(db.collectionGroup('offers').where('status', '==', 'open')) : { docs: [] };
+    const holdingUids = new Set(openOffersNow.docs.filter((o) => ms(o.data().expires_at) > now).map((o) => o.data().uid));
+    for (let i = 0; i < n; i++) {
+      const uid = candidates[i].id;
+      const avail = snaps[i].data();
       const updated = ms(avail?.updated_at);
       if (!avail || !ring.has(avail.cell) || !(updated <= now && updated > now - AVAILABILITY_MS)) { skipped.stale++; continue; }
       if (excluded.has(uid)) { skipped.excluded++; continue; }
-      const offerRef = pickupRef.collection('offers').doc(`${genId}_${safeId(uid)}`);
-      if ((await tx.get(offerRef)).exists) { skipped.already_offered++; continue; }
-      const user = (await tx.get(db.collection('users').doc(uid))).data();
+      const offerRef = offerRefs[i];
+      if (snaps[n + i].exists) { skipped.already_offered++; continue; }
+      const user = snaps[2 * n + i].data();
       if (!wantsAlert(user, current)) { skipped.ineligible++; continue; }
       const fit = cargoFit(current, user);
       if (fit.status === 'does_not_fit') { skipped.does_not_fit++; continue; }
-      const busy = await tx.get(db.collection('pickups').where('claimed_by', '==', uid)
-        .where('status', 'in', ['claimed', 'enroute']).limit(1));
-      if (!busy.empty) { skipped.busy++; continue; }
+      if (busyUids.has(uid)) { skipped.busy++; continue; }
       // One live offer per volunteer, across all rescues.
-      const held = await tx.get(db.collectionGroup('offers').where('uid', '==', uid).where('status', '==', 'open'));
-      if (held.docs.some((o) => ms(o.data().expires_at) > now)) { skipped.has_offer++; continue; }
+      if (holdingUids.has(uid)) { skipped.has_offer++; continue; }
       const { profile, assumed } = travelProfile(user);
       const toPickup = legs.get(`${profile}|${avail.cell}`) || null;
       const trip = journey({ now, toPickup, toSite: siteLegs.get(profile) || null, readyAt: inputs.readyAt,

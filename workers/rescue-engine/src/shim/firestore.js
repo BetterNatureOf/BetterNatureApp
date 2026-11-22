@@ -348,7 +348,7 @@ class Firestore {
     const json = await this._call('POST', `${this._root}:commit`, { writes, ...(transaction ? { transaction } : {}) });
     return json.writeResults || [];
   }
-  async runTransaction(fn, { maxAttempts = 5 } = {}) {
+  async runTransaction(fn, { maxAttempts = 8 } = {}) {
     let lastErr;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const { transaction } = await this._call('POST', `${this._root}:beginTransaction`, {});
