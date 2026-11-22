@@ -13,7 +13,7 @@ const ms = (v) => (v?.toMillis ? v.toMillis() : v?.seconds != null ? v.seconds *
 
 const PRIORITY = {
   held: 0, remainder_pending: 1, escalated: 2, late_pickup: 3, late_delivery: 4,
-  near_deadline: 5, awaiting_site: 6, awaiting_receipt: 7, awaiting_donor: 8,
+  near_deadline: 5, awaiting_site: 6, awaiting_partner: 7, awaiting_receipt: 8, awaiting_donor: 9,
 };
 
 const HOLD_TEXT = {
@@ -60,8 +60,17 @@ function classify(p, now) {
     return { kind: 'late_delivery', title: 'Past the receiving deadline without a receipt', owner: claimant,
       next: 'Call the volunteer and the receiving site', deadline: arrivalBy, deadlineLabel: 'Receiving deadline' };
   }
+  if (['pending_destination', 'available'].includes(p.status) && !p.destination_confirmation &&
+      p.partner_request?.status === 'awaiting_partner') {
+    const preferred = p.partner_request.mode === 'preferred';
+    return { kind: 'awaiting_partner', title: preferred ? `Waiting for ${p.partner_request.site_name || 'the preferred partner'} to answer`
+      : 'Offered to the partner network', owner: preferred ? (p.partner_request.site_name || 'Preferred partner') : 'Receiving partners',
+      next: preferred && p.partner_request.offer_to_network ? 'Nothing yet — it goes to the network if they decline or don’t answer'
+        : 'Nudge partners, or confirm a site yourself', deadline: ms(p.partner_request.respond_by), deadlineLabel: 'Partner answer due' };
+  }
   if (['pending_destination', 'available'].includes(p.status) && !p.destination_confirmation) {
-    return { kind: 'awaiting_site', title: 'Waiting for a receiving site', owner: 'Coordinator',
+    const declined = ['declined', 'expired'].includes(p.partner_request?.status);
+    return { kind: 'awaiting_site', title: declined ? 'Partner declined or didn’t answer' : 'Waiting for a receiving site', owner: 'Coordinator',
       next: 'Confirm where this food goes', deadline: pickupBy, deadlineLabel: 'Donor cutoff' };
   }
   if (p.status === 'available' && Number.isFinite(offerDeadline) && offerDeadline - now <= NEAR_DEADLINE_MS) {

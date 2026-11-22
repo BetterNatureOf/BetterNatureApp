@@ -752,7 +752,7 @@ service cloud.firestore {
         && !pChanged().hasAny(['destination_confirmation','destination_history','receiving_receipt',
           'receiver_uid','receiver_assigned_at','receiver_assigned_by','custody_transfer',
           'custody_transfer_history','safety_hold','safety_resolution','restaurant_id','dispatch',
-          'receiving_site','remainder_disposition'])
+          'receiving_site','remainder_disposition','partner_request'])
         && (pDestination() == null || !pChanged().hasAny(['fridge_id','fridge_name','fridge_address',
           'fridge_lat','fridge_lng','fridge_h3','pickup_window_until']))
         && !pChanged().hasAny(['claimed_by','claimed_at','enroute_at','verified_by_restaurant_at',
@@ -999,7 +999,7 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(['destination_confirmation', 'destination_history',
              'receiving_receipt', 'receiver_uid', 'receiver_assigned_at', 'receiver_assigned_by',
              'custody_transfer', 'custody_transfer_history', 'safety_hold', 'safety_resolution',
-             'dispatch', 'receiving_site', 'remainder_disposition'])
+             'dispatch', 'receiving_site', 'remainder_disposition', 'partner_request'])
         && request.resource.data.estimated_weight_lbs is number
         && request.resource.data.estimated_weight_lbs > 0
         && approvedPickupRestaurant(pickupRid())
@@ -1050,8 +1050,14 @@ service cloud.firestore {
       allow read: if isPresOfChapter(resource.data.get('chapter_id', null))
         || (isSignedIn() && resource.data.get('receiver_uid', null) == request.auth.uid);
       allow create: if isPresOfChapter(request.resource.data.get('chapter_id', null)) && validSite(request.resource.data);
-      allow update: if isPresOfChapter(resource.data.get('chapter_id', null))
-        && isPresOfChapter(request.resource.data.get('chapter_id', null)) && validSite(request.resource.data);
+      allow update: if (isPresOfChapter(resource.data.get('chapter_id', null))
+        && isPresOfChapter(request.resource.data.get('chapter_id', null)) && validSite(request.resource.data))
+        // The site's own receiver manages availability and capacity only.
+        || (isSignedIn() && resource.data.get('receiver_uid', null) == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'pause_reason', 'paused_until', 'capacity', 'updated_at'])
+          && request.resource.data.get('status', 'active') in ['active', 'paused']
+          && request.resource.data.get('capacity', {}) is map);
       allow delete: if isAdmin();
       match /reservations/{pickupId} {
         allow read: if isPresOfChapter(get(/databases/$(database)/documents/receiving_sites/$(siteId)).data.get('chapter_id', null));

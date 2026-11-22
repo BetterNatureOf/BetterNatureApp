@@ -13,7 +13,7 @@ import BrushText from '../../components/ui/BrushText';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import useAuthStore from '../../store/authStore';
-import { createPickup, ensureMyPartnerRecord } from '../../services/database';
+import { createPickup, ensureMyPartnerRecord, listPartnerSites, requestReceivingPartner } from '../../services/database';
 import { mealsFromLbs, co2FromLbs, humanImpactPhrase } from '../../services/impact';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -56,6 +56,17 @@ export default function ScheduleDonation({ navigation }) {
   // blank stays unknown rather than defaulting to something that may be wrong.
   const [foodCategory, setFoodCategory] = useState(null);
   const [packages, setPackages] = useState('');
+  // Where the food should go. A preferred partner is asked first and may
+  // decline; the donor decides whether it can then go to other partners.
+  const [partnerSites, setPartnerSites] = useState(null);
+  const [destinationMode, setDestinationMode] = useState('network');   // 'preferred' | 'network' | 'coordinator'
+  const [preferredSite, setPreferredSite] = useState(null);
+  const [offerToNetwork, setOfferToNetwork] = useState(true);
+  React.useEffect(() => {
+    let alive = true;
+    listPartnerSites().then((sites) => alive && setPartnerSites(sites)).catch(() => alive && setPartnerSites([]));
+    return () => { alive = false; };
+  }, []);
   const [posting, setPosting] = useState(false);
   // Volunteer-friendly drop-off destination. The restaurant can pre-pick
   // a fridge, and if they don't, the volunteer chooses when claiming.
@@ -193,10 +204,23 @@ export default function ScheduleDonation({ navigation }) {
         packages: /^\d+$/.test(packages.trim()) && parseInt(packages, 10) > 0 ? parseInt(packages, 10) : null,
       });
 
+      // Ask the chosen partner (or the network). If that request fails the
+      // donation still exists; a coordinator can place it.
+      let partnerNote = 'A coordinator will confirm where it goes.';
+      if (created?.id && destinationMode !== 'coordinator' && (destinationMode === 'network' || preferredSite)) {
+        try {
+          await requestReceivingPartner(created.id, { mode: destinationMode, siteId: preferredSite?.id || null, offerToNetwork });
+          partnerNote = destinationMode === 'preferred'
+            ? `${preferredSite.name} has been asked. ${offerToNetwork ? 'If they can’t take it, it goes to other BN partners.' : 'If they can’t take it, we’ll let you know.'}`
+            : 'BN receiving partners in your chapter have been asked.';
+        } catch (e) {
+          partnerNote = 'We couldn’t reach the partner just now, so a coordinator will confirm where it goes.';
+        }
+      }
       // Toast and dismiss right away.
       notifyThen(
-        'Offer saved',
-        'The offer is waiting for a receiving site. Volunteers can see it after a coordinator confirms the destination.',
+        'Donation posted',
+        `${partnerNote} Volunteers are only contacted after a receiving partner accepts.`,
         () => navigation.goBack(),
       );
 
@@ -334,6 +358,33 @@ export default function ScheduleDonation({ navigation }) {
           <Text style={styles.weightUnit}>items</Text>
         </View>
 
+        <Text style={styles.sectionLabel}>Where should it go?</Text>
+        <View style={styles.chipsCol}>
+          {[['network', 'Any BN receiving partner'], ['preferred', 'A partner I work with'], ['coordinator', 'Let a coordinator decide']].map(([key, label]) => (
+            <TouchableOpacity key={key} style={[styles.windowChip, destinationMode === key && styles.chipOn]}
+              onPress={() => setDestinationMode(key)} accessibilityRole="radio" accessibilityState={{ selected: destinationMode === key }}>
+              <Text style={[styles.chipText, destinationMode === key && styles.chipTextOn]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {destinationMode === 'preferred' && (
+          <View style={styles.chipsCol}>
+            {partnerSites === null && <Text style={styles.partnerHelp}>Loading partners…</Text>}
+            {partnerSites?.length === 0 && <Text style={styles.partnerHelp}>No partners are taking requests right now. Choose another option.</Text>}
+            {partnerSites?.map((site) => (
+              <TouchableOpacity key={site.id} style={[styles.windowChip, preferredSite?.id === site.id && styles.chipOn]}
+                onPress={() => setPreferredSite(site)} accessibilityRole="radio" accessibilityState={{ selected: preferredSite?.id === site.id }}>
+                <Text style={[styles.chipText, preferredSite?.id === site.id && styles.chipTextOn]}>{site.name}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setOfferToNetwork((v) => !v)} accessibilityRole="checkbox"
+              accessibilityState={{ checked: offerToNetwork }} style={styles.partnerCheck}>
+              <Text style={styles.chipText}>{offerToNetwork ? '☑' : '☐'} If they decline or don’t answer, offer it to other BN partners</Text>
+            </TouchableOpacity>
+            <Text style={styles.partnerHelp}>Asking a partner is a request — they confirm whether they can take it.</Text>
+          </View>
+        )}
+
         {/* Pickup timing — mutually exclusive modes */}
         <Text style={styles.sectionLabel}>When can volunteers pick this up?</Text>
         <View style={styles.modeToggle}>
@@ -466,6 +517,8 @@ const styles = StyleSheet.create({
   weightUnit: { fontSize: 18, fontWeight: '700', color: Colors.gray },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chipsCol: { gap: 8 },
+  partnerHelp: { fontSize: 13, color: Colors.gray, lineHeight: 18 },
+  partnerCheck: { paddingVertical: 10, minHeight: 44, justifyContent: 'center' },
   chip: {
     paddingVertical: 12, paddingHorizontal: 18,
     borderRadius: Radius.lg,

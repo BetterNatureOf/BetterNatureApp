@@ -2239,6 +2239,17 @@ export async function saveVehicle(userId, { type, packageCapacity, weightCapacit
   return vehicle;
 }
 
+// ── Receiving partner requests (functions/partnerRequests.js) ──
+export async function listPartnerSites() {
+  return (await httpsCallable(getFunctions(firebaseApp), 'listPartnerSites')({})).data.sites;
+}
+export async function requestReceivingPartner(pickupId, { mode, siteId = null, offerToNetwork = false, respondWithinMin = 30 }) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'requestReceivingPartner')({ pickupId, mode, siteId, offerToNetwork, respondWithinMin })).data;
+}
+export async function respondToPartnerRequest(pickupId, { response, siteId = null, arrivalBy = null, reason = '' }) {
+  return (await httpsCallable(getFunctions(firebaseApp), 'respondToPartnerRequest')({ pickupId, response, siteId, arrivalBy, reason })).data;
+}
+
 // Accept or decline a rescue (an offer, or directly from the map/list).
 // The server re-checks state, eligibility, fit, reservation and the
 // journey, and assigns atomically (functions/rescueOffers.js).

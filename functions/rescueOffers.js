@@ -89,6 +89,14 @@ async function respond(db, data, uid, { now = Date.now(), advance = D.advance } 
       claimed_via: offer ? 'offer' : 'direct' });
     if (offer) tx.update(offerRef, { status: 'accepted', closed_at: Timestamp.fromMillis(now) });
     return { ok: true, accepted: true, generation };
+  }).catch(async (error) => {
+    if (error instanceof HttpsError) throw error;
+    // Contention between simultaneous acceptances: report the outcome,
+    // never a raw database error.
+    const current = (await pickupRef.get()).data();
+    if (current?.claimed_by && current.claimed_by !== uid) throw fail('Another volunteer already took this rescue.', 'taken');
+    if (current?.claimed_by === uid) return { ok: true, cached: true };
+    throw new HttpsError('unavailable', 'Busy right now — try again in a moment. Nothing was claimed.', { reason: 'contention' });
   });
 
   if (out.accepted && out.generation) {

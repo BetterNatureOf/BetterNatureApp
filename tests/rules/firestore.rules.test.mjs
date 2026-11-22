@@ -630,3 +630,19 @@ describe('no-show release', () => {
     await assertFails(updateDoc(doc(as('presA'), 'pickups/pClaimedCollected'), release('presA')));
   });
 });
+
+describe('partner requests and receiver availability', () => {
+  it('nobody writes a partner request from a client (the server validates it)', async () => {
+    await assertFails(updateDoc(doc(as('rest'), 'pickups/pPending'), { partner_request: { status: 'accepted' } }));
+    await assertFails(setDoc(doc(as('rest'), 'pickups/newPR'), { restaurant_id: 'r1', chapter_id: CH_A, status: 'pending_destination',
+      claimed_by: null, estimated_weight_lbs: 10, partner_request: { status: 'accepted' } }));
+  });
+  it('a site’s receiver can pause it and adjust capacity, but not rename it', async () => {
+    await assertSucceeds(updateDoc(doc(as('receiver'), 'receiving_sites/sA'), { status: 'paused', pause_reason: 'Freezer repair' }));
+    await assertSucceeds(updateDoc(doc(as('receiver'), 'receiving_sites/sA'), { capacity: { packages_per_day: 8 } }));
+    await assertFails(updateDoc(doc(as('receiver'), 'receiving_sites/sA'), { name: 'Renamed' }));
+  });
+  it('other members cannot change a site’s availability', async () => {
+    await assertFails(updateDoc(doc(as('volA'), 'receiving_sites/sA'), { status: 'paused' }));
+  });
+});

@@ -49,6 +49,7 @@ const screens = {
   VehicleSetup: 'profile/vehicle',
   ReceivingSites: 'admin/sites',
   RescueQueue: 'admin/queue',
+  PartnerIncoming: 'receiving',
   WebsiteContent: 'admin/website',
   FindChapter: 'find-chapter',
   MyTaxReceipts: 'tax-receipts',

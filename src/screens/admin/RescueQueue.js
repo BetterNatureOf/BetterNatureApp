@@ -20,7 +20,7 @@ import { buildQueue } from '../../../functions/lib/rescueQueue';
 
 const KIND_LABEL = {
   held: 'On hold', remainder_pending: 'Food turned away', escalated: 'Needs a decision', late_pickup: 'Late',
-  late_delivery: 'Late', near_deadline: 'Closing soon', awaiting_site: 'No receiving site', awaiting_receipt: 'Awaiting receipt',
+  late_delivery: 'Late', near_deadline: 'Closing soon', awaiting_site: 'No receiving site', awaiting_partner: 'Awaiting partner', awaiting_receipt: 'Awaiting receipt',
   awaiting_donor: 'Awaiting donor',
 };
 const URGENT = new Set(['held', 'remainder_pending', 'escalated', 'late_pickup', 'late_delivery']);

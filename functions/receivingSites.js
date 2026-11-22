@@ -106,7 +106,10 @@ async function usedOnDay(tx, siteRef, day, excludePickupId) {
 }
 
 // ── Callable: confirm a rescue's destination against a saved site ──
-async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
+// `authorize(caller, pickup, site)` decides who may confirm: chapter
+// coordinators by default; a site's own receiver when accepting a
+// donor's partner request (partnerRequests.js).
+async function confirmDestination(db, data, uid, { now = Date.now(), authorize = null, extraUpdate = null } = {}) {
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
   const pickupId = typeof data?.pickupId === 'string' ? data.pickupId : '';
   const siteId = typeof data?.siteId === 'string' ? data.siteId : '';
@@ -120,8 +123,9 @@ async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
     const [pkSnap, siteSnap, callerSnap] = await Promise.all([tx.get(pickupRef), tx.get(siteRef), tx.get(callerRef)]);
     const pickup = pkSnap.data(), site = siteSnap.data();
     if (!pickup) throw new HttpsError('not-found', 'Rescue not found.');
-    if (!canCoordinate(callerSnap.data(), pickup.chapter_id)) {
-      throw new HttpsError('permission-denied', 'Only this chapter’s coordinators can confirm a receiving site.');
+    const allowed = authorize ? authorize(callerSnap.data(), pickup, site, uid) : canCoordinate(callerSnap.data(), pickup.chapter_id);
+    if (!allowed) {
+      throw new HttpsError('permission-denied', 'Only this chapter’s coordinators or the site’s receiver can confirm a receiving site.');
     }
     if (pickup.destination_confirmation?.site_id === siteId && pickup.status === 'available') {
       return { ok: true, cached: true };
@@ -161,6 +165,7 @@ async function confirmDestination(db, data, uid, { now = Date.now() } = {}) {
       receiving_site: { id: siteId, type: site.type, food_categories: site.food_categories || null,
         opens_at: null, closes_at: null, remaining_packages: Number.isFinite(site.capacity?.packages_per_day)
           ? site.capacity.packages_per_day - used.packages - (cargo.packages || 0) : null },
+      ...(extraUpdate ? extraUpdate(pickup, site) : {}),
       ...(site.receiver_uid && site.receiver_uid !== pickup.restaurant_id ? {
         receiver_uid: site.receiver_uid, receiver_assigned_by: uid, receiver_assigned_at: FieldValue.serverTimestamp(),
       } : {}),
