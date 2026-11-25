@@ -580,7 +580,16 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.5;
 }
 
+/* Stretch the last card(s) so a count that doesn't fill the row (5 live
+   stats in 3 columns) never leaves an empty, lighter cell. */
+@media (min-width: 901px) {
+  .impact__grid > .stat:last-child:nth-child(3n+1) { grid-column: span 3; }
+  .impact__grid > .stat:last-child:nth-child(3n+2) { grid-column: span 2; }
+}
 @media (max-width: 900px) { .impact__grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 641px) and (max-width: 900px) {
+  .impact__grid > .stat:last-child:nth-child(odd) { grid-column: span 2; }
+}
 @media (max-width: 600px) { .impact__grid { grid-template-columns: 1fr; } }
 
 /* ═══════════ PROGRAMS ═══════════ */
@@ -1510,6 +1519,7 @@ a { color: inherit; text-decoration: none; }
 /* ═══════════ SIGNUP ═══════════ */
 .signup { padding: 120px 0; background: var(--forest); color: var(--cream); }
 .signup .eyebrow { color: var(--pink); }
+.signup .eyebrow::before { background: var(--pink); } /* was forest on forest — invisible */
 .signup__title { font-family: var(--serif); font-size: clamp(2.2rem, 4vw, 3.4rem); line-height: 1.08; margin: 16px 0 16px; }
 .signup__body { font-size: 1.1rem; opacity: 0.85; max-width: 620px; margin-bottom: 36px; }
 .signup__tabs { display: flex; gap: 8px; margin-bottom: 28px; flex-wrap: wrap; }

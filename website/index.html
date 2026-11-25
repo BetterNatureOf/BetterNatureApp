@@ -12,10 +12,10 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:opsz,wght@14..32,400..800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="motion.css" />
 </head>
 <body>
 
@@ -25,20 +25,26 @@
     <img src="logo.png" alt="BetterNature" class="nav__logo" />
     <span class="nav__name">BetterNature</span>
   </a>
-  <nav class="nav__links" id="navLinks">
+  <nav class="nav__links" id="navLinks" aria-label="Main">
     <a href="#mission">Mission</a>
-    <a href="#impact">Impact</a>
     <a href="#programs">Programs</a>
-    <a href="#bnmap">Map</a>
-    <a href="#how">Get Involved</a>
+    <a href="#impact">Impact</a>
+    <a href="#how">Get involved</a>
     <a href="#chapters">Chapters</a>
-    <a href="#partners">Partner</a>
-    <a href="#press">Press</a>
-    <a href="https://app.betternatureofficial.org/">Open web app</a>
-    <a href="#signup">Sign up</a>
+    <div class="nav__more">
+      <button class="nav__moreBtn" id="navMoreBtn" type="button" aria-expanded="false" aria-controls="navMore">
+        More <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="nav__moreMenu" id="navMore">
+        <a href="#bnmap">Food-insecurity map</a>
+        <a href="#partners">Partner with us</a>
+        <a href="#press">Press</a>
+        <a href="https://app.betternatureofficial.org/">Open the web app ↗</a>
+      </div>
+    </div>
   </nav>
   <div class="nav__ctas">
-    <a class="btn btn--ghost" href="#how">Volunteer</a>
+    <a class="btn btn--ghost nav__join" href="#signup">Sign up</a>
     <a class="btn btn--pink" href="#donate">Donate</a>
   </div>
   <button class="nav__burger" id="burger" aria-label="Menu" aria-expanded="false" aria-controls="navLinks">
@@ -70,9 +76,6 @@
     <div class="hero__media" id="heroMedia"></div>
   </div>
 
-  <div class="ticker">
-    <div class="ticker__track" id="tickerTrack"></div>
-  </div>
 </section>
 
 <!-- ══════════════════════════ MISSION -->
@@ -140,10 +143,27 @@
     <div class="eyebrow" id="chaptersEyebrow"></div>
     <h2 class="chapters__title" id="chaptersTitle"></h2>
     <p class="chapters__body" id="chaptersBody"></p>
-    <div class="chapters__grid" id="chaptersGrid"></div>
-    <div class="chapters__cta">
-      <a class="btn btn--forest btn--lg" id="startChapterBtn">Start a chapter in your city</a>
+    <div class="chapters__tools">
+      <label class="chapters__search mx-glass">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="chapterSearch" type="search" placeholder="Search a city or country" aria-label="Search chapters" autocomplete="off" />
+      </label>
+      <div class="chapters__filters" id="chapterFilters" role="group" aria-label="Filter chapters by country"></div>
+      <label class="chapters__sort">
+        <span>Sort</span>
+        <select id="chapterSort" aria-label="Sort chapters">
+          <option value="region">By region</option>
+          <option value="az">A–Z</option>
+          <option value="members">Most members</option>
+        </select>
+      </label>
+      <div class="chapters__nav">
+        <span class="chapters__count" id="chapterCount" aria-live="polite"></span>
+        <button type="button" class="chapters__arrow" id="chaptersPrev" aria-label="Previous chapters"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="chapters__arrow" id="chaptersNext" aria-label="Next chapters"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
     </div>
+    <div class="chapters__grid" id="chaptersGrid"></div>
   </div>
 </section>
 
@@ -158,7 +178,9 @@
       <div class="logo-marquee__track" id="partnerLogos"></div>
     </div>
 
-    <div class="partners__pitch">
+    <!-- The partner pitch lived here too; "Get involved → For restaurants"
+         is now the one place that asks businesses to sign up. -->
+    <div class="partners__pitch" hidden>
       <h3 id="pitchTitle"></h3>
       <p id="pitchBody"></p>
       <a class="btn btn--pink btn--lg" id="pitchCta"></a>
@@ -218,13 +240,13 @@
 
     <div class="donate__cta">
       <a class="btn btn--ghost btn--lg" id="donateCta" target="_blank" rel="noreferrer"></a>
-      <small>Powered by Zeffy — 100% of your donation goes to BetterNature. Zero platform fees.</small>
     </div>
   </div>
 </section>
 
 <!-- ══════════════════════════ GET THE APP -->
-<section class="getapp" id="getapp">
+<!-- Folded into the Join section below (accounts are made in the app). -->
+<section class="getapp" id="getapp" hidden>
   <div class="container getapp__grid">
     <div class="getapp__left">
       <div class="eyebrow eyebrow--pink" id="getappEyebrow"></div>
@@ -310,19 +332,12 @@
   </div>
 </footer>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="content.js"></script>
 <script defer src="animate.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/motion@11.11.13/dist/motion.js" integrity="sha384-czaB7zH9slIhvFgUxhO8sSnYf4cnCeV2N3zOvDnNKFzRKu5AwqDKEZlCLsaQkoop" crossorigin="anonymous"></script>
+<script defer src="motion.js"></script>
 <script src="app.js"></script>
 <script type="module" src="live-stats.js"></script>
-<script type="module">
-  // Bridge: expose Firebase signup to the non-module app.js so website signup
-  // creates a real account that works in the app + web app + website.
-  import { signUp, emailAlreadyRegistered } from './firebase-auth.js';
-  window.BN_SIGNUP = signUp;
-  // Used by app.js to preflight the signup form: if the email is already
-  // a Firebase account we surface the error before submitting anything.
-  window.BN_EMAIL_TAKEN = emailAlreadyRegistered;
-</script>
+
 </body>
 </html>
