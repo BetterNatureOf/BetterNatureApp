@@ -31,6 +31,7 @@ export async function fetchOrgStats() {
     const snap = await getDoc(doc(db, 'org_stats', 'global'));
     const d = snap.exists() ? snap.data() : {};
     return {
+      reporting: { live: snap.exists(), floorFields: Object.entries(BASELINE).filter(([key, value]) => value > (Number(d[key]) || 0)).map(([key]) => key) },
       meals:       Math.max(BASELINE.meals,       d.meals       || 0),
       lbs:         Math.max(BASELINE.lbs,         d.lbs         || 0),
       individuals: Math.max(BASELINE.individuals, d.individuals || 0),
@@ -45,7 +46,7 @@ export async function fetchOrgStats() {
     // Even on network failure, fall back to baseline so the ticker
     // never renders zeros. Every visible number is a real total we've
     // publicly claimed.
-    return { ...BASELINE };
+    return { ...BASELINE, reporting: { live: false, floorFields: Object.keys(BASELINE) } };
   }
 }
 

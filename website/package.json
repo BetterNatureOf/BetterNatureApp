@@ -1,0 +1,19 @@
+{
+  "name": "betternature-public-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/chapter-chart.js src/insight-motion.js --bundle --minify --format=esm --target=es2020 --outdir=vendor --legal-comments=linked",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "node scripts/verify-browser.cjs"
+  },
+  "dependencies": {
+    "animejs": "4.2.2",
+    "echarts": "6.0.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.1",
+    "esbuild": "0.25.12",
+    "playwright": "^1.65.1"
+  }
+}

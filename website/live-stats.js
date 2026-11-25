@@ -59,6 +59,12 @@ async function paintLiveStats() {
     // used to land after ours and put the static numbers back. The impact
     // cards only exist once app.js has painted.
     const [stats] = await Promise.all([fetchOrgStats(), waitForNode('#impactGrid .stat')]);
+    const source = document.getElementById('impactSource');
+    if (source) source.textContent = !stats.reporting?.live
+      ? 'Source: previously published Better Nature totals. Live totals are unavailable right now.'
+      : stats.reporting.floorFields.length
+        ? 'Source: current organization counters with previously published totals retained where the counters are lower or incomplete. These are not independently audited figures.'
+        : 'Source: current organization counters, read when this page opened. These are not independently audited figures.';
     const total = (stats.meals || 0) + (stats.lbs || 0) + (stats.individuals || 0)
                 + (stats.co2 || 0) + (stats.water || 0);
     if (total === 0) return; // leave static CONTENT numbers in place

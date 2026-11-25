@@ -239,6 +239,14 @@
     ? liveChapters
     : C.chapters.featured;
   const liveLoaded = Array.isArray(liveChapters);
+  window.BN_CHAPTER_DIRECTORY = {
+    source: liveLoaded ? 'live' : 'published',
+    chapters: renderChapters.map(ch => ({
+      region: regionOf(ch.country || '') || 'Unspecified',
+      members: Number.isFinite(ch.member_count) ? ch.member_count : Number.isFinite(ch.members) ? ch.members : null,
+    })),
+  };
+  window.dispatchEvent(new CustomEvent('bn:chapters', { detail: window.BN_CHAPTER_DIRECTORY }));
 
   if (renderChapters.length === 0) {
     setHTML('#chaptersGrid', `
@@ -330,15 +338,19 @@
       filters.innerHTML = regions.length > 1
         ? ['', ...regions].map((r) => {
             const n = r ? cards.filter((c) => c.dataset.region === r).length : cards.length;
-            return `<button type="button" class="chapters__chip${r ? '' : ' is-active'}" data-region="${r}">${r || 'All'} <span>${n}</span></button>`;
+            return `<button type="button" class="chapters__chip${r ? '' : ' is-active'}" aria-pressed="${!r}" data-region="${r}">${r || 'All'} <span>${n}</span></button>`;
           }).join('')
         : '';
       filters.querySelectorAll('.chapters__chip').forEach((chip) => chip.addEventListener('click', () => {
         region = chip.dataset.region;
-        filters.querySelectorAll('.chapters__chip').forEach((c) => c.classList.toggle('is-active', c === chip));
+        filters.querySelectorAll('.chapters__chip').forEach((c) => { c.classList.toggle('is-active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
         apply();
       }));
     }
+    window.addEventListener('bn:region', event => {
+      const chip = Array.from(filters?.querySelectorAll('.chapters__chip') || []).find(c => c.dataset.region === event.detail);
+      if (chip) chip.click();
+    });
     if (sortSel) sortSel.addEventListener('change', () => { sort = sortSel.value; apply(); });
 
     // Reorder the rail without touching the DOM (keeps modal indices valid).
@@ -369,7 +381,7 @@
       }
       if (count) count.textContent = `${shown} of ${cards.length} chapter${cards.length === 1 ? '' : 's'}`;
       applySort();
-      rail.scrollTo({ left: 0, behavior: 'smooth' });
+      rail.scrollTo({ left: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
       updateArrows();
     }
     function updateArrows() {
@@ -377,7 +389,7 @@
       if (prev) prev.disabled = rail.scrollLeft <= 2;
       if (next) next.disabled = rail.scrollLeft >= max;
     }
-    const page = (dir) => rail.scrollBy({ left: dir * rail.clientWidth * 0.85, behavior: 'smooth' });
+    const page = (dir) => rail.scrollBy({ left: dir * rail.clientWidth * 0.85, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
     if (prev) prev.addEventListener('click', () => page(-1));
     if (next) next.addEventListener('click', () => page(1));
     rail.addEventListener('scroll', updateArrows, { passive: true });
@@ -646,7 +658,7 @@
       load();
       const pick = $('#zeffyPick');
       if (pick) pick.innerHTML = `Enter <strong>${tier.dataset.amount}</strong> in the form below, monthly or one time.`;
-      frame.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      frame.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
     }));
   }
 
@@ -798,21 +810,7 @@
   updateNav();
   window.addEventListener('scroll', updateNav, { passive: true });
 
-  // Mobile menu toggle
-  const burger = $('#burger');
-  function setMenuOpen(open) {
-    nav.classList.toggle('is-open', open);
-    burger.setAttribute('aria-expanded', String(open));
-  }
-  burger.addEventListener('click', () => setMenuOpen(!nav.classList.contains('is-open')));
-  document.querySelectorAll('.nav__links a, .nav__ctas a').forEach(a => {
-    a.addEventListener('click', () => setMenuOpen(false));
-  });
-  nav.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !nav.classList.contains('is-open')) return;
-    setMenuOpen(false);
-    burger.focus();
-  });
+  // Mobile navigation initializes independently in appearance.js.
 
   // Scroll reveal
   const io = new IntersectionObserver((entries) => {
@@ -852,7 +850,7 @@
       if (!tgt) return;
       e.preventDefault();
       const top = tgt.getBoundingClientRect().top + window.scrollY - 70;
-      window.scrollTo({ top, behavior: 'smooth' });
+      window.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
     });
   });
 })();

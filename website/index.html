@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#f8faf6" />
+  <script src="appearance.js"></script>
   <title>BetterNature — Rescue. Restore. Protect.</title>
   <meta name="description" content="Youth-led nonprofit: three programs, one mission. We rescue surplus food, plant native forests, and clean the waterways communities depend on. 38 cities." />
   <meta property="og:title" content="BetterNature — Rescue. Restore. Protect." />
@@ -16,8 +19,10 @@
 
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="motion.css" />
+  <link rel="stylesheet" href="experience.css" />
 </head>
 <body>
+<a class="skip-link" href="#top">Skip to content</a>
 
 <!-- ══════════════════════════ NAV -->
 <header class="nav" id="nav">
@@ -44,6 +49,7 @@
     </div>
   </nav>
   <div class="nav__ctas">
+    <label class="appearance"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor"/></svg><span class="sr-only">Appearance</span><select data-appearance aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
     <a class="btn btn--ghost nav__join" href="#signup">Sign up</a>
     <a class="btn btn--pink" href="#donate">Donate</a>
   </div>
@@ -52,7 +58,7 @@
   </button>
 </header>
 
-<main id="top">
+<main id="top" tabindex="-1">
 
 <!-- ══════════════════════════ HERO -->
 <section class="hero">
@@ -94,6 +100,7 @@
     <div class="eyebrow eyebrow--light" id="impactEyebrow"></div>
     <h2 class="impact__title" id="impactTitle"></h2>
     <div class="impact__grid" id="impactGrid" data-reveal-stagger></div>
+    <details class="impact-method"><summary>Where these numbers come from</summary><p id="impactSource">Published Better Nature totals. Live reporting is being checked.</p><p>Food weight, service counts and environmental estimates are different measures and must not be added together. Service counts do not establish a count of unique people. Environmental figures are reported estimates, not direct measurements; a published calculation method is not yet available here.</p></details>
   </div>
 </section>
 
@@ -143,12 +150,27 @@
     <div class="eyebrow" id="chaptersEyebrow"></div>
     <h2 class="chapters__title" id="chaptersTitle"></h2>
     <p class="chapters__body" id="chaptersBody"></p>
+    <section class="network" id="chapterInsights" aria-labelledby="networkTitle">
+      <div class="network__intro">
+        <span class="network__label">A connected community</span>
+        <h3 id="networkTitle">Local roots.<br> Shared purpose.</h3>
+        <p>Explore the chapters behind the work. Choose a region below to find your community.</p>
+        <p class="network__source" id="networkSource" role="status">Loading the chapter directory…</p>
+      </div>
+      <div class="network__data">
+        <div class="network__toolbar"><label for="networkMetric">View</label><select id="networkMetric"><option value="chapters">Chapters by region</option><option value="members">Reported members by region</option></select><button type="button" id="networkExport" disabled>Export CSV</button></div>
+        <p class="network__summary" id="networkSummary" aria-live="polite">Chapter data will appear here when available.</p>
+        <div id="networkChart" class="network__chart" aria-hidden="true"></div>
+        <details class="network__table"><summary>View accessible data table</summary><table><caption id="networkCaption">Chapter directory by region</caption><thead><tr><th scope="col">Region</th><th scope="col" id="networkUnit">Chapters</th></tr></thead><tbody id="networkRows"></tbody></table></details>
+        <div class="network__regions" id="networkRegions" role="group" aria-label="Find chapters by region"></div>
+      </div>
+    </section>
     <div class="chapters__tools">
       <label class="chapters__search mx-glass">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <input id="chapterSearch" type="search" placeholder="Search a city or country" aria-label="Search chapters" autocomplete="off" />
       </label>
-      <div class="chapters__filters" id="chapterFilters" role="group" aria-label="Filter chapters by country"></div>
+      <div class="chapters__filters" id="chapterFilters" role="group" aria-label="Filter chapters by region"></div>
       <label class="chapters__sort">
         <span>Sort</span>
         <select id="chapterSort" aria-label="Sort chapters">
@@ -338,6 +360,7 @@
 <script defer src="motion.js"></script>
 <script src="app.js"></script>
 <script type="module" src="live-stats.js"></script>
+<script type="module" src="network-insights.js"></script>
 
 </body>
 </html>
