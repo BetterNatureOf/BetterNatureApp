@@ -12,7 +12,8 @@
     "test:homepage": "node scripts/verify-homepage.cjs",
     "test:ratios": "node scripts/verify-ratios.cjs",
     "test:menu": "node scripts/verify-menu.cjs",
-    "test:mobile": "node scripts/verify-mobile-layout.cjs"
+    "test:mobile": "node scripts/verify-mobile-layout.cjs",
+    "test:instagram": "node scripts/verify-instagram.cjs"
   },
   "dependencies": {
     "animejs": "4.2.2",

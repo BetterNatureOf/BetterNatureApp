@@ -690,11 +690,13 @@
           </a>`).join('')}
       </div>
       <div class="join__foot">
-        <span class="join__qr-wrap"><img class="join__qr" src="images/app-qr.svg" alt="QR code that opens the BetterNature app" width="200" height="200" loading="lazy" /><img class="join__qr-brand" src="logo.png" alt="" aria-hidden="true" width="36" height="36" /></span>
-        <p><strong>Take Better Nature with you.</strong><br>Scan to open the app on your phone${stores ? `, or get it on ${stores}` : ''}. Already a member? <a href="${appUrl(APP_ROUTES.login)}">Sign in</a><br><button type="button" class="share-app" id="shareApp"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v7h14v-7" stroke-linecap="round" stroke-linejoin="round"/></svg> Share app link</button><span class="share-status" id="shareStatus" role="status"></span></p>
+        <details class="join__qrDisclosure" data-mobile-disclosure open><summary>Show the app QR code <span aria-hidden="true">⌄</span></summary><span class="join__qr-wrap"><img class="join__qr" src="images/app-qr.svg" alt="QR code that opens the BetterNature app" width="200" height="200" loading="lazy" /><img class="join__qr-brand" src="logo.png" alt="" aria-hidden="true" width="36" height="36" /></span></details>
+        <p><strong>Take Better Nature with you.</strong><br><span class="join__copy--desktop">Scan to open the app on your phone${stores ? `, or get it on ${stores}` : ''}.</span><span class="join__copy--mobile">Open the app or share it with a friend.</span> Already a member? <a href="${appUrl(APP_ROUTES.login)}">Sign in</a><br><a class="btn btn--forest join__open" href="${appUrl('')}">Open the app ↗</a><button type="button" class="share-app" id="shareApp"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v7h14v-7" stroke-linecap="round" stroke-linejoin="round"/></svg> Share app link</button><span class="share-status" id="shareStatus" role="status"></span></p>
       </div>
     `);
   }
+
+  window.dispatchEvent(new Event('bn:content-ready'));
 
   const shareApp = $('#shareApp');
   shareApp?.addEventListener('click', async () => {
