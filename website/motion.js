@@ -82,6 +82,7 @@
       if (top <= line && top > best) { best = top; current = a; }
     });
     navLinks.forEach((a) => a.classList.toggle('is-active', a === current));
+    $$('.nav__quick a').forEach(a => { const active = !!current && a.getAttribute('href') === current.getAttribute('href'); a.classList.toggle('is-active', active); if (active) a.setAttribute('aria-current','location'); else a.removeAttribute('aria-current'); });
     if (moreBtn) moreBtn.classList.toggle('is-active', !!(current && current.closest('.nav__moreMenu')));
 
     // Adaptive nav: is a dark section under the bar right now?
@@ -178,6 +179,7 @@
   }
 
   function enhanceHero() {
+    if (hero?.dataset.editorial === 'true') return;
     if (headline && splitWords(headline)) {
       groupPhrases(headline);
       // Two frames so the hidden state paints before we release it.

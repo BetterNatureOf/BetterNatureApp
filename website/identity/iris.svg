@@ -1,1 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none"><path d="M21 48h54c-2 20-12 30-27 30S23 68 21 48Z" stroke="#3D7A67" stroke-width="3.5" stroke-linejoin="round"/><path d="M16 48h64M32 84h32M48 46V25" stroke="#3D7A67" stroke-width="3.5" stroke-linecap="round"/><path d="M48 33C32 33 29 19 29 15c15 0 19 8 19 18Z" fill="#E58BA8"/><path d="M48 25C48 13 59 10 68 11c-1 12-8 19-20 14Z" fill="#3D7A67"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="IRIS food rescue">
+  <defs>
+    <radialGradient id="halo" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#FFF6F9"/><stop offset="1" stop-color="#FFD9E6"/></radialGradient>
+    <linearGradient id="std" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFA8C8"/><stop offset="1" stop-color="#FF4D8D"/></linearGradient>
+    <linearGradient id="fall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF4D8D"/><stop offset="1" stop-color="#C41E5A"/></linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5DB088"/><stop offset="1" stop-color="#2A5648"/></linearGradient>
+  </defs>
+  <circle cx="120" cy="120" r="104" fill="url(#halo)"/>
+  <circle cx="120" cy="120" r="103" fill="none" stroke="#fff" stroke-width="2" stroke-opacity=".9"/>
+  <!-- stem + leaf -->
+  <path d="M120 134V198" stroke="#3D7A67" stroke-width="5" stroke-linecap="round"/>
+  <path d="M121 186C134 166 152 158 172 152C164 174 144 188 121 192Z" fill="url(#leaf)"/>
+  <!-- side standards (behind) -->
+  <path d="M120 132C104 118 103 90 120 70C137 90 136 118 120 132Z" fill="url(#std)" fill-opacity=".7" transform="rotate(-30 120 132)"/>
+  <path d="M120 132C104 118 103 90 120 70C137 90 136 118 120 132Z" fill="url(#std)" fill-opacity=".7" transform="rotate(30 120 132)"/>
+  <!-- centre standard -->
+  <path d="M120 134C98 114 97 76 120 46C143 76 142 114 120 134Z" fill="url(#std)"/>
+  <path d="M120 128C112 112 112 84 120 62" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- falls (drooping petals) -->
+  <path d="M117 130C95 120 64 124 48 148C68 164 100 158 118 136Z" fill="url(#fall)"/>
+  <path d="M123 130C145 120 176 124 192 148C172 164 140 158 122 136Z" fill="url(#fall)"/>
+  <!-- golden beards -->
+  <path d="M110 134L80 143M130 134L160 143" stroke="#FFC27A" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="120" cy="134" r="6" fill="#FFC27A"/>
+<g fill="none" stroke-linecap="round">
+<path d="M117 125C110 101 113 83 119 66M124 123C129 101 128 83 123 69" stroke="#FFF3F7" stroke-opacity=".6" stroke-width="1.4"/>
+<path d="M108 136C92 133 78 137 62 147M130 136C145 133 162 138 178 147" stroke="#FFCFDF" stroke-opacity=".7" stroke-width="1.5"/>
+<path d="m129 184 33-23m-19 11 2-8m-6 13 11-1" stroke="#B0DDBC" stroke-opacity=".7" stroke-width="1.3"/>
+<path d="M117 142v41" stroke="#77B994" stroke-width="1.2"/>
+</g><g fill="#FFD69B"><circle cx="96" cy="138" r="1.7"/><circle cx="88" cy="141" r="1.5"/><circle cx="145" cy="138" r="1.7"/><circle cx="153" cy="141" r="1.5"/></g>
+</svg>

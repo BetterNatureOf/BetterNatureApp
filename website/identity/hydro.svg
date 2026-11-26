@@ -1,1 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none"><path d="M48 10C39 25 23 42 23 57a25 25 0 0 0 50 0C73 42 57 25 48 10Z" stroke="#3D7A67" stroke-width="3.5" stroke-linejoin="round"/><path d="M24 54c9-8 15-8 24 0s15 8 24 0M27 66c8-6 14-6 21 0s14 6 21 0" stroke="#3D7A67" stroke-width="3.5" stroke-linecap="round"/><circle cx="75" cy="24" r="6" fill="#E58BA8"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Hydro waterways">
+  <defs>
+    <radialGradient id="halo" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#F6FBFE"/><stop offset="1" stop-color="#CFE9F6"/></radialGradient>
+    <linearGradient id="drop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8EDCF2"/><stop offset=".55" stop-color="#3FA9D2"/><stop offset="1" stop-color="#1C6F95"/></linearGradient>
+    <clipPath id="d"><path d="M120 38C120 38 70 98 70 136A50 50 0 0 0 170 136C170 98 120 38 120 38Z"/></clipPath>
+  </defs>
+  <circle cx="120" cy="120" r="104" fill="url(#halo)"/>
+  <circle cx="120" cy="120" r="103" fill="none" stroke="#fff" stroke-width="2" stroke-opacity=".9"/>
+  <!-- ripples under the drop -->
+  <ellipse cx="120" cy="196" rx="56" ry="7" fill="none" stroke="#3FA9D2" stroke-opacity=".35" stroke-width="3"/>
+  <ellipse cx="120" cy="196" rx="30" ry="4" fill="none" stroke="#3FA9D2" stroke-opacity=".55" stroke-width="3"/>
+  <!-- the drop -->
+  <path d="M120 38C120 38 70 98 70 136A50 50 0 0 0 170 136C170 98 120 38 120 38Z" fill="url(#drop)"/>
+  <g clip-path="url(#d)">
+    <path d="M60 138Q78 126 96 138T132 138T168 138T204 138V200H60Z" fill="#fff" fill-opacity=".28"/>
+    <path d="M60 156Q78 145 96 156T132 156T168 156T204 156V200H60Z" fill="#0F5577" fill-opacity=".35"/>
+  </g>
+  <path d="M120 38C120 38 70 98 70 136A50 50 0 0 0 170 136C170 98 120 38 120 38Z" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="2"/>
+  <ellipse cx="98" cy="110" rx="7" ry="17" fill="#fff" fill-opacity=".6" transform="rotate(24 98 110)"/>
+<g clip-path="url(#d)" fill="none" stroke-linecap="round">
+<path d="M91 119c2-17 14-38 25-54" stroke="#DDF7FD" stroke-opacity=".7" stroke-width="1.5"/>
+<path d="M77 145q19-12 40 0t43 0M79 166q19-9 40 1t39-1" stroke="#D5F4FF" stroke-opacity=".6" stroke-width="1.3"/>
+<path d="M136 172q16-5 23-16" stroke="#164D6A" stroke-opacity=".4" stroke-width="1.2"/>
+</g><ellipse cx="120" cy="196" rx="72" ry="11" fill="none" stroke="#5BB8DA" stroke-opacity=".18" stroke-width="1.2"/>
+<g fill="#DFF8FF" fill-opacity=".75"><circle cx="143" cy="123" r="2"/><circle cx="150" cy="114" r="1.2"/><circle cx="88" cy="156" r="1.4"/></g>
+</svg>

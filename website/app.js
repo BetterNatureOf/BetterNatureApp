@@ -47,7 +47,7 @@
       if (on) return;
       const sec = document.getElementById(key);
       if (sec) sec.style.display = 'none';
-      document.querySelectorAll(`.nav__links a[href="#${key}"]`).forEach(a => a.style.display = 'none');
+      document.querySelectorAll(`#nav a[href="#${key}"]`).forEach(a => a.style.display = 'none');
     });
   }
 
@@ -65,38 +65,48 @@
   const APP_ROUTES = { volunteer: 'signup', business: 'signup/restaurant', chapter: 'start-chapter', login: 'login' };
   const setHref = (sel, val) => { const el = $(sel); if (el) el.href = val; };
 
+  setHref('.nav__join', appUrl('signup'));
+  setHref('.nav__signin', appUrl(APP_ROUTES.login));
+  document.querySelectorAll('.nav__partner').forEach(link => link.href = appUrl(APP_ROUTES.business));
+  setHref('.nav__ctas > .btn--pink', C.brand.donateUrl || C.donate.cta.href);
+
   // ── HERO ────────────────────────────────────────────────────────────
-  set('#heroEyebrow', C.hero.eyebrow);
-  // Migrate the previous cached CMS tagline without blocking future copy edits.
+  // Keep the opening intentionally short; program detail lives below it.
+  set('#heroEyebrow', C.hero.introEyebrow || 'A youth-led nonprofit');
   const previousTagline = C.hero.headline?.trim() === 'Feed people. Plant forests.' && C.hero.headlineItalic?.trim() === 'Protect the water.';
   set('#heroHeadline', previousTagline ? 'Care for people.' : C.hero.headline);
   set('#heroHeadlineItalic', previousTagline ? 'Care for our planet.' : C.hero.headlineItalic);
-  set('#heroSub', C.hero.subhead);
+  set('#heroSub', C.hero.introLine || 'Help rescue food, restore native forests, and protect waterways.');
+  // Decorate text nodes rather than interpreting CMS copy as HTML.
+  const accentWords = (selector, pattern, classFor) => {
+    const node = $(selector);
+    if (!node) return;
+    const copy = node.textContent;
+    const parts = document.createDocumentFragment();
+    let end = 0;
+    for (const match of copy.matchAll(pattern)) {
+      parts.append(document.createTextNode(copy.slice(end, match.index)));
+      const word = document.createElement('span');
+      word.className = classFor(match[0].toLowerCase());
+      word.textContent = match[0]; parts.append(word);
+      end = match.index + match[0].length;
+    }
+    parts.append(document.createTextNode(copy.slice(end)));
+    node.replaceChildren(parts);
+  };
+  accentWords('#heroHeadline', /\bpeople\b/gi, () => 'hero__highlight hero__highlight--people');
+  accentWords('#heroHeadlineItalic', /\bplanet\b/gi, () => 'hero__highlight hero__highlight--planet');
+  accentWords('#heroSub', /\bnative forests\b|\bwaterways\b|\bfood\b/gi, word => 'hero__cause hero__cause--' + ({food:'food','native forests':'forest',waterways:'water'}[word]));
+
   const heroCta1 = $('#heroCta1');
-  heroCta1.textContent = C.hero.primaryCta.text;
-  heroCta1.href = C.hero.primaryCta.href;
-  const heroCta2 = $('#heroCta2');
-  heroCta2.textContent = C.hero.secondaryCta.text;
-  heroCta2.href = C.hero.secondaryCta.href;
+  heroCta1.innerHTML = 'Find your chapter <span aria-hidden="true">↗</span>';
+  heroCta1.href = '#chapters';
 
   // Ticker (duplicate for seamless loop)
   const tickerItems = C.hero.tickerStats.map(s =>
     `<span class="ticker__item"><span class="ticker__value">${s.value}</span><span class="ticker__label">${s.label}</span></span><span class="ticker__dot">●</span>`
   ).join('');
   setHTML('#tickerTrack', tickerItems + tickerItems);
-
-  // Preserve CMS edits, but serve the three existing hero photos locally for reliable loading.
-  const heroImages = {
-    '1710092784814-4a6f158913b8': 'images/iris-community.jpg',
-    '1777150895644-2ca253ee1c93': 'images/native-trees.jpg',
-    '1758599669008-fb6f8eda6f53': 'images/waterway-cleanup.jpg',
-  };
-  const heroSource = src => Object.entries(heroImages).find(([id]) => src?.includes(id))?.[1] || src;
-  if (C.hero.media && C.hero.media.length) {
-    setHTML('#heroMedia', C.hero.media.map((m, i) =>
-      `<figure class="hero__tile hero__tile--${i + 1}${m.program ? ` hero__tile--${m.program}` : ''}"><img src="${heroSource(m.src)}" alt="${m.alt || ''}" ${i === 0 ? 'fetchpriority="high"' : 'loading="eager"'} />${m.label ? `<figcaption class="hero__tag">${m.label}</figcaption>` : ''}</figure>`
-    ).join(''));
-  }
 
   // ── MISSION ─────────────────────────────────────────────────────────
   set('#missionEyebrow', C.mission.eyebrow);
@@ -152,7 +162,7 @@
       ? `<a href="${appUrl('')}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>`
       : '';
     return `
-    <div class="program reveal ${i % 2 === 1 ? 'program--reverse' : ''}" data-program="${key}">
+    <div id="program-${key}" class="program reveal ${i % 2 === 1 ? 'program--reverse' : ''}" data-program="${key}">
       <div class="program__inner">
         <div class="program__code">${code}</div>
         <h3 class="program__title">${title}</h3>
@@ -415,138 +425,42 @@
     apply();
   }
 
-  // Chapter modal
+  // Public chapter people only; no private user collection is read.
+  const { renderChapterPeople, escapeText, safeLink } = await import('./chapter-people.js?v=navigation-people-2');
   const modal = $('#chapterModal');
   const modalBody = $('#chapterModalBody');
-  const openChapter = (idx) => {
+  let previousOverflow = '';
+  const openChapter = idx => {
     const ch = renderChapters[idx];
     if (!ch) return;
-    // Officers from the denormalized blob the app writes. Fall back
-    // to the static roster on legacy entries.
-    const off = ch.officers || {};
-    const officerRows = [
-      ['President',            off.president],
-      ['Vice President',       off.vice_president],
-      ['Treasurer',            off.treasurer],
-      ['Volunteer Coordinator', off.volunteer_coordinator],
-      ['Secretary',            off.secretary],
-    ].filter(([, p]) => p && (p.name || p.email)).map(([label, p]) => `
-      <li class="chapter-modal__member">
-        <div>
-          <strong>${p.name || p.email}</strong>
-          <span>${label}</span>
-        </div>
-      </li>
-    `).join('');
-    // Roster sources, in priority order:
-    //   1. ch.officers (denormalized leadership) → officerRows
-    //   2. ch.roster   (denormalized membership) → memberRows
-    //   3. C.chapters.featured[].roster (static fallback for legacy
-    //      chapters that don't have ch.roster yet)
-    // We render officers + members ONCE, de-duping the members against
-    // the officer names so the president doesn't appear twice. The
-    // static fallback only fires when there's no live roster — never
-    // alongside, otherwise everyone shows up twice.
-    const norm = (s) => String(s || '').trim().toLowerCase();
-    const officerKeys = new Set(
-      [off.president, off.vice_president, off.treasurer, off.volunteer_coordinator, off.secretary]
-        .filter(Boolean)
-        .flatMap((p) => [norm(p.name), norm(p.email), norm(p.id)].filter(Boolean))
-    );
-    const liveRoster = Array.isArray(ch.roster) ? ch.roster : [];
-    const memberRows = liveRoster
-      .filter((m) => {
-        if (!m.name) return false;
-        const keys = [norm(m.name), norm(m.email), norm(m.id)].filter(Boolean);
-        return !keys.some((k) => officerKeys.has(k));
-      })
-      .map((m) => `
-        <li class="chapter-modal__member">
-          <div>
-            <strong>${m.name}</strong>
-            <span>${m.role || 'Member'}</span>
-          </div>
-          ${m.instagram ? `<a href="${m.instagram}" target="_blank" rel="noreferrer" aria-label="${m.name} on Instagram">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
-          </a>` : ''}
-        </li>
-      `).join('');
-    // Only render the static fallback if there's nothing live to show.
-    const haveLive = (officerRows && officerRows.length) || (memberRows && memberRows.length);
-    const staticFallback = haveLive ? '' : (Array.isArray(C.chapters.featured) ? C.chapters.featured : [])
-      .filter((f) => norm(f.city) === norm(ch.city))
-      .flatMap((f) => Array.isArray(f.roster) ? f.roster : [])
-      .map((m) => `
-        <li class="chapter-modal__member">
-          <div>
-            <strong>${m.name}</strong>
-            <span>${m.role || ''}</span>
-          </div>
-        </li>
-      `).join('');
-    const combined = (officerRows || '') + (memberRows || '') + (staticFallback || '');
-    const roster = combined || '<li class="chapter-modal__empty">Roster coming soon.</li>';
-    const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
-    const president = ch.president_name || ch.president || '—';
+    const count = typeof ch.member_count === 'number' ? ch.member_count : typeof ch.members === 'number' ? ch.members : null;
+    const fallback = (C.chapters.featured || []).find(item => String(item.city).toLowerCase() === String(ch.city).toLowerCase())?.roster || [];
+    const instagram = safeLink(ch.instagram);
     modalBody.innerHTML = `
-      <div class="eyebrow eyebrow--pink">Chapter</div>
-      <h3 id="chapterModalTitle" class="chapter-modal__title">${ch.city || ''}${ch.state ? ', ' + ch.state : ''}</h3>
-      ${ch.description || ch.blurb ? `<p class="chapter-modal__blurb">${ch.description || ch.blurb}</p>` : ''}
-      <div class="chapter-modal__stats">
-        ${memberCount != null ? `<span><strong>${memberCount}</strong> member${memberCount === 1 ? '' : 's'}</span>` : ''}
-        <span>President: <strong>${president}</strong></span>
-        ${ch.instagram ? `<a class="chapter-modal__ig" href="${ch.instagram}" target="_blank" rel="noreferrer">@chapter on Instagram ↗</a>` : ''}
-      </div>
-      <h4 class="chapter-modal__subhead">Officers</h4>
-      <ul class="chapter-modal__roster">${roster}</ul>
-    `;
-    modal.classList.add('is-open');
-    modal.setAttribute('aria-hidden', 'false');
+      <header class="chapter-dialog__header">
+        <div class="eyebrow eyebrow--pink">Meet the chapter</div>
+        <h2 id="chapterModalTitle" class="chapter-modal__title">${escapeText(ch.city || ch.name)}${ch.state ? ', ' + escapeText(ch.state) : ''}</h2>
+        ${ch.description || ch.blurb ? `<p class="chapter-modal__blurb">${escapeText(ch.description || ch.blurb)}</p>` : ''}
+        <div class="chapter-modal__stats">${count != null ? `<span><strong>${count}</strong> member${count === 1 ? '' : 's'}</span>` : ''}${instagram ? `<a href="${escapeText(instagram)}" target="_blank" rel="noopener noreferrer">Chapter on Instagram ↗</a>` : ''}</div>
+      </header>
+      ${renderChapterPeople(ch, fallback)}`;
+    modalBody.querySelectorAll('.chapter-person img').forEach(img => img.addEventListener('error', () => img.remove(), {once:true}));
+    const search = modalBody.querySelector('[data-people-search]');
+    search?.addEventListener('input', () => {
+      const query = search.value.trim().toLowerCase(); let visible = 0;
+      modalBody.querySelectorAll('.chapter-person').forEach(card => { card.hidden = !card.dataset.search.includes(query); if (!card.hidden) visible++; });
+      modalBody.querySelectorAll('.chapter-people__group').forEach(group => group.hidden = ![...group.querySelectorAll('.chapter-person')].some(card => !card.hidden));
+      modalBody.querySelector('[data-people-status]').textContent = query ? `${visible} matching ${visible === 1 ? 'person' : 'people'}` : '';
+    });
+    previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    modal.showModal();
   };
-  const closeChapter = () => {
-    modal.classList.remove('is-open');
-    modal.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-  };
-  document.querySelectorAll('[data-chapter]').forEach(btn => {
-    btn.addEventListener('click', () => openChapter(Number(btn.dataset.chapter)));
-  });
-  modal.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', closeChapter));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('is-open')) closeChapter(); });
-
-  // ── PARTNERS ────────────────────────────────────────────────────────
-  set('#partnersEyebrow', C.partners.eyebrow);
-  set('#partnersTitle', C.partners.title);
-  set('#partnersBody', C.partners.body);
-
-  const partnerLogos = C.partners.logos.map(p => {
-    const obj = (typeof p === 'string') ? { name: p } : p;
-    const href = obj.website || obj.instagram || '';
-    const inner = obj.logo
-      ? `<img src="${obj.logo}" alt="${obj.name}" /><span>${obj.name}</span>`
-      : `<span>${obj.name}</span>`;
-    const igBadge = obj.instagram && obj.website
-      ? `<a class="partner-logo__ig" href="${obj.instagram}" target="_blank" rel="noreferrer" aria-label="${obj.name} on Instagram" onclick="event.stopPropagation()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
-        </a>`
-      : '';
-    return href
-      ? `<a class="partner-logo is-link" href="${href}" target="_blank" rel="noreferrer">${inner}${igBadge}</a>`
-      : `<span class="partner-logo">${inner}</span>`;
-  }).join('');
-  setHTML('#partnerLogos', partnerLogos);
-  const partnerRail = $('#partnerLogos').closest('.logo-marquee');
-  partnerRail.hidden = !partnerLogos.trim();
-  $('#partners').classList.toggle('partners--empty', !partnerLogos.trim());
-  const partnerLink = document.createElement('a'); partnerLink.className = 'btn btn--forest partner-action'; partnerLink.href = appUrl(''); partnerLink.textContent = 'Become a food partner ↗';
-  $('#partnersBody').after(partnerLink);
-
-  set('#pitchTitle', C.partners.pitch.title);
-  set('#pitchBody', C.partners.pitch.body);
-  const pitchCta = $('#pitchCta');
-  pitchCta.textContent = C.partners.pitch.cta.text;
-  pitchCta.href = C.partners.pitch.cta.href;
+  modal.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => modal.close()));
+  modal.addEventListener('click', event => { if (event.target === modal) modal.close(); });
+  modal.addEventListener('close', () => { document.body.style.overflow = previousOverflow; });
+  modal.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); modal.close(); } });
+  document.querySelectorAll('[data-chapter]').forEach(button => button.addEventListener('click', () => openChapter(Number(button.dataset.chapter))));
 
   // ── TESTIMONIALS ────────────────────────────────────────────────────
   setHTML('#testimonialsGrid', C.testimonials.map(t => `
@@ -563,16 +477,26 @@
   set('#teamEyebrow', C.team.eyebrow);
   set('#teamTitle', C.team.title);
   set('#teamBody', C.team.body);
-  setHTML('#teamGrid', C.team.members.map(m => `
-    <div class="member reveal">
-      <div class="member__photo" ${m.photo ? 'data-has-photo="true"' : ''}>
-        ${m.photo ? `<img src="${m.photo}" alt="${m.name}" />` : (m.name.trim()[0] || '—')}
+  const memberText = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  setHTML('#teamGrid', C.team.members.map(m => {
+    const initials = String(m.name || '').trim().split(/\s+/).filter(Boolean).map(word => word[0]).filter((_, i, all) => i === 0 || i === all.length - 1).join('');
+    let profile = m.linkedin || (m.name?.trim().toLowerCase() === 'satvik koya' ? 'https://www.linkedin.com/in/satvik-koya-162041286/' : '');
+    try { const url = new URL(profile); if (url.protocol !== 'https:' || !['linkedin.com','www.linkedin.com'].includes(url.hostname) || !url.pathname.startsWith('/in/')) profile = ''; } catch { profile = ''; }
+    const portrait = m.photo || (m.name?.trim().toLowerCase() === 'satvik koya' ? 'images/team/satvik-koya.jpg' : '');
+    return `<article class="member reveal">
+      <div class="member__photo" ${portrait ? 'data-has-photo="true"' : ''}>
+        <span class="member__initials" aria-hidden="true">${memberText(initials)}</span>
+        ${portrait ? `<img src="${memberText(portrait)}" alt="${memberText(m.name)}" width="160" height="200" loading="lazy" decoding="async">` : ''}
       </div>
-      <div class="member__name">${m.name}</div>
-      <div class="member__role">${m.role}</div>
-      ${m.city ? `<div class="member__city">${m.city}</div>` : ''}
-    </div>
-  `).join(''));
+      <div class="member__info">
+        <h3 class="member__name">${memberText(m.name)}</h3>
+        <p class="member__role">${memberText(m.role)}</p>
+        ${m.city ? `<p class="member__city"><svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M19 10c0 5-7 10-7 10S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>${memberText(m.city)}</p>` : ''}
+        ${profile ? `<a class="member__profile" href="${memberText(profile)}" target="_blank" rel="noopener noreferrer" aria-label="See profile for ${memberText(m.name)} on LinkedIn (opens in a new tab)"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3.5 9h3v12h-3V9Zm5.5 0h3v1.6c.5-.9 1.6-1.9 3.6-1.9 3.3 0 4.4 2.1 4.4 5.3v7h-3v-6.4c0-1.7-.3-3.1-2.2-3.1-2 0-2.8 1.5-2.8 3.1V21H9V9Z"/></svg>See profile <span aria-hidden="true">↗</span></a>` : ''}
+      </div>
+    </article>`;
+  }).join(''));
+  document.querySelectorAll('#teamGrid .member__photo img').forEach(img => img.addEventListener('error', () => img.remove(), {once:true}));
 
   // ── EVENTS ──────────────────────────────────────────────────────────
   const fmtDate = (iso) => {
@@ -631,10 +555,12 @@
     setHTML('#donateEmbed', `
       <div class="donation-panel">
         <div><h3>Your support, put to work.</h3><p id="zeffyPick" aria-live="polite">Choose a suggested amount, or give what works for you.</p></div>
-        <a class="btn btn--pink" href="${fullUrl}" target="_blank" rel="noreferrer">Donate securely <span aria-hidden="true">↗</span></a>
-        <details class="donation-checkout" id="zeffyFrame"><summary>Prefer to give here? Open the secure form</summary>
+        <button type="button" class="btn donation-open" id="openDonation" aria-haspopup="dialog" aria-controls="zeffyFrame">Open secure donation form <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <dialog class="donation-dialog" id="zeffyFrame" aria-labelledby="donationDialogTitle">
+          <div class="donation-dialog__header"><div><h2 id="donationDialogTitle">Give to Better Nature</h2><p>Secure checkout by Zeffy</p></div><button type="button" class="donation-dialog__close" aria-label="Close donation form" autofocus>×</button></div>
           <div class="zeffy__stage"><p class="checkout-loading" role="status">Loading secure checkout…</p></div>
-        </details>
+          <p class="donation-dialog__fallback">Form not loading? <a href="${fullUrl}" target="_blank" rel="noreferrer">Open full-screen checkout ↗</a></p>
+        </dialog>
         <p class="donation-note">Checkout and email receipt provided by Zeffy. <a href="${fullUrl}" target="_blank" rel="noreferrer">Open full-screen checkout ↗</a></p>
       </div>`);
     const frame = $('#zeffyFrame'), stage = frame.querySelector('.zeffy__stage');
@@ -650,7 +576,32 @@
       ifr.addEventListener('load', () => { stage.querySelector('.checkout-loading')?.remove(); });
       stage.appendChild(ifr);
     };
-    frame.addEventListener('toggle', () => { if (frame.open) load(); });
+    // Keep the modal outside animated section ancestors; native dialog supplies
+    // focus containment, Escape dismissal, and an inert background.
+    document.body.appendChild(frame);
+    const opener = $('#openDonation');
+    let previousOverflow = '';
+    opener.addEventListener('click', () => {
+      if (frame.open) return;
+      previousOverflow = document.documentElement.style.overflow;
+      document.documentElement.style.overflow = 'hidden';
+      frame.showModal(); load();
+    });
+    const restorePage = () => {
+      document.documentElement.style.overflow = previousOverflow;
+      opener.focus({preventScroll:true});
+    };
+    const closeDonation = () => { frame.close(); restorePage(); };
+    frame.querySelector('.donation-dialog__close').addEventListener('click', closeDonation);
+    frame.addEventListener('cancel', event => { event.preventDefault(); closeDonation(); });
+    frame.addEventListener('click', event => {
+      const rect = frame.getBoundingClientRect();
+      if (event.target === frame && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) closeDonation();
+    });
+    frame.addEventListener('close', () => {
+      // A queued close event can arrive after a rapid reopen.
+      if (!frame.open) restorePage();
+    });
     document.querySelectorAll('#donateTiers .tier').forEach(tier => tier.addEventListener('click', () => {
       document.querySelectorAll('#donateTiers .tier').forEach(t => { t.classList.toggle('is-picked', t === tier); t.setAttribute('aria-pressed', String(t === tier)); });
       $('#zeffyPick').textContent = `Suggested gift: ${tier.dataset.amount}. You can enter this amount or choose another at checkout.`;
@@ -743,11 +694,26 @@
           </a>`).join('')}
       </div>
       <div class="join__foot">
-        <img class="join__qr" src="images/app-qr.svg" alt="QR code that opens the BetterNature app" width="176" height="176" loading="lazy" />
-        <p><strong>Take Better Nature with you.</strong><br>Scan to open the app on your phone${stores ? `, or get it on ${stores}` : ''}. Already a member? <a href="${appUrl(APP_ROUTES.login)}">Sign in</a></p>
+        <span class="join__qr-wrap"><img class="join__qr" src="images/app-qr.svg" alt="QR code that opens the BetterNature app" width="200" height="200" loading="lazy" /><img class="join__qr-brand" src="logo.png" alt="" aria-hidden="true" width="36" height="36" /></span>
+        <p><strong>Take Better Nature with you.</strong><br>Scan to open the app on your phone${stores ? `, or get it on ${stores}` : ''}. Already a member? <a href="${appUrl(APP_ROUTES.login)}">Sign in</a><br><button type="button" class="share-app" id="shareApp"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v7h14v-7" stroke-linecap="round" stroke-linejoin="round"/></svg> Share app link</button><span class="share-status" id="shareStatus" role="status"></span></p>
       </div>
     `);
   }
+
+  const shareApp = $('#shareApp');
+  shareApp?.addEventListener('click', async () => {
+    const url = `${APP_BASE}/`;
+    const status = $('#shareStatus');
+    try {
+      if (navigator.share) { await navigator.share({title:'Better Nature', url}); status.textContent = ''; }
+      else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(url); status.textContent = 'Link copied'; }
+      else throw new Error('Clipboard unavailable');
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      status.replaceChildren();
+      const input = document.createElement('input'); input.readOnly = true; input.value = url; input.setAttribute('aria-label','App link to copy'); status.append(input); input.focus(); input.select();
+    }
+  });
 
   // ── FOOTER ──────────────────────────────────────────────────────────
   set('#footerTagline', C.brand.tagline);
@@ -810,7 +776,7 @@
       if (entries.some((e) => e.isIntersecting)) {
         io3.disconnect();
         try {
-          const { mountBnMap } = await import('./bnmap.js?v=2026-11-25e');
+          const { mountBnMap } = await import('./bnmap.js?v=city-landmarks-1');
           mountBnMap(bnmapRoot);
         } catch (e) {
           console.warn('BN Map failed to mount', e);

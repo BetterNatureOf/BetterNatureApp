@@ -7,7 +7,10 @@
     "test": "node --test tests/*.test.js",
     "test:browser": "node scripts/verify-browser.cjs",
     "test:review": "node scripts/verify-review.cjs",
-    "test:pointer": "node scripts/verify-pointer.cjs"
+    "test:pointer": "node scripts/verify-pointer.cjs",
+    "test:donation": "node scripts/verify-donation.cjs",
+    "test:homepage": "node scripts/verify-homepage.cjs",
+    "test:ratios": "node scripts/verify-ratios.cjs"
   },
   "dependencies": {
     "animejs": "4.2.2",

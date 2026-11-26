@@ -1,9 +1,11 @@
+import { chapterLandmark } from './chapter-landmarks.js';
+
 // Community-fridge map for the marketing site.
 //
 // Look: a dark, engraved-style Better Nature map (deep forest ground,
 // hairline streets, relief shading, low dark 3D buildings) where the only
 // colour is ours: numbered green fridge pins, a pink pin + route for the
-// one you picked, cream blossom badges for chapters.
+// one you picked, and local landmark photographs for chapter cards.
 //
 // Engine:
 //   • Mapbox GL JS v3, Standard style in 3D, when `CONTENT.brand.mapboxToken`
@@ -35,6 +37,20 @@ const GEO_CACHE = 'bn_chapter_geo_v1';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = (n) => String(n).padStart(2, '0');
+// Keep the pin as a resilient fallback; landmark photos represent the city,
+// never a fridge or a chapter's physical meeting/drop-off address.
+function landmarkImage(chapter, thumbnail = false) {
+  const photo = chapterLandmark(chapter);
+  if (!photo) return ICON.pin;
+  return `${ICON.pin}<img src="${esc(thumbnail ? photo.thumbnail : photo.image)}" alt="${thumbnail ? '' : esc(photo.title + ', ' + (chapter.city || chapter.name))}" width="${thumbnail ? 96 : 1280}" height="${thumbnail ? 96 : 800}" loading="${thumbnail ? 'lazy' : 'eager'}" decoding="async" class="fmap__landmarkImage" style="object-position:${esc(photo.position || '50% 50%')}" />`;
+}
+function handleLandmarkErrors(container) {
+  container.querySelectorAll('.fmap__landmarkImage').forEach(img => {
+    img.addEventListener('error', () => img.remove(), { once: true });
+    if (img.complete && !img.naturalWidth) img.remove();
+  });
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ISO2 = { USA: 'US', CHL: 'CL', ECU: 'EC', GTM: 'GT', IND: 'IN', URY: 'UY', MEX: 'MX', CAN: 'CA', GBR: 'GB', ARG: 'AR', BRA: 'BR', COL: 'CO', PER: 'PE' };
 function countryName(code) {
@@ -183,7 +199,7 @@ export async function renderFridgeMap(container) {
 
       <div class="fmap__head">
         <div class="fmap__eyebrow">Community fridge network</div>
-        <h3 class="fmap__title"><span id="fmapTitle">Fridges</span> <sup id="fmapCount">(${fridges.length})</sup></h3>
+        <h3 class="fmap__title"><span id="fmapTitle">Fridges</span></h3>
         <div class="fmap__layers" role="group" aria-label="Show on map">
           <button type="button" class="fmap__layer is-on" data-layer="fridge" aria-pressed="true"><i class="fmap__key fmap__key--fridge"></i>Fridges <span>${fridges.length}</span></button>
           <button type="button" class="fmap__layer is-on" data-layer="chapter" aria-pressed="true"><i class="fmap__key fmap__key--chapter"></i>Chapters <span>${chapters.length}</span></button>
@@ -296,10 +312,11 @@ export async function renderFridgeMap(container) {
         ? (p.data.address || [p.data.city, p.data.state].filter(Boolean).join(', '))
         : [p.data.state, countryName(p.data.country)].filter(Boolean).join(' · ');
       return `<li><button type="button" class="fmap__stop fmap__stop--${p.kind}${p === selected ? ' is-active' : ''}" data-key="${p.kind}-${p.n}">
-        <span class="fmap__thumb">${p.kind === 'fridge' ? (p.data.photo_url ? `<img src="${esc(p.data.photo_url)}" alt="" loading="lazy" />` : ICON.fridge) : ICON.pin}${p.kind === 'fridge' ? `<i>${pad(p.n)}</i>` : ''}</span>
+        <span class="fmap__thumb">${p.kind === 'fridge' ? (p.data.photo_url ? `<img src="${esc(p.data.photo_url)}" alt="" loading="lazy" />` : ICON.fridge) : landmarkImage(p.data, true)}${p.kind === 'fridge' ? `<i>${pad(p.n)}</i>` : ''}</span>
         <span class="fmap__stopText"><strong>${esc(title)}</strong><small>${esc(sub)}</small>${d != null ? `<em>${fmtMi(d)} away</em>` : ''}</span>
       </button></li>`;
     }).join('') : `<li class="fmap__empty">${fridges.length ? 'Nothing to show. Turn a layer back on.' : 'No fridges are listed yet; chapters add them as they open.'}</li>`;
+    handleLandmarkErrors(strip);
     strip.querySelectorAll('.fmap__stop').forEach((b) => b.addEventListener('click', () => {
       const p = places.find((x) => `${x.kind}-${x.n}` === b.dataset.key);
       if (p) select(p, true);
@@ -317,6 +334,7 @@ export async function renderFridgeMap(container) {
     places.forEach((x) => x.el && x.el.classList.toggle('is-active', x === p));
     const d = origin ? miles(origin, p) : null;
     const dest = encodeURIComponent(p.kind === 'fridge' && p.data.address ? p.data.address : `${p.lat},${p.lng}`);
+    card.classList.toggle('fmap__card--chapter', p.kind === 'chapter');
     if (p.kind === 'fridge') {
       const f = p.data, cap = CAPACITY[f.capacity];
       card.innerHTML = `
@@ -337,10 +355,11 @@ export async function renderFridgeMap(container) {
         </div>`;
     } else {
       const c = p.data;
+      const photo = chapterLandmark(c);
       const members = typeof c.member_count === 'number' ? c.member_count : null;
       card.innerHTML = `
         <button type="button" class="fmap__close" aria-label="Close">×</button>
-        <div class="fmap__cardMedia fmap__cardMedia--chapter"><span class="fmap__cardIcon">${ICON.pin}</span></div>
+        <div class="fmap__cardMedia fmap__cardMedia--chapter">${landmarkImage(c)}</div>
         <div class="fmap__cardBody">
           <h4>${esc(c.city || c.name)} chapter</h4>
           <p>${esc([c.state, countryName(c.country)].filter(Boolean).join(' · '))}</p>
@@ -349,9 +368,12 @@ export async function renderFridgeMap(container) {
             ${members ? `<li>${members} member${members === 1 ? '' : 's'}</li>` : ''}
             ${d != null ? `<li>${ICON.arrow}${fmtMi(d)}</li>` : ''}
           </ul>
+          ${photo ? `<p class="fmap__landmarkCaption">City landmark · ${esc(photo.title)}</p>
+          <small class="fmap__photoCredit">Photo: <a href="${esc(photo.source)}" target="_blank" rel="noopener noreferrer">${esc(photo.author)}</a> · ${photo.licenseUrl ? `<a href="${esc(photo.licenseUrl)}" target="_blank" rel="noopener noreferrer">${esc(photo.license)}</a>` : esc(photo.license)}</small>` : ''}
         </div>
-        <div class="fmap__cardActions"><a class="fmap__cta" href="#chapters">See chapters</a></div>`;
+        `;
     }
+    handleLandmarkErrors(card);
     card.hidden = false;
     card.querySelector('.fmap__close').addEventListener('click', closeCard);
     drawRoute();
@@ -414,7 +436,6 @@ export async function renderFridgeMap(container) {
     places.forEach((p) => { if (p.kind === k && p.el) p.el.hidden = !show[k]; });
     const titleIsFridges = show.fridge || !show.chapter;
     $('#fmapTitle').textContent = titleIsFridges ? 'Fridges' : 'Chapters';
-    $('#fmapCount').textContent = `(${titleIsFridges ? fridges.length : places.filter((p) => p.kind === 'chapter').length})`;
     if (selected && !show[selected.kind]) closeCard();
     else renderStrip();
   }));

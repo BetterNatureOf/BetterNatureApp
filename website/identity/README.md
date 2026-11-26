@@ -1,7 +1,7 @@
-# Better Nature identity directions
+# Better Nature program identities
 
-Editable Figma board: https://www.figma.com/design/hZlsxT6ZvZxMK7mL23PWEq?node-id=1-32
+Editable SVG refinements of the original IRIS flower, Evergreen tree and Hydro water emblems in `../projects/`. Petal veins, foliage, roots, wave contours and ripple details preserve their recognizable silhouettes and distinct program colors.
 
-These original SVG sources were imported into Figma as editable vector components. The same sources power the website's IRIS, Evergreen and Hydro marks. nature.svg is a master-mark proposal; it does not replace the existing primary BN logo.
+Figma: https://www.figma.com/design/hZlsxT6ZvZxMK7mL23PWEq?node-id=1-32
 
-Figma board 1:32; component nodes IRIS 1:8, Evergreen 1:14, Hydro 1:19, Better Nature 1:24. Light/dark surface and text variables, radius and spacing variables are bound in the file. Assets are not AI-generated and no Figma AI credits were consumed.
+The three program components are updated in place with editable vector layers. The fourth Better Nature mark on the board remains a proposal; the site retains its actual BN logo. No generative AI credits were used.

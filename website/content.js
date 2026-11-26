@@ -141,12 +141,14 @@ window.CONTENT = {
 
   // ── HERO ──────────────────────────────────────────────────────────────
   hero: {
+    introEyebrow: "A youth-led nonprofit",
+    introLine: "Help rescue food, restore native forests, and protect waterways.",
     eyebrow: "Food rescue · Reforestation · Waterways",
     headline: "Care for people.",
     headlineItalic: "Care for our planet.",
     subhead: "BetterNature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission.",
-    primaryCta: { text: "Get involved", href: "#how" },
-    secondaryCta: { text: "See our impact", href: "#impact" },
+    primaryCta: { text: "Find your way to help ↗", href: "#how" },
+    secondaryCta: { text: "Explore our programs ↓", href: "#programs" },
     // Three photos, one per program: a tall one on the left, two stacked
     // on the right. `label` is the glass caption; `program` picks its colour.
     media: [
@@ -295,8 +297,11 @@ window.CONTENT = {
     title: "Youth-led. Community-rooted.",
     body: "BetterNature is run end-to-end by young organizers. Our national leadership team coordinates chapter presidents across the country.",
     members: [
-      // Add real team members here. Each member: name, role, city, bio (short), photo (optional)
-      { name: "Satvik Koya", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started BetterNature after seeing surplus trays thrown out behind his local restaurants.", photo: "" },
+      // Add real team members here. Each member: name, role, city, bio (short), photo (optional), linkedin (optional)
+      { name: "Satvik Koya", linkedin: "https://www.linkedin.com/in/satvik-koya-162041286/", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started BetterNature after seeing surplus trays thrown out behind his local restaurants.", photo: "images/team/satvik-koya.jpg" },
+      { name: "Rishik Polasa", role: "Founder", city: "", photo: "", linkedin: "" },
+      { name: "Pavan Ajithprasad", role: "Founder", city: "", photo: "", linkedin: "https://www.linkedin.com/in/pavan-ajithprasad-72b0ba361/" },
+      { name: "Punarchithsai Vanamareddy", role: "Founder", city: "", photo: "", linkedin: "" },
     ],
   },
 
@@ -329,7 +334,7 @@ window.CONTENT = {
         instagram: "https://instagram.com/official.better.nature",
         blurb: "Our founding chapter. Weekly pickups, neighborhood deliveries, and the foundation we're scaling everything else from.",
         roster: [
-          { name: "Satvik Koya", role: "Founder & Chapter President", instagram: "" },
+          { name: "Satvik Koya", linkedin: "https://www.linkedin.com/in/satvik-koya-162041286/", role: "Founder & Chapter President", instagram: "" },
         ],
       },
       {
