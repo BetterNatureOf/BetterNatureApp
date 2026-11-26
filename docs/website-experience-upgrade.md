@@ -224,3 +224,11 @@ Satvik supplied the headshot through a public shared-image link; the photo is no
 Chapter details now use a native modal dialog with separate leadership and member groups, position ordering, published headshot support, initials fallback, roster search, focus containment/restoration and Escape dismissal. Public officers and roster entries are deduplicated while different IDs sharing a name remain separate. Email-only records are not displayed. No private profile lookup or new backend write is introduced. The brand's pointer highlight wraps the complete logo/wordmark in a pill.
 
 Validation: 11 unit tests, production vendor build, 28 viewport/theme combinations, and focused header/founder/dropdown/chapter-dialog browser checks pass. The latter verifies the actual four founders, local portrait decode, correct account routes, live metric updates, appearance options, search, modal focus and scoped Axe checks. User requested publication to the existing public website; deployment is tracked separately from these local checks.
+
+## Chapter action, readable header and founder corrections
+
+Moved chapter creation out of the horizontal directory rail into a persistent section footer: “Don’t see your city? Make a difference where you live.” The Start a chapter button preserves referral routing and remains available after a search with no results. Removed the old offscreen start card.
+
+The desktop navigation now fills its available space with 15–17px labels and 44px targets. Below 1000px it uses the full menu while retaining both account actions, instead of shrinking labels to fit. Browser zoom is respected; no forced page zoom or counter-scaling is applied. Long founder names wrap safely. Added Rishik’s supplied LinkedIn link and the supplied fourth-founder link, and changed the fourth founder’s display name to the exact spelling confirmed by Satvik: Punarchithsaireddy Vanamareddy.
+
+Validation: the 28 viewport/theme regression passed. Focused checks cover nine effective layout widths equivalent to 50–400% browser zoom on a 1286px browser, account visibility, header overlap, name clipping, chapter creation after empty searches, referral preservation, both profile links and the confirmed display name.
