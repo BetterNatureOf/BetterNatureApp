@@ -403,3 +403,61 @@ header.nav.nav.is-open { display:grid; grid-template-columns:auto minmax(0,1fr) 
 #burger[aria-expanded="true"] .nav__menuIcon path:last-child { transform:translateY(-3px) rotate(-45deg); transform-origin:10px 13px; }
 @media(max-width:767px) { #nav #burger { min-width:94px; } }
 @media(prefers-reduced-motion:reduce) { #burger .nav__menuIcon path { transition:none; } }
+
+/* Every chapter occupies the same rail track, including the first on phones. */
+.chapters .chapters__grid { grid-template-columns:none !important; }
+.chapters .chapters__grid > .chapter { min-width:0; }
+.chapters .chapter__city { overflow-wrap:anywhere; }
+.fmap__stage { position:absolute; inset:0; }
+@media(max-width:767px) {
+ .chapters .chapters__grid { grid-auto-columns:88%; gap:14px; padding-bottom:18px; }
+ .chapters .chapters__grid > .chapter { min-height:210px; padding:22px !important; }
+ .chapters .chapter__state { overflow-wrap:anywhere; }
+ .programs .program { padding:26px 0 !important; gap:22px; }
+ .programs .program__visual { display:flex; align-items:center; justify-content:center; flex-direction:row; gap:20px; width:100%; min-height:0; aspect-ratio:auto; margin:0; order:-1; }
+ .programs .program__visual .program__logo { width:clamp(96px,28vw,144px); height:clamp(96px,28vw,144px); flex:none; object-fit:contain; }
+ .programs .program__mark { align-items:flex-start; min-width:0; }
+ .programs .program__markName { font-size:16px; letter-spacing:.08em; }
+ .programs .program__markSub { font-size:13px; }
+ .programs .program__logoFallback { width:100px; height:100px; flex:none; }
+ .programs .program__inner { min-width:0; }
+ .how__steps { grid-template-columns:1fr; }
+}
+/* Mobile map controls have their own space, leaving the map unobstructed. */
+@media(max-width:900px) {
+ .fmap { display:flex; flex-direction:column; height:auto; min-height:0; }
+ .fmap .fmap__head { position:relative; inset:auto; width:100%; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); align-items:center; padding:18px; gap:10px 12px; border:0; border-bottom:1px solid var(--border); border-radius:0; background:var(--raised); color:var(--text); backdrop-filter:none; }
+ .fmap__head .fmap__eyebrow { grid-column:1 / -1; font-size:10px; }
+ .fmap__head .fmap__title { grid-column:1; font-size:28px; color:var(--text); }
+ .fmap__head .fmap__layers { grid-column:2; display:flex; flex-direction:row; flex-wrap:wrap; justify-content:flex-end; gap:4px 12px; }
+ .fmap__head .fmap__layer { min-height:44px; padding:5px 0; gap:6px; font-size:12px; color:var(--text); }
+ .fmap__head .fmap__key { width:11px; height:11px; flex:none; }
+ .fmap__head .fmap__search { grid-column:1 / -1; width:100%; margin:0; height:48px; background:var(--surface); border-color:var(--border); color:var(--text); }
+ .fmap__head .fmap__search input { color:var(--text); font-size:16px; }
+ .fmap__head :is(.fmap__near,.fmap__overview) { width:100%; min-height:44px; padding:10px 8px; margin:0; color:var(--text); font-size:12px; text-align:center; border:1px solid var(--border); border-radius:12px; }
+ .fmap__head .fmap__near { color:var(--pink-dark); }
+ .fmap__head .fmap__status { grid-column:1 / -1; min-height:0; color:var(--muted); font-size:12px; }
+ .fmap__stage { position:relative; inset:auto; width:100%; height:clamp(560px,80svh,760px); flex:none; }
+ .fmap .fmap__strip { display:flex; bottom:22px; left:14px; right:14px; gap:18px; }
+ .fmap .fmap__card { bottom:110px; }
+ .fmap .fmap__map :is(.maplibregl-ctrl-top-right,.mapboxgl-ctrl-top-right) { top:14px; right:14px; bottom:auto; }
+ .fmap .fmap__shade { background:linear-gradient(0deg,var(--surface),transparent 28%); }
+ .fmap .fmap__nomap { top:40%; bottom:auto; }
+}
+@media(max-width:767px) {
+ .chapters__search input,.chapter-people__search input,.newsletter input { font-size:16px; }
+ .programs .program__body { font-size:1rem !important; line-height:1.65; }
+ .programs .program__title { font-size:28px !important; }
+ .fmap .fmap__close { width:44px; height:44px; }
+ .fmap .fmap__map :is(.maplibregl-ctrl-group,.mapboxgl-ctrl-group) button { width:44px; height:44px; }
+}
+/* Readable labels and touch controls in both appearances. */
+.programs .program__code { color:var(--pink-dark); }
+.programs .program__visual--hydro .program__markName { color:#216c91; }
+:root[data-theme="dark"] .programs .program__visual--hydro .program__markName { color:#8bd1e7; }
+.chapters__chip span { opacity:1; color:var(--text); }
+.fmap__go { color:#142715; }
+@media(max-width:900px) { .fmap__head .fmap__search { height:56px; } .fmap__head .fmap__go { height:44px; } }
+.chapters .chapter__more,.chapters .chapters__grid .chapter__region { color:var(--pink-dark); }
+@media(max-width:767px) { .fmap .fmap__cardBody h4 { margin-right:40px; } }
+@media(max-width:360px) { .fmap__head .fmap__title,.fmap__head .fmap__layers { grid-column:1 / -1; } .fmap__head .fmap__layers { justify-content:flex-start; } }

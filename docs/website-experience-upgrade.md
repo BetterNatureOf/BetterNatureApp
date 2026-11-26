@@ -238,3 +238,11 @@ Validation: the 28 viewport/theme regression passed. Focused checks cover nine e
 Removed outdated hamburger-span background/transform rules that painted a white rectangle behind the Menu label over dark sections. The control now uses an SVG hamburger/close icon with synchronized Menu / Close text and Open menu / Close menu accessible labels. Flattened the obsolete nested More menu so every enabled destination appears in the expanded navigation instead of reserving invisible grid space.
 
 Validation: focused menu regression at 320, 390, 1044 and 1286px in light/dark modes, including dark-section background, all destinations, menu height, stable document scroll, keyboard entry, Escape and link dismissal, plus scoped accessibility. All 28 viewport/theme cases also pass. Owner explicitly requested publication after this fix.
+
+## Mobile chapter cards, project logos and usable fridge map
+
+Removed a conflicting phone grid rule that created a separate first chapter column, and gave every chapter the same fixed-percentage rail track with room for readable content. Restored the program emblems that a legacy phone rule hid; IRIS, Evergreen and Hydro now use compact logo/wordmark rows above their content. Adjusted mobile body type, search input sizing, label contrast and map touch targets.
+
+Moved fridge controls into a separate mobile header above a map stage that is 560–760px tall, rather than overlaying most of the map. The stage retains search, location, layer toggles, chapter thumbnails, landmark cards and provider attribution. Desktop keeps the existing overlaid control layout. Empty-fridge copy now describes chapter exploration instead of incorrectly claiming the map is always centered on Memphis.
+
+Validation: focused mobile layout checks at 320/375/390/430/768px in light and dark appearances; equal card widths and no clipped text; three decoded project logos; map/header separation; selected landmark-card fit and scoped Axe checks. The mobile test isolates geocoding with a fixture while retaining real tiles and public directory reads. The 28 viewport/theme checks, six homepage checks, and desktop/mobile section-navigation, pointer, donation and map regression passed.
