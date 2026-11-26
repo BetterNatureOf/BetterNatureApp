@@ -19,11 +19,20 @@ const server = http.createServer((req, res) => {
   const executablePath = process.env.CHROME_PATH || (fs.existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome') ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined);
   const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
   const report = { scenarios: [], accessibility: [], errors: [] };
+  async function choose(page, selector, value) {
+    const select = page.locator(selector);
+    if (await select.isVisible()) return select.selectOption(value);
+    const label = await select.locator(`option[value="${value}"]`).innerText();
+    const trigger = select.locator('..').locator('.bn-select__trigger');
+    await trigger.click();
+    const menu = await trigger.getAttribute('aria-controls');
+    await page.locator(`#${menu}`).getByRole('option', {name:label,exact:true}).click();
+  }
   async function chooseTheme(page, value) {
-    const select = page.locator('[data-appearance]');
-    const opened = !(await select.isVisible());
+    const shell = page.locator('[data-appearance]').locator('..');
+    const opened = !(await shell.isVisible());
     if (opened) await page.locator('#burger').click();
-    await select.selectOption(value);
+    await choose(page, '[data-appearance]', value);
     if (opened) await page.locator('#burger').click();
   }
   try {
@@ -41,9 +50,9 @@ const server = http.createServer((req, res) => {
         if (!await page.locator('.chapters__insights').evaluate(el => el.open)) await page.locator('.chapters__insights > summary').click();
         await page.locator('#chapterInsights').scrollIntoViewIfNeeded();
         await page.locator('#networkChart svg').waitFor({timeout:10000});
-        await page.locator('#networkMetric').selectOption('members');
+        await choose(page, '#networkMetric', 'members');
         assert.match(await page.locator('#networkSummary').innerText(), /no member count/);
-        await page.locator('#networkMetric').selectOption('chapters');
+        await choose(page, '#networkMetric', 'chapters');
         const region = await page.locator('#networkRegions button').first().innerText();
         await page.locator('#chapterFilters button').filter({hasText:region}).first().click();
         assert.equal(await page.locator('#chapterFilters [aria-pressed="true"]').getAttribute('data-region'), region);
