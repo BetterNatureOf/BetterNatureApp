@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#f8faf6" />
-  <script src="appearance.js?v=mobile-layout-1"></script>
+  <script src="appearance.js?v=mobile-room-1"></script>
   <script defer src="navigation.js"></script>
-  <script defer src="select-menu.js?v=mobile-layout-1"></script>
-  <script defer src="pointer.js?v=mobile-layout-1"></script>
+  <script defer src="mobile-layout.js?v=mobile-room-1"></script>
+  <script defer src="select-menu.js?v=mobile-room-1"></script>
+  <script defer src="pointer.js?v=mobile-room-1"></script>
   <title>BetterNature — Rescue. Restore. Protect.</title>
   <meta name="description" content="Youth-led nonprofit: three programs, one mission. We rescue surplus food, plant native forests, and clean the waterways communities depend on. 38 cities." />
   <meta property="og:title" content="BetterNature — Rescue. Restore. Protect." />
@@ -23,7 +24,7 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="motion.css" />
   <link rel="stylesheet" href="experience.css" />
-  <link rel="stylesheet" href="homepage.css?v=mobile-layout-1" />
+  <link rel="stylesheet" href="homepage.css?v=mobile-room-1" />
 </head>
 <body>
 <a class="skip-link" href="#top">Skip to content</a>
@@ -118,6 +119,19 @@
     <h2 class="impact__title" id="impactTitle"></h2>
     <div class="impact__grid" id="impactGrid" data-reveal-stagger></div>
     <details class="impact-method"><summary>Where these numbers come from</summary><p id="impactSource">Published Better Nature totals. Live reporting is being checked.</p><p>Food weight, service counts and environmental estimates are different measures and must not be added together. Service counts do not establish a count of unique people. Environmental figures are reported estimates, not direct measurements; a published calculation method is not yet available here.</p></details>
+    <section class="impact-social" id="impactInstagram" aria-labelledby="instagramTitle">
+      <div class="impact-social__intro">
+        <div class="eyebrow eyebrow--light">From the field</div>
+        <h3 id="instagramTitle">Follow the work.</h3>
+        <p>Updates from our community, on Instagram.</p>
+        <a class="instagram-profile" href="https://www.instagram.com/official.better.nature/" target="_blank" rel="noopener noreferrer">@official.better.nature ↗</a>
+      </div>
+      <div class="instagram__panel">
+        <div class="instagram__embed" id="instagramEmbed"></div>
+        <p class="instagram__status" id="instagramStatus" role="status">Instagram posts load when you reach this section.</p>
+        <button type="button" class="instagram__retry" id="instagramRetry" hidden>Try loading posts again</button>
+      </div>
+    </section>
   </div>
 </section>
 
@@ -137,6 +151,8 @@
     <div class="eyebrow" id="chaptersEyebrow"></div>
     <h2 class="chapters__title" id="chaptersTitle"></h2>
     <p class="chapters__body" id="chaptersBody"></p>
+    <details class="chapters__insights" data-mobile-disclosure open>
+      <summary>Explore our chapter network <span aria-hidden="true">⌄</span></summary>
     <section class="network" id="chapterInsights" aria-labelledby="networkTitle">
       <div class="network__intro">
         <span class="network__label">A connected community</span>
@@ -152,6 +168,7 @@
         <div class="network__regions" id="networkRegions" role="group" aria-label="Find chapters by region"></div>
       </div>
     </section>
+    </details>
     <div class="chapters__tools">
       <label class="chapters__search mx-glass">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -343,9 +360,10 @@
 <script defer src="animate.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/motion@11.11.13/dist/motion.js" integrity="sha384-czaB7zH9slIhvFgUxhO8sSnYf4cnCeV2N3zOvDnNKFzRKu5AwqDKEZlCLsaQkoop" crossorigin="anonymous"></script>
 <script defer src="motion.js"></script>
-<script src="app.js?v=mobile-layout-1"></script>
+<script src="app.js?v=mobile-room-1"></script>
 <script type="module" src="live-stats.js"></script>
 <script type="module" src="network-insights.js"></script>
+<script type="module" src="instagram.js?v=mobile-room-1"></script>
 
 </body>
 </html>

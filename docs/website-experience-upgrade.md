@@ -246,3 +246,11 @@ Removed a conflicting phone grid rule that created a separate first chapter colu
 Moved fridge controls into a separate mobile header above a map stage that is 560–760px tall, rather than overlaying most of the map. The stage retains search, location, layer toggles, chapter thumbnails, landmark cards and provider attribution. Desktop keeps the existing overlaid control layout. Empty-fridge copy now describes chapter exploration instead of incorrectly claiming the map is always centered on Memphis.
 
 Validation: focused mobile layout checks at 320/375/390/430/768px in light and dark appearances; equal card widths and no clipped text; three decoded project logos; map/header separation; selected landmark-card fit and scoped Axe checks. The mobile test isolates geocoding with a fixture while retaining real tiles and public directory reads. The 28 viewport/theme checks, six homepage checks, and desktop/mobile section-navigation, pointer, donation and map regression passed.
+
+## Mobile breathing room and Instagram posts in Impact
+
+Preserved the laptop layout and added phone spacing, readable stacked impact metrics, full-width founder identities, and larger touch targets. The regional chapter chart and app QR code start collapsed on phones and remain expanded on laptops; direct app and sharing actions stay available. Header clearance and equal three-image hero composition are retained.
+
+Impact now lazy-loads Instagram's official public profile embed for @official.better.nature, with a permanent profile link, timeout message and retry. No private account credentials, copied post data or remote HTML injection are used. This is a public profile embed, not an authenticated custom media feed. Instagram/browser restrictions can prevent loading; the profile link remains available.
+
+Validation: 11 unit tests, 28 viewport/theme cases, six homepage/accessibility cases and the focused mobile chapter/logo/map checks passed. Real Instagram rendering and fallback checks are performed separately because third-party availability varies.

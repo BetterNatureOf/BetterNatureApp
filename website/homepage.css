@@ -461,3 +461,110 @@ header.nav.nav.is-open { display:grid; grid-template-columns:auto minmax(0,1fr) 
 .chapters .chapter__more,.chapters .chapters__grid .chapter__region { color:var(--pink-dark); }
 @media(max-width:767px) { .fmap .fmap__cardBody h4 { margin-right:40px; } }
 @media(max-width:360px) { .fmap__head .fmap__title,.fmap__head .fmap__layers { grid-column:1 / -1; } .fmap__head .fmap__layers { justify-content:flex-start; } }
+/* Optional detail is always expanded in the laptop composition. */
+.chapters__insights > summary,.join__qrDisclosure > summary,.join__copy--mobile,.join__open { display:none; }
+.chapters__insights { min-width:0; }
+.join__qrDisclosure { flex:none; }
+/* Instagram is the platform's own profile embed, with an ordinary link fallback. */
+.impact-social { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,540px); gap:clamp(28px,5vw,72px); align-items:start; margin-top:64px; padding-top:48px; border-top:1px solid #d9f0e12e; }
+.impact-social h3 { color:#f2f7ee; font:500 clamp(30px,3.5vw,46px)/1.12 var(--sans); letter-spacing:-.04em; margin:18px 0; }
+.impact-social__intro > p { color:#c4d7ca; font-size:16px; line-height:1.7; }
+.instagram-profile,.instagram__retry { display:inline-flex; align-items:center; min-height:44px; margin-top:20px; padding:10px 16px; border:1px solid #d9f0e14d; border-radius:999px; color:#f4a2bd; font-size:14px; }
+.instagram__panel,.instagram__embed { min-width:0; }
+.impact-social .instagram-media { width:100% !important; min-width:0 !important; max-width:540px !important; margin:0 !important; border-radius:18px !important; background:#fff; overflow:hidden; }
+.instagram__embed > blockquote { display:grid; place-items:center; min-height:220px; padding:24px; }
+.instagram__embed > blockquote a { color:#1b3a2d; text-decoration:underline; font-size:15px; }
+.instagram__status { color:#c4d7ca; font-size:14px; line-height:1.6; }
+.instagram__status:empty { display:none; }
+.instagram__retry[hidden] { display:none; }
+@media(max-width:767px) {
+ :root { --home-gutter:24px; --home-space:80px; }
+ .container { padding-inline:24px !important; }
+ main > :is(.mission,.programs,.impact,.how,.chapters,.team,.donate,.signup,.newsletter,.bnmap) { padding-block:80px; }
+ header.nav.nav { padding:10px 12px !important; row-gap:8px; border-radius:22px; }
+ .nav:not(.is-open) .nav__ctas { padding-top:4px; gap:8px; }
+ .nav:not(.is-open) .nav__ctas .btn { min-height:44px; font-size:13px; }
+ .hero.hero--quiet[data-editorial] { padding-top:calc(var(--anchor-offset,144px) + 16px) !important; padding-bottom:0 !important; }
+ .hero.hero--quiet[data-editorial] .hero__copy { gap:24px; }
+ .hero.hero--quiet[data-editorial] .hero__h1 { font-size:clamp(42px,12cqi,60px) !important; line-height:1.07 !important; }
+ .hero.hero--quiet[data-editorial] .hero__sub { font-size:16px; line-height:1.75; max-width:32ch; }
+ .hero.hero--quiet[data-editorial] .hero__ctas { margin-top:26px; }
+ .hero__story { margin-top:40px; gap:5px; }
+ .hero__story img { height:clamp(128px,36vw,176px); }
+ :is(.mission__title,.programs__title,.impact__title,.how__title,.chapters__title,.team__title,.signup__title,.donate__title,.bnmap__title) { font-size:clamp(30px,8vw,38px) !important; line-height:1.15; text-wrap:pretty; }
+ :is(.mission__body,.chapters__body,.team__body,.signup__body,.donate__body,.bnmap__body) { font-size:16px !important; line-height:1.75; }
+ .eyebrow { margin-bottom:24px; }
+ .programs .program { padding-block:36px !important; gap:28px; }
+ .programs .program__body { line-height:1.75; }
+ .program__visual { margin-bottom:6px; }
+ .how__tabs { display:grid; grid-template-columns:1fr; gap:10px; margin:28px 0; border:0; padding:0; background:none; }
+ .how__tab { min-height:52px; padding:14px 18px; font-size:15px; border:1px solid var(--border); border-radius:14px; }
+ .how__steps { gap:18px; }
+ .how .how__step { padding:26px !important; }
+ .how__step-title { font-size:20px; line-height:1.3; }
+ .how__step-body { font-size:16px; line-height:1.7; }
+ .impact .impact__grid { grid-template-columns:1fr !important; gap:14px; }
+ .impact .impact__grid > .stat { display:grid; grid-template-columns:minmax(108px,.85fr) minmax(0,1.15fr); gap:6px 16px; align-content:center; min-height:120px; padding:22px !important; }
+ .impact .stat__value { grid-column:1; grid-row:1 / span 2; align-self:center; font-size:clamp(24px,7vw,30px) !important; line-height:1.15; margin:0; }
+ .impact .stat__label { grid-column:2; font-size:15px; line-height:1.45; }
+ .impact .stat__sub { grid-column:2; font-size:13px; line-height:1.6; margin:0; }
+ .impact-method { margin-top:28px; }
+ .chapters__insights { margin:28px 0; }
+ .chapters__insights > summary,.join__qrDisclosure > summary { display:flex; justify-content:space-between; align-items:center; gap:16px; list-style:none; min-height:56px; padding:16px; border:1px solid var(--border); border-radius:14px; background:var(--surface); color:var(--text); font-size:14px; font-weight:500; cursor:pointer; }
+ .chapters__insights > summary::-webkit-details-marker,.join__qrDisclosure > summary::-webkit-details-marker { display:none; }
+ :is(.chapters__insights,.join__qrDisclosure)[open] > summary { border-color:var(--accent); }
+ :is(.chapters__insights,.join__qrDisclosure)[open] > summary span { rotate:180deg; }
+ .chapters__insights .network { margin:16px 0 0; padding:22px; gap:28px; }
+ .network__toolbar { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+ .network__toolbar :is(.bn-select,#networkExport) { width:100%; }
+ .network__summary { line-height:1.7; margin-top:22px; }
+ .chapters__tools { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:20px 12px; margin-top:28px; }
+ .chapters__search { grid-column:1 / -1; width:100%; min-width:0; }
+ .chapters__filters { grid-column:1 / -1; width:100%; margin:0; padding:0 0 6px; gap:10px; }
+ .chapters__chip { min-height:44px; padding-inline:16px; }
+ .chapters__sort { grid-column:1; min-width:0; }
+ .chapters__sort .bn-select { min-width:0; flex:1; }
+ .chapters__nav { grid-column:2; width:auto; margin:0; }
+ .chapters__count { font-size:12px; }
+ .chapters__arrow { display:none; }
+ .chapters .chapters__grid { margin-top:20px; }
+ .chapters .chapters__grid > .chapter { min-height:232px; padding:24px !important; }
+ .chapters .chapter__meta { font-size:14px; line-height:1.6; gap:10px; }
+ .chapters .chapter__more { margin-top:18px; font-size:14px; }
+ .team .team__grid { gap:20px; }
+ .team .member { grid-template-columns:1fr; gap:20px; padding:26px; }
+ .team .member__photo { grid-column:1; grid-row:1; width:88px; height:106px; }
+ .team .member__info { grid-column:1; grid-row:2; gap:12px; }
+ .team .member__name { font-size:24px; overflow-wrap:normal; }
+ .team .member__role { font-size:15px; }
+ .donate #donateTiers { grid-template-columns:1fr; gap:14px; }
+ .donate #donateTiers .tier { display:grid; grid-template-columns:80px minmax(0,1fr); align-items:center; gap:20px; min-height:112px; padding:24px !important; }
+ .donate .tier__amount { font-size:28px; margin:0; }
+ .donate .tier__impact { font-size:14px; line-height:1.7; }
+ #signup .join__grid { gap:20px; }
+ #signup .join__card { padding:28px; gap:16px; }
+ #signup .join__body { font-size:16px; line-height:1.7; }
+ #signup .join__cta { display:flex; align-items:center; gap:8px; min-height:44px; font-size:15px; padding-top:12px; }
+ #signup .join__foot { margin-top:28px; padding:26px; gap:24px; }
+ #signup .join__foot > p { order:1; width:100%; font-size:16px; line-height:1.75; }
+ .join__copy--desktop { display:none; }
+ .join__copy--mobile { display:inline; }
+ #signup .join__open { display:flex; justify-content:center; width:100%; min-height:48px; margin-top:20px; border-radius:14px; color:#f7f4f0; font-size:15px; }
+ #signup .share-app { width:100%; min-height:48px; margin-top:12px; font-size:14px; }
+ .join__qrDisclosure { order:2; width:100%; }
+ .join__qrDisclosure .join__qr-wrap { margin:20px auto 0; }
+ .impact-social { grid-template-columns:1fr; gap:28px; margin-top:44px; padding-top:36px; }
+ .impact-social h3 { font-size:32px; }
+ .instagram-profile { margin-top:16px; }
+ .instagram__status { font-size:14px; }
+ .footer { padding-top:60px; }
+ .footer__grid { gap:36px; }
+}
+@media(max-width:374px) { .impact-social .instagram__panel { margin-inline:-24px; width:calc(100% + 48px); } .impact-social .instagram__status,.impact-social .instagram__retry { margin-inline:24px; } }
+
+@media(max-width:767px) {
+ .team .member__name { font-size:clamp(22px,6.2vw,24px); }
+ .donate #donateTiers .tier { display:flex; flex-direction:column; align-items:flex-start; gap:14px; min-height:140px; }
+ .donate .tier__amount { font-size:32px; }
+ .donate .tier__impact { font-size:15px; }
+}
