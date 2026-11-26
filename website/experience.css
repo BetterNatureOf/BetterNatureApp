@@ -28,7 +28,7 @@ body { background: var(--page); color: var(--text); }
 .nav__name, .nav__links a, .nav__moreBtn, .nav .btn--ghost { color: var(--text) !important; }
 .nav__moreMenu { background: var(--raised) !important; color: var(--text); border: 1px solid var(--border); }
 .nav__links a:hover { color: var(--accent) !important; }
-.nav__burger span { background: var(--text); }
+
 .hero { background: var(--page) !important; }
 .hero::after, .hero__grain, .hero__shape, .mx-petals, .mx-underline { display: none !important; }
 .hero__h1, .hero__h1 em, .mx-phrase--1, .mx-phrase--2 { font-family: var(--sans) !important; font-style: normal !important; font-weight: 600 !important; letter-spacing: -.055em; color: var(--text) !important; background: none !important; -webkit-text-fill-color: currentColor !important; animation: none !important; }

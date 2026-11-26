@@ -3,11 +3,6 @@
 header.nav.nav { width:min(1280px,calc(100% - 32px)); gap:12px; }
 .nav__quick { display:none; }
 .nav__burger .nav__menuLabel { background:none; width:auto; height:auto; font:500 13px/1 var(--sans); }
-.nav__burger .nav__menuIcon { display:flex; flex-direction:column; gap:5px; width:18px; height:auto; background:none; }
-.nav__menuIcon i { height:1.5px; width:18px; background:var(--text); transition:transform 180ms ease; }
-.nav.is-open .nav__burger .nav__menuLabel,.nav.is-open .nav__burger .nav__menuIcon { transform:none; opacity:1; }
-.nav.is-open .nav__menuIcon i:first-child { transform:translateY(3.25px) rotate(45deg); }
-.nav.is-open .nav__menuIcon i:last-child { transform:translateY(-3.25px) rotate(-45deg); }
 .hero[data-editorial] { padding:148px 0 0 !important; overflow:visible; }
 .hero[data-editorial] .hero__inner { display:grid; grid-template-columns:1fr !important; gap:40px; width:calc(100% - 2 * var(--home-gutter)); max-width:var(--home-width) !important; padding:0; margin:0 auto; }
 .hero[data-editorial] .hero__copy { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(260px,1fr); gap:28px 6%; align-items:end; }
@@ -398,3 +393,13 @@ header.nav.nav.is-open { display:grid; grid-template-columns:auto minmax(0,1fr) 
 @media(min-width:1000px) and (max-width:1120px) { header.nav.nav { gap:10px; } .nav .nav__quick a { padding-inline:9px; } .nav .nav__ctas .btn { padding-inline:10px; font-size:.8125rem; } }
 @media(max-width:767px) { .nav .nav__quick { display:none; } }
 @media(max-width:480px) { .chapters__create { gap:18px; padding-top:22px; } .chapters__create .btn { width:100%; justify-content:center; } }
+
+/* The menu uses a labeled SVG, independent of legacy hamburger bar styles. */
+#nav #burger { min-width:100px; gap:9px; color:var(--text); }
+#nav #burger .nav__menuLabel { display:block; width:auto; height:auto; background:transparent; color:inherit; font:500 .875rem/1.3 var(--sans); transform:none; opacity:1; }
+#nav #burger .nav__menuIcon { display:block; width:20px; height:20px; flex:0 0 20px; background:transparent; color:inherit; overflow:visible; }
+#burger .nav__menuIcon path { transform-origin:10px 10px; transition:transform 160ms ease; }
+#burger[aria-expanded="true"] .nav__menuIcon path:first-child { transform:translateY(3px) rotate(45deg); transform-origin:10px 7px; }
+#burger[aria-expanded="true"] .nav__menuIcon path:last-child { transform:translateY(-3px) rotate(-45deg); transform-origin:10px 13px; }
+@media(max-width:767px) { #nav #burger { min-width:94px; } }
+@media(prefers-reduced-motion:reduce) { #burger .nav__menuIcon path { transition:none; } }
