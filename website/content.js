@@ -299,9 +299,9 @@ window.CONTENT = {
     members: [
       // Add real team members here. Each member: name, role, city, bio (short), photo (optional), linkedin (optional)
       { name: "Satvik Koya", linkedin: "https://www.linkedin.com/in/satvik-koya-162041286/", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started BetterNature after seeing surplus trays thrown out behind his local restaurants.", photo: "images/team/satvik-koya.jpg" },
-      { name: "Rishik Polasa", role: "Founder", city: "", photo: "", linkedin: "" },
+      { name: "Rishik Polasa", role: "Founder", city: "", photo: "", linkedin: "https://www.linkedin.com/in/rishik-polasa/" },
       { name: "Pavan Ajithprasad", role: "Founder", city: "", photo: "", linkedin: "https://www.linkedin.com/in/pavan-ajithprasad-72b0ba361/" },
-      { name: "Punarchithsai Vanamareddy", role: "Founder", city: "", photo: "", linkedin: "" },
+      { name: "Punarchithsaireddy Vanamareddy", role: "Founder", city: "", photo: "", linkedin: "https://www.linkedin.com/in/punarchithsaireddy-vanamareddy-2b319a2a2/" },
     ],
   },
 

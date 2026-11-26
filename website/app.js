@@ -240,6 +240,7 @@
   set('#chaptersTitle', C.chapters.title);
   set('#chaptersBody', C.chapters.body);
   const startChapterHref = appUrl(APP_ROUTES.chapter);
+  setHref('#chapterCreate', startChapterHref);
 
   // Live chapters from Firestore. We distinguish three states so
   // the user knows what's going on:
@@ -305,12 +306,7 @@
         <span class="chapter__more">View chapter →</span>
       </button>
     `;
-    }).join('') + `
-      <a class="chapter chapter--start" href="${startChapterHref}">
-        <div class="chapter__city">Not on the list?</div>
-        <div class="chapter__meta"><span>Start BetterNature in your city. We send the playbook within 48 hours.</span></div>
-        <span class="chapter__more">Start a chapter →</span>
-      </a>`);
+    }).join(''));
     setupChapterBrowser();
   }
 
