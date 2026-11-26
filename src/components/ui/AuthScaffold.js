@@ -107,7 +107,7 @@ export default function AuthScaffold({
           <View />
         </LinearGradient>
         <KeyboardAvoidingView style={styles.side} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={styles.sideInner} keyboardShouldPersistTaps="handled">
+          <ScrollView style={styles.formScroll} contentContainerStyle={styles.sideInner} keyboardShouldPersistTaps="handled">
             <View style={styles.sideCol}>
               <View style={styles.sideTop}>
                 {onBack ? <BackButton onPress={onBack} label={backLabel} /> : <View />}
@@ -142,7 +142,9 @@ export default function AuthScaffold({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
+  // Bound web scroll views to the viewport; otherwise flex content grows
+  // past the window while the document itself has scrolling disabled.
+  flex: { flex: 1, ...(web ? { height: '100dvh', maxHeight: '100dvh', minHeight: 0, overflow: 'hidden' } : null) },
   title: { color: Colors.green },
   subtitle: { fontSize: 16, lineHeight: 23, color: Colors.gray, marginTop: 6, marginBottom: 24 },
 
@@ -164,7 +166,7 @@ const styles = StyleSheet.create({
   fillDark: { backgroundColor: Colors.green },
 
   // Wide
-  split: { flex: 1, flexDirection: 'row', backgroundColor: '#F4F1EC', ...(web ? { minHeight: '100vh' } : null) },
+  split: { flex: 1, flexDirection: 'row', backgroundColor: '#F4F1EC', ...(web ? { height: '100dvh', maxHeight: '100dvh', minHeight: 0, overflow: 'hidden' } : null) },
   panel: { flex: 0.9, padding: 44, justifyContent: 'space-between', overflow: 'hidden' },
   panelTablet: { flex: 0.75, padding: 30 },
   brandTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -184,7 +186,8 @@ const styles = StyleSheet.create({
   stepNumCurrent: { color: Colors.green },
   stepName: { color: 'rgba(255,255,255,0.7)', fontSize: 16, fontWeight: '600' },
   stepNameActive: { color: Colors.white },
-  side: { flex: 1.1 },
+  side: { flex: 1.1, minHeight: 0, minWidth: 0 },
+  formScroll: { flex: 1, minHeight: 0 },
   sideInner: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 36 },
   sideCol: { width: '100%', maxWidth: 560 },
   sideTop: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 14 },
