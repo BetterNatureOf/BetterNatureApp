@@ -38,6 +38,7 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('html').getAttribute('data-theme'), scheme);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `overflow ${width}/${scheme}`);
         await page.screenshot({path: path.join(output, `${width}-${scheme}-hero.png`)});
+        if (!await page.locator('.chapters__insights').evaluate(el => el.open)) await page.locator('.chapters__insights > summary').click();
         await page.locator('#chapterInsights').scrollIntoViewIfNeeded();
         await page.locator('#networkChart svg').waitFor({timeout:10000});
         await page.locator('#networkMetric').selectOption('members');
