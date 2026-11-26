@@ -43,6 +43,12 @@ window.CONTENT = {
     donateUrl: "https://www.zeffy.com/en-US/donation-form/betternature",
     // Zeffy gives you a stable embed URL too — this is what the inline iframe loads.
     donateEmbedUrl: "https://www.zeffy.com/embed/donation-form/betternature",
+    // Fridge map engine. Leave blank to use the free MapLibre map (no
+    // account needed). To switch to Mapbox 3D: create a free Mapbox account,
+    // make a PUBLIC token (starts with "pk."), restrict its URLs to
+    // betternatureofficial.org, and paste it here. The free tier covers
+    // 50,000 map loads a month; don't attach a card if you never want a bill.
+    mapboxToken: "",
     // Other ways to give (shown as buttons under the embed). Leave blank to hide.
     giveLinks: {
       paypal: "",       // PayPal Giving Fund URL (zero-fee for nonprofits)
@@ -135,19 +141,20 @@ window.CONTENT = {
 
   // ── HERO ──────────────────────────────────────────────────────────────
   hero: {
+    introEyebrow: "A youth-led nonprofit",
+    introLine: "Help rescue food, restore native forests, and protect waterways.",
     eyebrow: "Food rescue · Reforestation · Waterways",
-    headline: "Feed people. Plant forests.",
-    headlineItalic: "Protect the water.",
+    headline: "Care for people.",
+    headlineItalic: "Care for our planet.",
     subhead: "BetterNature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission.",
-    primaryCta: { text: "Read our mission", href: "#mission" },
-    secondaryCta: { text: "Partner your business", href: "#signup" },
-    // Tile 1 (top-left, biggest): forest. Tile 2 (top-right): clean water.
-    // Tile 3 (bottom-left): produce crate. Tile 4 (bottom-right): planting/volunteers.
+    primaryCta: { text: "Find your way to help ↗", href: "#how" },
+    secondaryCta: { text: "Explore our programs ↓", href: "#programs" },
+    // Three photos, one per program: a tall one on the left, two stacked
+    // on the right. `label` is the glass caption; `program` picks its colour.
     media: [
-      { src: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=900&q=80&auto=format&fit=crop", alt: "Sunlit forest canopy" },
-      { src: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=900&q=80&auto=format&fit=crop", alt: "Clear mountain lake" },
-      { src: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=900&q=80&auto=format&fit=crop", alt: "Crate of fresh vegetables" },
-      { src: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?w=900&q=80&auto=format&fit=crop", alt: "Volunteer planting a tree" },
+      { src: "https://images.unsplash.com/photo-1710092784814-4a6f158913b8?w=1000&q=80&auto=format&fit=crop", alt: "A volunteer handing a plate of food to a neighbor", label: "IRIS · Food rescue", program: "iris" },
+      { src: "https://images.unsplash.com/photo-1777150895644-2ca253ee1c93?w=900&q=80&auto=format&fit=crop", alt: "Two pairs of hands planting a seedling", label: "Evergreen · Planting", program: "evergreen" },
+      { src: "https://images.unsplash.com/photo-1758599669008-fb6f8eda6f53?w=900&q=80&auto=format&fit=crop", alt: "A volunteer picking up a plastic bottle at the water's edge", label: "Hydro · Cleanups", program: "hydro" },
     ],
     // Placeholder values shown only for the millisecond before live-stats.js
     // overwrites them with the real numbers from org_stats/global. Keep these
@@ -274,12 +281,12 @@ window.CONTENT = {
         label: "For volunteers",
         tagline: "Your leftovers can feed a family tonight. We handle everything.",
         steps: [
-          { num: "01", title: "Find your chapter", body: "Memphis is our founding chapter. Don't see yours? Start one." },
+          { num: "01", title: "Find your chapter", body: "Search the chapter list for your city, or start the first one there." },
           { num: "02", title: "Attend an orientation", body: "45 minutes. Meet your chapter president. Learn the routes." },
           { num: "03", title: "Claim a shift", body: "Pickups, plantings, cleanups — claim any shift that fits your week." },
           { num: "04", title: "Log your impact", body: "Every pound rescued, hour served, and tree planted goes on your profile and the chapter leaderboard." },
         ],
-        cta: { text: "Sign up to volunteer", href: "#chapters" },
+        cta: { text: "Sign up to volunteer", href: "#signup" },
       },
     ],
   },
@@ -290,8 +297,11 @@ window.CONTENT = {
     title: "Youth-led. Community-rooted.",
     body: "BetterNature is run end-to-end by young organizers. Our national leadership team coordinates chapter presidents across the country.",
     members: [
-      // Add real team members here. Each member: name, role, city, bio (short), photo (optional)
-      { name: "Satvik Koya", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started BetterNature after seeing surplus trays thrown out behind his local restaurants.", photo: "" },
+      // Add real team members here. Each member: name, role, city, bio (short), photo (optional), linkedin (optional)
+      { name: "Satvik Koya", linkedin: "https://www.linkedin.com/in/satvik-koya-162041286/", role: "Founder & Executive Director", city: "Memphis, TN", bio: "High school junior. Started BetterNature after seeing surplus trays thrown out behind his local restaurants.", photo: "images/team/satvik-koya.jpg" },
+      { name: "Rishik Polasa", role: "Founder", city: "", photo: "", linkedin: "" },
+      { name: "Pavan Ajithprasad", role: "Founder", city: "", photo: "", linkedin: "https://www.linkedin.com/in/pavan-ajithprasad-72b0ba361/" },
+      { name: "Punarchithsai Vanamareddy", role: "Founder", city: "", photo: "", linkedin: "" },
     ],
   },
 
@@ -317,14 +327,14 @@ window.CONTENT = {
   chapters: {
     eyebrow: "Find your chapter",
     title: "Founded in Memphis. Now on three continents.",
-    body: "Don't see your city? Start a chapter. We give you the playbook, the insurance, the partner introductions, and the onboarding — you give us the weekends.",
+    body: "Search for your city below. Not there yet? We give new chapters the playbook, the insurance, the partner introductions, and the onboarding — you give us the weekends.",
     featured: [
       {
         city: "Memphis", state: "TN", president: "Satvik Koya",
         instagram: "https://instagram.com/official.better.nature",
         blurb: "Our founding chapter. Weekly pickups, neighborhood deliveries, and the foundation we're scaling everything else from.",
         roster: [
-          { name: "Satvik Koya", role: "Founder & Chapter President", instagram: "" },
+          { name: "Satvik Koya", linkedin: "https://www.linkedin.com/in/satvik-koya-162041286/", role: "Founder & Chapter President", instagram: "" },
         ],
       },
       {
@@ -390,6 +400,9 @@ window.CONTENT = {
     ],
     cta: { text: "Open full donation form", href: "https://www.zeffy.com/en-US/donation-form/betternature" },
   },
+
+  // Journal schema: only published:true posts appear. Each post needs slug, title, project, excerpt and paragraphs.
+  blog: { posts: [] },
 
   // ── NEWSLETTER ────────────────────────────────────────────────────────
   newsletter: {

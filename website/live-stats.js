@@ -33,37 +33,17 @@ function repaintImpactGrid(stats) {
   `).join('');
 }
 
-// Replace the project tiles' inline stats — IRIS shows meals/lbs/CO₂,
-// Hydro shows water gallons. Evergreen has no live counter yet so we
-// leave its launch placeholder alone.
-function repaintProgramStats(s) {
-  const irisCard = document.querySelector('[data-program="iris"] .program__stats');
-  if (irisCard) {
-    irisCard.innerHTML = `
-      <div class="program__stat"><strong>${fmt(s.lbs)} lbs</strong><span>food rescued</span></div>
-      <div class="program__stat"><strong>${fmt(s.co2)} lbs</strong><span>CO₂ avoided</span></div>
-      <div class="program__stat"><strong>${fmt(s.water)} gal</strong><span>water saved</span></div>
-    `;
-  }
-  const hydroCard = document.querySelector('[data-program="hydro"] .program__stats');
-  if (hydroCard) {
-    hydroCard.innerHTML = `
-      <div class="program__stat"><strong>${fmt(s.water)} gal</strong><span>water footprint reduced</span></div>
-    `;
-  }
-}
-
 // Wait for the DOM node app.js paints before we try to write into
 // it. Without this the IIFE fires at module load and every
 // `document.getElementById(...)` returns null because app.js
 // hasn't run its render yet — the whole ticker/impact/program
 // repaint silently no-ops. Poll up to 5 seconds (10 tries) then
 // give up gracefully.
-function waitForNode(id, timeoutMs = 5000) {
+function waitForNode(selector, timeoutMs = 15000) {
   return new Promise((resolve) => {
     const start = Date.now();
     const tick = () => {
-      const el = document.getElementById(id);
+      const el = document.querySelector(selector);
       if (el) return resolve(el);
       if (Date.now() - start > timeoutMs) return resolve(null);
       setTimeout(tick, 250);
@@ -74,16 +54,23 @@ function waitForNode(id, timeoutMs = 5000) {
 
 async function paintLiveStats() {
   try {
-    // Wait until the ticker DOM exists — that's app.js's signal
-    // that the initial static paint is done.
-    await waitForNode('tickerTrack');
-    const stats = await fetchOrgStats();
+    // Wait for app.js's render. A node in the static HTML can't be the
+    // signal: app.js first awaits the CMS doc, then paints, and that paint
+    // used to land after ours and put the static numbers back. The impact
+    // cards only exist once app.js has painted.
+    const [stats] = await Promise.all([fetchOrgStats(), waitForNode('#impactGrid .stat')]);
+    const source = document.getElementById('impactSource');
+    if (source) source.textContent = !stats.reporting?.live
+      ? 'Source: previously published Better Nature totals. Live totals are unavailable right now.'
+      : stats.reporting.floorFields.length
+        ? 'Source: current organization counters with previously published totals retained where the counters are lower or incomplete. These are not independently audited figures.'
+        : 'Source: current organization counters, read when this page opened. These are not independently audited figures.';
     const total = (stats.meals || 0) + (stats.lbs || 0) + (stats.individuals || 0)
                 + (stats.co2 || 0) + (stats.water || 0);
     if (total === 0) return; // leave static CONTENT numbers in place
     repaintTicker(statsToTicker(stats));
     repaintImpactGrid(statsToImpactCards(stats));
-    repaintProgramStats(stats);
+    // Program cards no longer repeat the impact numbers (see app.js).
   } catch (e) {
     console.warn('live stats failed', e);
   }

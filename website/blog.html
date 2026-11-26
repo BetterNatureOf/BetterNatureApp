@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark"><meta name="theme-color" content="#f8faf6">
+<title>Journal · Better Nature</title><meta name="description" content="Stories, updates and field notes from Better Nature's food rescue, forest and waterway programs.">
+<link rel="icon" href="logo.png"><script src="appearance.js"></script><script defer src="pointer.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="experience.css"><link rel="stylesheet" href="journal.css">
+</head>
+<body>
+<a class="skip-link" href="#journal">Skip to stories</a>
+<header class="journal-header"><a class="journal-brand" href="index.html"><img src="logo.png" width="36" height="36" alt=""><span>BetterNature</span></a><nav aria-label="Journal navigation"><a href="index.html#programs">Programs</a><a href="index.html#chapters">Chapters</a><a href="blog.html" aria-current="page">Journal</a></nav><label class="appearance"><span class="sr-only">Appearance</span><select data-appearance aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header>
+<main class="journal-main" id="journal" tabindex="-1">
+<div id="journalList"><div class="journal-intro"><span>THE BETTER NATURE JOURNAL</span><h1>Notes from<br>the work.</h1><p>Food rescued. Forests restored. Waterways cared for. Stories and perspectives from the people making it happen.</p></div>
+<div class="journal-tools"><label for="journalSearch">Search stories</label><input type="search" id="journalSearch" placeholder="Search a topic or project"><select id="journalTopic" aria-label="Filter by project"><option value="">All projects</option><option value="IRIS">IRIS</option><option value="Evergreen">Evergreen</option><option value="Hydro">Hydro</option><option value="Community">Community</option></select></div>
+<p id="journalStatus" role="status">Loading published stories…</p><div class="journal-grid" id="journalPosts"></div></div>
+<article id="journalArticle" hidden><a class="journal-back" href="blog.html">← All stories</a><p class="journal-category" id="articleCategory"></p><h1 id="articleTitle"></h1><p id="articleMeta"></p><div id="articleBody"></div></article>
+</main>
+<footer class="journal-footer"><p>Care for people. Care for our planet.</p><a href="index.html">Back to Better Nature ↗</a><a href="https://app.betternatureofficial.org/">Open the app ↗</a></footer>
+<script src="content.js"></script><script type="module" src="journal.js"></script>
+</body></html>

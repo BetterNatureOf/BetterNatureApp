@@ -3,6 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#f8faf6" />
+  <script src="appearance.js?v=navigation-people-2"></script>
+  <script defer src="navigation.js"></script>
+  <script defer src="select-menu.js?v=navigation-people-2"></script>
+  <script defer src="pointer.js?v=navigation-people-2"></script>
   <title>BetterNature — Rescue. Restore. Protect.</title>
   <meta name="description" content="Youth-led nonprofit: three programs, one mission. We rescue surplus food, plant native forests, and clean the waterways communities depend on. 38 cities." />
   <meta property="og:title" content="BetterNature — Rescue. Restore. Protect." />
@@ -12,67 +18,83 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:opsz,wght@14..32,400..800&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="motion.css" />
+  <link rel="stylesheet" href="experience.css" />
+  <link rel="stylesheet" href="homepage.css?v=navigation-people-2" />
 </head>
 <body>
+<a class="skip-link" href="#top">Skip to content</a>
 
 <!-- ══════════════════════════ NAV -->
 <header class="nav" id="nav">
   <a class="nav__brand" href="#top">
-    <img src="logo.png" alt="BetterNature" class="nav__logo" />
+    <img src="logo.png" alt="" class="nav__logo" />
     <span class="nav__name">BetterNature</span>
   </a>
-  <nav class="nav__links" id="navLinks">
+  <nav class="nav__links" id="navLinks" aria-label="Main">
     <a href="#mission">Mission</a>
-    <a href="#impact">Impact</a>
     <a href="#programs">Programs</a>
-    <a href="#bnmap">Map</a>
-    <a href="#how">Get Involved</a>
-    <a href="#chapters">Chapters</a>
-    <a href="#partners">Partner</a>
-    <a href="#press">Press</a>
-    <a href="https://app.betternatureofficial.org/">Open web app</a>
-    <a href="#signup">Sign up</a>
+    <a href="#impact">Impact</a>
+    <a href="#how">How it works</a>
+    <a href="#chapters">Find a chapter</a>
+    <a class="nav__partner" href="https://app.betternatureofficial.org/#/signup/restaurant">Become a partner ↗</a>
+    <div class="nav__more">
+      <button class="nav__moreBtn" id="navMoreBtn" type="button" aria-expanded="false" aria-controls="navMore">
+        More <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="nav__moreMenu" id="navMore">
+        <a href="#bnmap">Food-insecurity map</a>
+        <a href="#team">Our people</a>
+        <a href="blog.html">Journal</a>
+        <a href="#press">Press</a>
+        <a href="https://app.betternatureofficial.org/">Open the web app ↗</a>
+      </div>
+    </div>
   </nav>
+  <nav class="nav__quick" aria-label="Quick links"><a href="#mission">Mission</a><a href="#programs">Programs</a><a href="#impact">Impact</a><a href="#chapters">Chapters</a><a class="nav__partner nav__quickPartner" href="https://app.betternatureofficial.org/#/signup/restaurant">Partner ↗</a></nav>
+  <div class="nav__tools">
   <div class="nav__ctas">
-    <a class="btn btn--ghost" href="#how">Volunteer</a>
-    <a class="btn btn--pink" href="#donate">Donate</a>
+    <label class="appearance"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor"/></svg><span class="sr-only">Appearance</span><select data-appearance aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+    <a class="btn btn--ghost nav__signin" href="https://app.betternatureofficial.org/#/login">Sign in</a>
+    <a class="btn btn--ghost nav__join" href="https://app.betternatureofficial.org/#/signup">Sign up</a>
+    <a class="btn btn--pink" href="https://www.zeffy.com/en-US/donation-form/betternature">Donate</a>
   </div>
   <button class="nav__burger" id="burger" aria-label="Menu" aria-expanded="false" aria-controls="navLinks">
-    <span></span><span></span><span></span>
+    <span class="nav__menuLabel">Menu</span><span class="nav__menuIcon" aria-hidden="true"><i></i><i></i></span>
   </button>
+  </div>
 </header>
 
-<main id="top">
+<main id="top" tabindex="-1">
 
 <!-- ══════════════════════════ HERO -->
-<section class="hero">
+<section class="hero hero--quiet" data-editorial="true">
   <div class="hero__grain"></div>
   <div class="hero__shape hero__shape--1"></div>
   <div class="hero__shape hero__shape--2"></div>
 
   <div class="hero__inner">
     <div class="hero__copy">
-      <div class="hero__eyebrow" id="heroEyebrow" data-intro="1"></div>
-      <h1 class="hero__h1" data-intro="2">
-        <span id="heroHeadline"></span>
-        <em id="heroHeadlineItalic"></em>
+      <div class="hero__eyebrow" id="heroEyebrow">A youth-led nonprofit</div>
+      <h1 class="hero__h1">
+        <span id="heroHeadline">Care for <span class="hero__highlight hero__highlight--people">people</span>.</span>
+        <em id="heroHeadlineItalic">Care for our <span class="hero__highlight hero__highlight--planet">planet</span>.</em>
       </h1>
-      <p class="hero__sub" id="heroSub" data-intro="3"></p>
-      <div class="hero__ctas" data-intro="3">
-        <a class="btn btn--forest btn--lg btn-magnetic" id="heroCta1"></a>
-        <a class="btn btn--outline btn--lg btn-magnetic" id="heroCta2"></a>
+      <div class="hero__aside">
+        <p class="hero__sub" id="heroSub">Help rescue <span class="hero__cause hero__cause--food">food</span>, restore <span class="hero__cause hero__cause--forest">native forests</span>, and protect <span class="hero__cause hero__cause--water">waterways</span>.</p>
+        <div class="hero__ctas"><a class="btn btn--pink btn--lg" id="heroCta1" href="#chapters">Find your chapter <span aria-hidden="true">↗</span></a></div>
       </div>
     </div>
-    <div class="hero__media" id="heroMedia"></div>
+    <div class="hero__story" aria-hidden="true">
+      <img src="images/iris-community.jpg" alt="" width="1000" height="800" fetchpriority="high">
+      <img src="images/native-trees.jpg" alt="" width="900" height="720" loading="eager">
+      <img src="images/waterway-cleanup.jpg" alt="" width="900" height="720" loading="eager">
+    </div>
   </div>
 
-  <div class="ticker">
-    <div class="ticker__track" id="tickerTrack"></div>
-  </div>
 </section>
 
 <!-- ══════════════════════════ MISSION -->
@@ -85,15 +107,6 @@
   </div>
 </section>
 
-<!-- ══════════════════════════ IMPACT -->
-<section class="impact" id="impact" data-reveal>
-  <div class="container">
-    <div class="eyebrow eyebrow--light" id="impactEyebrow"></div>
-    <h2 class="impact__title" id="impactTitle"></h2>
-    <div class="impact__grid" id="impactGrid" data-reveal-stagger></div>
-  </div>
-</section>
-
 <!-- ══════════════════════════ PROGRAMS -->
 <section class="programs" id="programs" data-reveal>
   <div class="container">
@@ -102,6 +115,71 @@
       <h2 class="programs__title" id="programsTitle"></h2>
     </div>
     <div class="programs__list" id="programsList" data-reveal-stagger></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ IMPACT -->
+<section class="impact" id="impact" data-reveal>
+  <div class="container">
+    <div class="eyebrow eyebrow--light" id="impactEyebrow"></div>
+    <h2 class="impact__title" id="impactTitle"></h2>
+    <div class="impact__grid" id="impactGrid" data-reveal-stagger></div>
+    <details class="impact-method"><summary>Where these numbers come from</summary><p id="impactSource">Published Better Nature totals. Live reporting is being checked.</p><p>Food weight, service counts and environmental estimates are different measures and must not be added together. Service counts do not establish a count of unique people. Environmental figures are reported estimates, not direct measurements; a published calculation method is not yet available here.</p></details>
+  </div>
+</section>
+
+<!-- ══════════════════════════ HOW IT WORKS -->
+<section class="how" id="how">
+  <div class="container">
+    <div class="eyebrow" id="howEyebrow"></div>
+    <h2 class="how__title" id="howTitle"></h2>
+    <div class="how__tabs" id="howTabs"></div>
+    <div class="how__content" id="howContent"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ CHAPTERS -->
+<section class="chapters" id="chapters">
+  <div class="container">
+    <div class="eyebrow" id="chaptersEyebrow"></div>
+    <h2 class="chapters__title" id="chaptersTitle"></h2>
+    <p class="chapters__body" id="chaptersBody"></p>
+    <section class="network" id="chapterInsights" aria-labelledby="networkTitle">
+      <div class="network__intro">
+        <span class="network__label">A connected community</span>
+        <h3 id="networkTitle">Local roots.<br> Shared purpose.</h3>
+        <p>Explore the chapters behind the work. Choose a region below to find your community.</p>
+        <p class="network__source" id="networkSource" role="status">Loading the chapter directory…</p>
+      </div>
+      <div class="network__data">
+        <div class="network__toolbar"><label for="networkMetric">View</label><select id="networkMetric"><option value="chapters">Chapters by region</option><option value="members">Reported members by region</option></select><button type="button" id="networkExport" disabled>Export CSV</button></div>
+        <p class="network__summary" id="networkSummary" aria-live="polite">Chapter data will appear here when available.</p>
+        <div id="networkChart" class="network__chart" aria-hidden="true"></div>
+        <details class="network__table"><summary>View accessible data table</summary><table><caption id="networkCaption">Chapter directory by region</caption><thead><tr><th scope="col">Region</th><th scope="col" id="networkUnit">Chapters</th></tr></thead><tbody id="networkRows"></tbody></table></details>
+        <div class="network__regions" id="networkRegions" role="group" aria-label="Find chapters by region"></div>
+      </div>
+    </section>
+    <div class="chapters__tools">
+      <label class="chapters__search mx-glass">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="chapterSearch" type="search" placeholder="Search a city or country" aria-label="Search chapters" autocomplete="off" />
+      </label>
+      <div class="chapters__filters" id="chapterFilters" role="group" aria-label="Filter chapters by region"></div>
+      <label class="chapters__sort">
+        <span>Sort</span>
+        <select id="chapterSort" aria-label="Sort chapters">
+          <option value="region">By region</option>
+          <option value="az">A–Z</option>
+          <option value="members">Most members</option>
+        </select>
+      </label>
+      <div class="chapters__nav">
+        <span class="chapters__count" id="chapterCount" aria-live="polite"></span>
+        <button type="button" class="chapters__arrow" id="chaptersPrev" aria-label="Previous chapters"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="chapters__arrow" id="chaptersNext" aria-label="Next chapters"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </div>
+    <div class="chapters__grid" id="chaptersGrid"></div>
   </div>
 </section>
 
@@ -123,48 +201,6 @@
 <!-- Impact Map section removed — BN Map (above) is the replacement.
      Old impactmap JS is now a no-op because none of these IDs exist
      on the page anymore. -->
-
-<!-- ══════════════════════════ HOW IT WORKS -->
-<section class="how" id="how">
-  <div class="container">
-    <div class="eyebrow" id="howEyebrow"></div>
-    <h2 class="how__title" id="howTitle"></h2>
-    <div class="how__tabs" id="howTabs"></div>
-    <div class="how__content" id="howContent"></div>
-  </div>
-</section>
-
-<!-- ══════════════════════════ CHAPTERS -->
-<section class="chapters" id="chapters">
-  <div class="container">
-    <div class="eyebrow" id="chaptersEyebrow"></div>
-    <h2 class="chapters__title" id="chaptersTitle"></h2>
-    <p class="chapters__body" id="chaptersBody"></p>
-    <div class="chapters__grid" id="chaptersGrid"></div>
-    <div class="chapters__cta">
-      <a class="btn btn--forest btn--lg" id="startChapterBtn">Start a chapter in your city</a>
-    </div>
-  </div>
-</section>
-
-<!-- ══════════════════════════ PARTNERS -->
-<section class="partners" id="partners">
-  <div class="container">
-    <div class="eyebrow eyebrow--pink" id="partnersEyebrow"></div>
-    <h2 class="partners__title" id="partnersTitle"></h2>
-    <p class="partners__body" id="partnersBody"></p>
-
-    <div class="logo-marquee">
-      <div class="logo-marquee__track" id="partnerLogos"></div>
-    </div>
-
-    <div class="partners__pitch">
-      <h3 id="pitchTitle"></h3>
-      <p id="pitchBody"></p>
-      <a class="btn btn--pink btn--lg" id="pitchCta"></a>
-    </div>
-  </div>
-</section>
 
 <!-- ══════════════════════════ TESTIMONIALS -->
 <section class="testimonials" id="testimonials">
@@ -218,13 +254,13 @@
 
     <div class="donate__cta">
       <a class="btn btn--ghost btn--lg" id="donateCta" target="_blank" rel="noreferrer"></a>
-      <small>Powered by Zeffy — 100% of your donation goes to BetterNature. Zero platform fees.</small>
     </div>
   </div>
 </section>
 
 <!-- ══════════════════════════ GET THE APP -->
-<section class="getapp" id="getapp">
+<!-- Folded into the Join section below (accounts are made in the app). -->
+<section class="getapp" id="getapp" hidden>
   <div class="container getapp__grid">
     <div class="getapp__left">
       <div class="eyebrow eyebrow--pink" id="getappEyebrow"></div>
@@ -259,23 +295,19 @@
       <h2 id="newsTitle"></h2>
       <p id="newsBody"></p>
     </div>
-    <form class="newsletter__form" id="newsForm">
-      <input type="email" id="newsEmail" required />
-      <button type="submit" class="btn btn--pink" id="newsCta"></button>
-    </form>
+    <a class="btn btn--forest" id="newsCta" href="blog.html">Explore the journal ↗</a>
   </div>
 </section>
 
 </main>
 
 <!-- ══════════════════════════ CHAPTER MODAL -->
-<div class="modal" id="chapterModal" aria-hidden="true">
-  <div class="modal__backdrop" data-close></div>
-  <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="chapterModalTitle">
+<dialog class="chapter-dialog" id="chapterModal" aria-labelledby="chapterModalTitle">
+  <div class="modal__panel">
     <button class="modal__close" data-close aria-label="Close">×</button>
     <div id="chapterModalBody"></div>
   </div>
-</div>
+</dialog>
 
 <!-- ══════════════════════════ FOOTER -->
 <footer class="footer">
@@ -294,7 +326,7 @@
     <div class="footer__col">
       <h4>Get involved</h4>
       <a href="#how">Volunteer</a>
-      <a href="#partners">Partner your restaurant</a>
+      <a class="nav__partner" href="https://app.betternatureofficial.org/#/signup/restaurant">Become a partner ↗</a>
       <a href="#chapters">Start a chapter</a>
       <a href="#donate">Donate</a>
     </div>
@@ -310,19 +342,13 @@
   </div>
 </footer>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="content.js"></script>
 <script defer src="animate.js"></script>
-<script src="app.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/motion@11.11.13/dist/motion.js" integrity="sha384-czaB7zH9slIhvFgUxhO8sSnYf4cnCeV2N3zOvDnNKFzRKu5AwqDKEZlCLsaQkoop" crossorigin="anonymous"></script>
+<script defer src="motion.js"></script>
+<script src="app.js?v=navigation-people-2"></script>
 <script type="module" src="live-stats.js"></script>
-<script type="module">
-  // Bridge: expose Firebase signup to the non-module app.js so website signup
-  // creates a real account that works in the app + web app + website.
-  import { signUp, emailAlreadyRegistered } from './firebase-auth.js';
-  window.BN_SIGNUP = signUp;
-  // Used by app.js to preflight the signup form: if the email is already
-  // a Firebase account we surface the error before submitting anything.
-  window.BN_EMAIL_TAKEN = emailAlreadyRegistered;
-</script>
+<script type="module" src="network-insights.js"></script>
+
 </body>
 </html>

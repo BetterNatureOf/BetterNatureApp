@@ -47,37 +47,66 @@
       if (on) return;
       const sec = document.getElementById(key);
       if (sec) sec.style.display = 'none';
-      document.querySelectorAll(`.nav__links a[href="#${key}"]`).forEach(a => a.style.display = 'none');
+      document.querySelectorAll(`#nav a[href="#${key}"]`).forEach(a => a.style.display = 'none');
     });
   }
 
   const setHTML = (sel, val) => { const el = $(sel); if (el) el.innerHTML = val; };
+
+  // Accounts are created in the BetterNature app, not on this site. Every
+  // "join" link points at the right app screen and carries a referral code
+  // if the visitor arrived with ?ref= (the app reads it from the URL).
+  const APP_BASE = ((C.brand && C.brand.appLinks && C.brand.appLinks.webApp) || 'https://app.betternatureofficial.org').replace(/\/$/, '');
+  const appUrl = (route) => {
+    let ref = '';
+    try { ref = localStorage.getItem('bn_ref') || ''; } catch (e) {}
+    return `${APP_BASE}/${ref ? `?ref=${encodeURIComponent(ref)}` : ''}#/${route}`;
+  };
+  const APP_ROUTES = { volunteer: 'signup', business: 'signup/restaurant', chapter: 'start-chapter', login: 'login' };
   const setHref = (sel, val) => { const el = $(sel); if (el) el.href = val; };
 
+  setHref('.nav__join', appUrl('signup'));
+  setHref('.nav__signin', appUrl(APP_ROUTES.login));
+  document.querySelectorAll('.nav__partner').forEach(link => link.href = appUrl(APP_ROUTES.business));
+  setHref('.nav__ctas > .btn--pink', C.brand.donateUrl || C.donate.cta.href);
+
   // ── HERO ────────────────────────────────────────────────────────────
-  set('#heroEyebrow', C.hero.eyebrow);
-  set('#heroHeadline', C.hero.headline + ' ');
-  set('#heroHeadlineItalic', C.hero.headlineItalic);
-  set('#heroSub', C.hero.subhead);
+  // Keep the opening intentionally short; program detail lives below it.
+  set('#heroEyebrow', C.hero.introEyebrow || 'A youth-led nonprofit');
+  const previousTagline = C.hero.headline?.trim() === 'Feed people. Plant forests.' && C.hero.headlineItalic?.trim() === 'Protect the water.';
+  set('#heroHeadline', previousTagline ? 'Care for people.' : C.hero.headline);
+  set('#heroHeadlineItalic', previousTagline ? 'Care for our planet.' : C.hero.headlineItalic);
+  set('#heroSub', C.hero.introLine || 'Help rescue food, restore native forests, and protect waterways.');
+  // Decorate text nodes rather than interpreting CMS copy as HTML.
+  const accentWords = (selector, pattern, classFor) => {
+    const node = $(selector);
+    if (!node) return;
+    const copy = node.textContent;
+    const parts = document.createDocumentFragment();
+    let end = 0;
+    for (const match of copy.matchAll(pattern)) {
+      parts.append(document.createTextNode(copy.slice(end, match.index)));
+      const word = document.createElement('span');
+      word.className = classFor(match[0].toLowerCase());
+      word.textContent = match[0]; parts.append(word);
+      end = match.index + match[0].length;
+    }
+    parts.append(document.createTextNode(copy.slice(end)));
+    node.replaceChildren(parts);
+  };
+  accentWords('#heroHeadline', /\bpeople\b/gi, () => 'hero__highlight hero__highlight--people');
+  accentWords('#heroHeadlineItalic', /\bplanet\b/gi, () => 'hero__highlight hero__highlight--planet');
+  accentWords('#heroSub', /\bnative forests\b|\bwaterways\b|\bfood\b/gi, word => 'hero__cause hero__cause--' + ({food:'food','native forests':'forest',waterways:'water'}[word]));
+
   const heroCta1 = $('#heroCta1');
-  heroCta1.textContent = C.hero.primaryCta.text;
-  heroCta1.href = C.hero.primaryCta.href;
-  const heroCta2 = $('#heroCta2');
-  heroCta2.textContent = C.hero.secondaryCta.text;
-  heroCta2.href = C.hero.secondaryCta.href;
+  heroCta1.innerHTML = 'Find your chapter <span aria-hidden="true">↗</span>';
+  heroCta1.href = '#chapters';
 
   // Ticker (duplicate for seamless loop)
   const tickerItems = C.hero.tickerStats.map(s =>
     `<span class="ticker__item"><span class="ticker__value">${s.value}</span><span class="ticker__label">${s.label}</span></span><span class="ticker__dot">●</span>`
   ).join('');
   setHTML('#tickerTrack', tickerItems + tickerItems);
-
-  // Hero media collage (trees, fresh water, produce crates)
-  if (C.hero.media && C.hero.media.length) {
-    setHTML('#heroMedia', C.hero.media.map((m, i) =>
-      `<figure class="hero__tile hero__tile--${i + 1}"><img src="${m.src}" alt="${m.alt || ''}" loading="lazy" /></figure>`
-    ).join(''));
-  }
 
   // ── MISSION ─────────────────────────────────────────────────────────
   set('#missionEyebrow', C.mission.eyebrow);
@@ -106,6 +135,12 @@
   set('#programsEyebrow', C.programs.eyebrow);
   set('#programsTitle', C.programs.title);
 
+  // Wordmark under each program logo.
+  const marks = {
+    iris: { name: 'IRIS', sub: 'food rescue' },
+    evergreen: { name: 'Evergreen', sub: 'conservation' },
+    hydro: { name: 'Hydro', sub: 'waterways' },
+  };
   const icons = {
     iris: '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="32" cy="28" r="12"/><path d="M20 28 C 20 20, 44 20, 44 28"/><path d="M16 42 L 48 42 L 44 56 L 20 56 Z"/></svg>',
     evergreen: '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M32 8 L 20 24 L 26 24 L 16 40 L 24 40 L 14 56 L 50 56 L 40 40 L 48 40 L 38 24 L 44 24 Z"/><path d="M32 56 L 32 62"/></svg>',
@@ -120,36 +155,39 @@
     const code = p?.code || '';
     const title = p?.title || '';
     const body = p?.body || p?.blurb || '';
-    const stats = Array.isArray(p?.stats) ? p.stats : [];
+    // Numbers live once, in the Impact section; program cards keep only
+    // status words like "Launching" or "Memphis" so nothing repeats.
+    const stats = (Array.isArray(p?.stats) ? p.stats : []).filter((s) => s && !/\d/.test(String(s.value ?? '')));
     const cta  = p?.cta && p.cta.href
-      ? `<a href="${p.cta.href}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>`
+      ? `<a href="${appUrl('')}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>`
       : '';
     return `
-    <div class="program reveal ${i % 2 === 1 ? 'program--reverse' : ''}" data-program="${key}">
+    <div id="program-${key}" class="program reveal ${i % 2 === 1 ? 'program--reverse' : ''}" data-program="${key}">
       <div class="program__inner">
         <div class="program__code">${code}</div>
         <h3 class="program__title">${title}</h3>
         <p class="program__body">${body}</p>
-        <div class="program__stats">
+        ${stats.length ? `<div class="program__stats">
           ${stats.map(s => `
             <div>
               <div class="program__stat-value">${s?.value ?? ''}</div>
               <div class="program__stat-label">${s?.label ?? ''}</div>
             </div>
           `).join('')}
-        </div>
+        </div>` : ''}
         ${cta}
       </div>
       <div class="program__visual program__visual--${key}">
         <!-- Real project logo. Falls back gracefully to the SVG icon
              beneath it if the PNG isn't deployed yet. -->
         <img
-          src="projects/${key}.png"
+          src="identity/${key}.svg"
           alt="${title}"
           class="program__logo"
           onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='block');"
         />
         <div class="program__logoFallback" style="display:none">${icons[key] || ''}</div>
+        ${marks[key] ? `<div class="program__mark" aria-hidden="true"><span class="program__markName">${marks[key].name}</span><span class="program__markSub">${marks[key].sub}</span></div>` : ''}
       </div>
     </div>
   `; }).join(''));
@@ -162,6 +200,7 @@
   const howContent = $('#howContent');
   const renderTrack = (idx) => {
     const t = C.howItWorks.tracks[idx];
+    howContent.setAttribute('role', 'tabpanel'); howContent.setAttribute('aria-labelledby', `how-tab-${idx}`);
     howContent.innerHTML = `
       <div class="how__tagline">${t.tagline}</div>
       <div class="how__steps">
@@ -173,17 +212,25 @@
           </div>
         `).join('')}
       </div>
-      <a href="${t.cta.href}" class="btn btn--pink btn--lg">${t.cta.text}</a>
+      <a href="${appUrl(APP_ROUTES[t.signupTrack || ['business', 'volunteer'][idx]] || 'signup')}" class="btn btn--pink btn--lg">${t.cta.text} <span aria-hidden="true">↗</span></a>
     `;
     howTabs.querySelectorAll('.how__tab').forEach((tab, i) => {
       tab.classList.toggle('is-active', i === idx);
+      tab.setAttribute('aria-selected', String(i === idx)); tab.tabIndex = i === idx ? 0 : -1;
     });
   };
+  howTabs.setAttribute('role', 'tablist'); howTabs.setAttribute('aria-label', 'How to get involved');
   howTabs.innerHTML = C.howItWorks.tracks.map((t, i) =>
-    `<button class="how__tab ${i === 0 ? 'is-active' : ''}" data-idx="${i}">${t.label}</button>`
+    `<button type="button" role="tab" id="how-tab-${i}" aria-controls="howContent" class="how__tab ${i === 0 ? 'is-active' : ''}" data-idx="${i}">${t.label}</button>`
   ).join('');
   howTabs.querySelectorAll('.how__tab').forEach((tab, i) => {
     tab.addEventListener('click', () => renderTrack(i));
+    tab.addEventListener('keydown', event => {
+      const tabs = [...howTabs.querySelectorAll('.how__tab')];
+      const next = event.key === 'ArrowRight' ? (i + 1) % tabs.length : event.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+      if (next === null) return;
+      event.preventDefault(); renderTrack(next); tabs[next].focus();
+    });
   });
   renderTrack(0);
 
@@ -192,7 +239,7 @@
   set('#chaptersEyebrow', C.chapters.eyebrow);
   set('#chaptersTitle', C.chapters.title);
   set('#chaptersBody', C.chapters.body);
-  $('#startChapterBtn').href = C.chapters.startChapterUrl;
+  const startChapterHref = appUrl(APP_ROUTES.chapter);
 
   // Live chapters from Firestore. We distinguish three states so
   // the user knows what's going on:
@@ -219,6 +266,14 @@
     ? liveChapters
     : C.chapters.featured;
   const liveLoaded = Array.isArray(liveChapters);
+  window.BN_CHAPTER_DIRECTORY = {
+    source: liveLoaded ? 'live' : 'published',
+    chapters: renderChapters.map(ch => ({
+      region: regionOf(ch.country || '') || 'Unspecified',
+      members: Number.isFinite(ch.member_count) ? ch.member_count : Number.isFinite(ch.members) ? ch.members : null,
+    })),
+  };
+  window.dispatchEvent(new CustomEvent('bn:chapters', { detail: window.BN_CHAPTER_DIRECTORY }));
 
   if (renderChapters.length === 0) {
     setHTML('#chaptersGrid', `
@@ -233,149 +288,179 @@
     setHTML('#chaptersGrid', renderChapters.map((ch, i) => {
       const city = ch.city || ch.name || '';
       const state = ch.state || '';
-      const president = ch.president_name || ch.president || '—';
+      const country = countryName(ch.country || '');
+      const president = ch.president_name || ch.president || '';
       const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
+      const region = regionOf(ch.country || '');
+      const search = [city, state, country, region, ch.name].filter(Boolean).join(' ').toLowerCase();
       return `
-      <button type="button" class="chapter reveal" data-chapter="${i}">
+      <button type="button" class="chapter" data-chapter="${i}" data-country="${country}" data-region="${region}" data-city="${city.replace(/"/g, '')}" data-members="${memberCount || 0}" data-search="${search.replace(/"/g, '')}">
+        <div class="chapter__region">${region}</div>
         <div class="chapter__city">${city}</div>
-        <div class="chapter__state">${state}</div>
+        <div class="chapter__state">${[state, country].filter(Boolean).join(' · ')}</div>
         <div class="chapter__meta">
-          <span>President: ${president}</span>
-          ${memberCount != null ? `<span class="chapter__members">${memberCount} member${memberCount === 1 ? '' : 's'}</span>` : ''}
+          ${president ? `<span>Led by ${president}</span>` : '<span>New chapter</span>'}
+          ${memberCount ? `<span class="chapter__members">${memberCount} member${memberCount === 1 ? '' : 's'}</span>` : ''}
         </div>
         <span class="chapter__more">View chapter →</span>
       </button>
     `;
-    }).join(''));
+    }).join('') + `
+      <a class="chapter chapter--start" href="${startChapterHref}">
+        <div class="chapter__city">Not on the list?</div>
+        <div class="chapter__meta"><span>Start BetterNature in your city. We send the playbook within 48 hours.</span></div>
+        <span class="chapter__more">Start a chapter →</span>
+      </a>`);
+    setupChapterBrowser();
   }
 
-  // Chapter modal
+  // Chapters store ISO country codes ("CHL"); show names instead.
+  // Region for sorting/filtering chapters (by ISO country code).
+  function regionOf(code) {
+    const c = (code || '').toUpperCase();
+    const REGIONS = {
+      'North America': ['USA', 'US', 'CAN', 'CA'],
+      'Latin America': ['MEX', 'MX', 'GTM', 'GT', 'CHL', 'CL', 'ECU', 'EC', 'URY', 'UY', 'ARG', 'AR', 'BRA', 'BR', 'COL', 'CO', 'PER', 'PE', 'PRY', 'PY', 'BOL', 'BO', 'CRI', 'CR', 'PAN', 'PA', 'DOM', 'DO', 'HND', 'HN', 'SLV', 'SV', 'NIC', 'NI', 'VEN', 'VE'],
+      'Asia': ['IND', 'IN', 'PAK', 'PK', 'BGD', 'BD', 'NPL', 'NP', 'PHL', 'PH', 'IDN', 'ID', 'CHN', 'CN', 'JPN', 'JP', 'KOR', 'KR', 'SGP', 'SG', 'MYS', 'MY', 'THA', 'TH', 'VNM', 'VN', 'LKA', 'LK', 'ARE', 'AE'],
+      'Europe': ['GBR', 'GB', 'DEU', 'DE', 'FRA', 'FR', 'ESP', 'ES', 'ITA', 'IT', 'NLD', 'NL', 'PRT', 'PT', 'IRL', 'IE'],
+      'Africa': ['NGA', 'NG', 'KEN', 'KE', 'GHA', 'GH', 'ZAF', 'ZA', 'EGY', 'EG', 'ETH', 'ET', 'UGA', 'UG'],
+      'Oceania': ['AUS', 'AU', 'NZL', 'NZ'],
+    };
+    for (const [name, codes] of Object.entries(REGIONS)) if (codes.includes(c)) return name;
+    return c ? 'Other' : '';
+  }
+
+  function countryName(code) {
+    if (!code) return '';
+    const COUNTRY_ISO2 = { USA: 'US', CHL: 'CL', ECU: 'EC', GTM: 'GT', IND: 'IN', URY: 'UY', MEX: 'MX', CAN: 'CA', GBR: 'GB', ARG: 'AR', BRA: 'BR', COL: 'CO', PER: 'PE', PRY: 'PY', BOL: 'BO', CRI: 'CR', PAN: 'PA', DOM: 'DO', NGA: 'NG', KEN: 'KE', GHA: 'GH', PHL: 'PH', PAK: 'PK', BGD: 'BD', NPL: 'NP', AUS: 'AU', NZL: 'NZ', DEU: 'DE', FRA: 'FR', ESP: 'ES', ITA: 'IT' };
+    const iso2 = code.length === 2 ? code.toUpperCase() : COUNTRY_ISO2[code.toUpperCase()];
+    try {
+      if (iso2 && typeof Intl !== 'undefined' && Intl.DisplayNames) {
+        const name = new Intl.DisplayNames(['en'], { type: 'region' }).of(iso2);
+        return iso2 === 'US' ? 'United States' : name;
+      }
+    } catch (e) { /* fall through */ }
+    return code;
+  }
+
+  // Search, country filters and a swipeable rail, so nobody has to scroll
+  // past every chapter card to reach the rest of the page.
+  function setupChapterBrowser() {
+    const rail = $('#chaptersGrid');
+    const input = $('#chapterSearch');
+    const filters = $('#chapterFilters');
+    const count = $('#chapterCount');
+    const prev = $('#chaptersPrev');
+    const next = $('#chaptersNext');
+    if (!rail) return;
+    const cards = Array.from(rail.querySelectorAll('.chapter[data-chapter]'));
+    const start = rail.querySelector('.chapter--start');
+    const ORDER = ['North America', 'Latin America', 'Europe', 'Africa', 'Asia', 'Oceania', 'Other'];
+    const regions = ORDER.filter((r) => cards.some((c) => c.dataset.region === r));
+    let region = '';
+    let sort = 'region';
+    const sortSel = $('#chapterSort');
+
+    if (filters) {
+      filters.innerHTML = regions.length > 1
+        ? ['', ...regions].map((r) => {
+            const n = r ? cards.filter((c) => c.dataset.region === r).length : cards.length;
+            return `<button type="button" class="chapters__chip${r ? '' : ' is-active'}" aria-pressed="${!r}" data-region="${r}">${r || 'All'} <span>${n}</span></button>`;
+          }).join('')
+        : '';
+      filters.querySelectorAll('.chapters__chip').forEach((chip) => chip.addEventListener('click', () => {
+        region = chip.dataset.region;
+        filters.querySelectorAll('.chapters__chip').forEach((c) => { c.classList.toggle('is-active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+        apply();
+      }));
+    }
+    window.addEventListener('bn:region', event => {
+      const chip = Array.from(filters?.querySelectorAll('.chapters__chip') || []).find(c => c.dataset.region === event.detail);
+      if (chip) chip.click();
+    });
+    if (sortSel) sortSel.addEventListener('change', () => { sort = sortSel.value; apply(); });
+
+    // Reorder the rail without touching the DOM (keeps modal indices valid).
+    function applySort() {
+      const ranked = cards.slice().sort((a, b) => {
+        if (sort === 'members') return (+b.dataset.members - +a.dataset.members) || a.dataset.city.localeCompare(b.dataset.city);
+        if (sort === 'region') {
+          const r = ORDER.indexOf(a.dataset.region) - ORDER.indexOf(b.dataset.region);
+          if (r) return r;
+        }
+        return a.dataset.city.localeCompare(b.dataset.city);
+      });
+      ranked.forEach((c, i) => { c.style.order = i; });
+      if (start) start.style.order = ranked.length + 1;
+      rail.classList.toggle('is-by-region', sort === 'region');
+    }
+
+    function apply() {
+      const q = (input && input.value || '').trim().toLowerCase();
+      let shown = 0;
+      cards.forEach((c) => {
+        const ok = (!q || c.dataset.search.includes(q)) && (!region || c.dataset.region === region);
+        c.hidden = !ok;
+        if (ok) shown++;
+      });
+      if (start) {
+        start.querySelector('.chapter__city').textContent = shown ? 'Not on the list?' : (q ? `No chapter in “${input.value.trim()}” yet` : 'No chapters here yet');
+      }
+      if (count) count.textContent = `${shown} of ${cards.length} chapter${cards.length === 1 ? '' : 's'}`;
+      applySort();
+      rail.scrollTo({ left: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+      updateArrows();
+    }
+    function updateArrows() {
+      const max = rail.scrollWidth - rail.clientWidth - 2;
+      if (prev) prev.disabled = rail.scrollLeft <= 2;
+      if (next) next.disabled = rail.scrollLeft >= max;
+    }
+    const page = (dir) => rail.scrollBy({ left: dir * rail.clientWidth * 0.85, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    if (prev) prev.addEventListener('click', () => page(-1));
+    if (next) next.addEventListener('click', () => page(1));
+    rail.addEventListener('scroll', updateArrows, { passive: true });
+    window.addEventListener('resize', updateArrows);
+    if (input) input.addEventListener('input', apply);
+    apply();
+  }
+
+  // Public chapter people only; no private user collection is read.
+  const { renderChapterPeople, escapeText, safeLink } = await import('./chapter-people.js?v=navigation-people-2');
   const modal = $('#chapterModal');
   const modalBody = $('#chapterModalBody');
-  const openChapter = (idx) => {
+  let previousOverflow = '';
+  const openChapter = idx => {
     const ch = renderChapters[idx];
     if (!ch) return;
-    // Officers from the denormalized blob the app writes. Fall back
-    // to the static roster on legacy entries.
-    const off = ch.officers || {};
-    const officerRows = [
-      ['President',            off.president],
-      ['Vice President',       off.vice_president],
-      ['Treasurer',            off.treasurer],
-      ['Volunteer Coordinator', off.volunteer_coordinator],
-      ['Secretary',            off.secretary],
-    ].filter(([, p]) => p && (p.name || p.email)).map(([label, p]) => `
-      <li class="chapter-modal__member">
-        <div>
-          <strong>${p.name || p.email}</strong>
-          <span>${label}</span>
-        </div>
-      </li>
-    `).join('');
-    // Roster sources, in priority order:
-    //   1. ch.officers (denormalized leadership) → officerRows
-    //   2. ch.roster   (denormalized membership) → memberRows
-    //   3. C.chapters.featured[].roster (static fallback for legacy
-    //      chapters that don't have ch.roster yet)
-    // We render officers + members ONCE, de-duping the members against
-    // the officer names so the president doesn't appear twice. The
-    // static fallback only fires when there's no live roster — never
-    // alongside, otherwise everyone shows up twice.
-    const norm = (s) => String(s || '').trim().toLowerCase();
-    const officerKeys = new Set(
-      [off.president, off.vice_president, off.treasurer, off.volunteer_coordinator, off.secretary]
-        .filter(Boolean)
-        .flatMap((p) => [norm(p.name), norm(p.email), norm(p.id)].filter(Boolean))
-    );
-    const liveRoster = Array.isArray(ch.roster) ? ch.roster : [];
-    const memberRows = liveRoster
-      .filter((m) => {
-        if (!m.name) return false;
-        const keys = [norm(m.name), norm(m.email), norm(m.id)].filter(Boolean);
-        return !keys.some((k) => officerKeys.has(k));
-      })
-      .map((m) => `
-        <li class="chapter-modal__member">
-          <div>
-            <strong>${m.name}</strong>
-            <span>${m.role || 'Member'}</span>
-          </div>
-          ${m.instagram ? `<a href="${m.instagram}" target="_blank" rel="noreferrer" aria-label="${m.name} on Instagram">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
-          </a>` : ''}
-        </li>
-      `).join('');
-    // Only render the static fallback if there's nothing live to show.
-    const haveLive = (officerRows && officerRows.length) || (memberRows && memberRows.length);
-    const staticFallback = haveLive ? '' : (Array.isArray(C.chapters.featured) ? C.chapters.featured : [])
-      .filter((f) => norm(f.city) === norm(ch.city))
-      .flatMap((f) => Array.isArray(f.roster) ? f.roster : [])
-      .map((m) => `
-        <li class="chapter-modal__member">
-          <div>
-            <strong>${m.name}</strong>
-            <span>${m.role || ''}</span>
-          </div>
-        </li>
-      `).join('');
-    const combined = (officerRows || '') + (memberRows || '') + (staticFallback || '');
-    const roster = combined || '<li class="chapter-modal__empty">Roster coming soon.</li>';
-    const memberCount = (typeof ch.member_count === 'number' ? ch.member_count : (typeof ch.members === 'number' ? ch.members : null));
-    const president = ch.president_name || ch.president || '—';
+    const count = typeof ch.member_count === 'number' ? ch.member_count : typeof ch.members === 'number' ? ch.members : null;
+    const fallback = (C.chapters.featured || []).find(item => String(item.city).toLowerCase() === String(ch.city).toLowerCase())?.roster || [];
+    const instagram = safeLink(ch.instagram);
     modalBody.innerHTML = `
-      <div class="eyebrow eyebrow--pink">Chapter</div>
-      <h3 id="chapterModalTitle" class="chapter-modal__title">${ch.city || ''}${ch.state ? ', ' + ch.state : ''}</h3>
-      ${ch.description || ch.blurb ? `<p class="chapter-modal__blurb">${ch.description || ch.blurb}</p>` : ''}
-      <div class="chapter-modal__stats">
-        ${memberCount != null ? `<span><strong>${memberCount}</strong> member${memberCount === 1 ? '' : 's'}</span>` : ''}
-        <span>President: <strong>${president}</strong></span>
-        ${ch.instagram ? `<a class="chapter-modal__ig" href="${ch.instagram}" target="_blank" rel="noreferrer">@chapter on Instagram ↗</a>` : ''}
-      </div>
-      <h4 class="chapter-modal__subhead">Officers</h4>
-      <ul class="chapter-modal__roster">${roster}</ul>
-    `;
-    modal.classList.add('is-open');
-    modal.setAttribute('aria-hidden', 'false');
+      <header class="chapter-dialog__header">
+        <div class="eyebrow eyebrow--pink">Meet the chapter</div>
+        <h2 id="chapterModalTitle" class="chapter-modal__title">${escapeText(ch.city || ch.name)}${ch.state ? ', ' + escapeText(ch.state) : ''}</h2>
+        ${ch.description || ch.blurb ? `<p class="chapter-modal__blurb">${escapeText(ch.description || ch.blurb)}</p>` : ''}
+        <div class="chapter-modal__stats">${count != null ? `<span><strong>${count}</strong> member${count === 1 ? '' : 's'}</span>` : ''}${instagram ? `<a href="${escapeText(instagram)}" target="_blank" rel="noopener noreferrer">Chapter on Instagram ↗</a>` : ''}</div>
+      </header>
+      ${renderChapterPeople(ch, fallback)}`;
+    modalBody.querySelectorAll('.chapter-person img').forEach(img => img.addEventListener('error', () => img.remove(), {once:true}));
+    const search = modalBody.querySelector('[data-people-search]');
+    search?.addEventListener('input', () => {
+      const query = search.value.trim().toLowerCase(); let visible = 0;
+      modalBody.querySelectorAll('.chapter-person').forEach(card => { card.hidden = !card.dataset.search.includes(query); if (!card.hidden) visible++; });
+      modalBody.querySelectorAll('.chapter-people__group').forEach(group => group.hidden = ![...group.querySelectorAll('.chapter-person')].some(card => !card.hidden));
+      modalBody.querySelector('[data-people-status]').textContent = query ? `${visible} matching ${visible === 1 ? 'person' : 'people'}` : '';
+    });
+    previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    modal.showModal();
   };
-  const closeChapter = () => {
-    modal.classList.remove('is-open');
-    modal.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-  };
-  document.querySelectorAll('[data-chapter]').forEach(btn => {
-    btn.addEventListener('click', () => openChapter(Number(btn.dataset.chapter)));
-  });
-  modal.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', closeChapter));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('is-open')) closeChapter(); });
-
-  // ── PARTNERS ────────────────────────────────────────────────────────
-  set('#partnersEyebrow', C.partners.eyebrow);
-  set('#partnersTitle', C.partners.title);
-  set('#partnersBody', C.partners.body);
-
-  const partnerLogos = C.partners.logos.map(p => {
-    const obj = (typeof p === 'string') ? { name: p } : p;
-    const href = obj.website || obj.instagram || '';
-    const inner = obj.logo
-      ? `<img src="${obj.logo}" alt="${obj.name}" /><span>${obj.name}</span>`
-      : `<span>${obj.name}</span>`;
-    const igBadge = obj.instagram && obj.website
-      ? `<a class="partner-logo__ig" href="${obj.instagram}" target="_blank" rel="noreferrer" aria-label="${obj.name} on Instagram" onclick="event.stopPropagation()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>
-        </a>`
-      : '';
-    return href
-      ? `<a class="partner-logo is-link" href="${href}" target="_blank" rel="noreferrer">${inner}${igBadge}</a>`
-      : `<span class="partner-logo">${inner}</span>`;
-  }).join('');
-  setHTML('#partnerLogos', partnerLogos + partnerLogos);
-
-  set('#pitchTitle', C.partners.pitch.title);
-  set('#pitchBody', C.partners.pitch.body);
-  const pitchCta = $('#pitchCta');
-  pitchCta.textContent = C.partners.pitch.cta.text;
-  pitchCta.href = C.partners.pitch.cta.href;
+  modal.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => modal.close()));
+  modal.addEventListener('click', event => { if (event.target === modal) modal.close(); });
+  modal.addEventListener('close', () => { document.body.style.overflow = previousOverflow; });
+  modal.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); modal.close(); } });
+  document.querySelectorAll('[data-chapter]').forEach(button => button.addEventListener('click', () => openChapter(Number(button.dataset.chapter))));
 
   // ── TESTIMONIALS ────────────────────────────────────────────────────
   setHTML('#testimonialsGrid', C.testimonials.map(t => `
@@ -392,16 +477,26 @@
   set('#teamEyebrow', C.team.eyebrow);
   set('#teamTitle', C.team.title);
   set('#teamBody', C.team.body);
-  setHTML('#teamGrid', C.team.members.map(m => `
-    <div class="member reveal">
-      <div class="member__photo" ${m.photo ? 'data-has-photo="true"' : ''}>
-        ${m.photo ? `<img src="${m.photo}" alt="${m.name}" />` : (m.name.trim()[0] || '—')}
+  const memberText = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  setHTML('#teamGrid', C.team.members.map(m => {
+    const initials = String(m.name || '').trim().split(/\s+/).filter(Boolean).map(word => word[0]).filter((_, i, all) => i === 0 || i === all.length - 1).join('');
+    let profile = m.linkedin || (m.name?.trim().toLowerCase() === 'satvik koya' ? 'https://www.linkedin.com/in/satvik-koya-162041286/' : '');
+    try { const url = new URL(profile); if (url.protocol !== 'https:' || !['linkedin.com','www.linkedin.com'].includes(url.hostname) || !url.pathname.startsWith('/in/')) profile = ''; } catch { profile = ''; }
+    const portrait = m.photo || (m.name?.trim().toLowerCase() === 'satvik koya' ? 'images/team/satvik-koya.jpg' : '');
+    return `<article class="member reveal">
+      <div class="member__photo" ${portrait ? 'data-has-photo="true"' : ''}>
+        <span class="member__initials" aria-hidden="true">${memberText(initials)}</span>
+        ${portrait ? `<img src="${memberText(portrait)}" alt="${memberText(m.name)}" width="160" height="200" loading="lazy" decoding="async">` : ''}
       </div>
-      <div class="member__name">${m.name}</div>
-      <div class="member__role">${m.role}</div>
-      ${m.city ? `<div class="member__city">${m.city}</div>` : ''}
-    </div>
-  `).join(''));
+      <div class="member__info">
+        <h3 class="member__name">${memberText(m.name)}</h3>
+        <p class="member__role">${memberText(m.role)}</p>
+        ${m.city ? `<p class="member__city"><svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M19 10c0 5-7 10-7 10S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>${memberText(m.city)}</p>` : ''}
+        ${profile ? `<a class="member__profile" href="${memberText(profile)}" target="_blank" rel="noopener noreferrer" aria-label="See profile for ${memberText(m.name)} on LinkedIn (opens in a new tab)"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3.5 9h3v12h-3V9Zm5.5 0h3v1.6c.5-.9 1.6-1.9 3.6-1.9 3.3 0 4.4 2.1 4.4 5.3v7h-3v-6.4c0-1.7-.3-3.1-2.2-3.1-2 0-2.8 1.5-2.8 3.1V21H9V9Z"/></svg>See profile <span aria-hidden="true">↗</span></a>` : ''}
+      </div>
+    </article>`;
+  }).join(''));
+  document.querySelectorAll('#teamGrid .member__photo img').forEach(img => img.addEventListener('error', () => img.remove(), {once:true}));
 
   // ── EVENTS ──────────────────────────────────────────────────────────
   const fmtDate = (iso) => {
@@ -445,30 +540,76 @@
   set('#donateTitle', C.donate.title);
   set('#donateBody', C.donate.body);
   setHTML('#donateTiers', C.donate.tiers.map(t => `
-    <div class="tier reveal">
+    <button type="button" class="tier reveal" data-amount="${t.amount}" aria-pressed="false">
       <div class="tier__amount">${t.amount}</div>
       <div class="tier__impact">${t.impact}</div>
-    </div>
+    </button>
   `).join(''));
   const donateCta = $('#donateCta');
   donateCta.textContent = C.donate.cta.text;
   donateCta.href = C.donate.cta.href;
 
-  // Inline Zeffy embed — give right here, never leave the page
+  // Compact, opt-in checkout. The provider owns the payment fields.
   if (C.brand.donateEmbedUrl) {
+    const fullUrl = C.brand.donateUrl || C.donate.cta.href;
     setHTML('#donateEmbed', `
-      <iframe
-        title="Donate to BetterNature"
-        src="${C.brand.donateEmbedUrl}"
-        allowpaymentrequest="true"
-        allowtransparency="true"
-        loading="lazy"
-        referrerpolicy="no-referrer-when-downgrade"
-      ></iframe>
-    `);
+      <div class="donation-panel">
+        <div><h3>Your support, put to work.</h3><p id="zeffyPick" aria-live="polite">Choose a suggested amount, or give what works for you.</p></div>
+        <button type="button" class="btn donation-open" id="openDonation" aria-haspopup="dialog" aria-controls="zeffyFrame">Open secure donation form <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14m-6-6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <dialog class="donation-dialog" id="zeffyFrame" aria-labelledby="donationDialogTitle">
+          <div class="donation-dialog__header"><div><h2 id="donationDialogTitle">Give to Better Nature</h2><p>Secure checkout by Zeffy</p></div><button type="button" class="donation-dialog__close" aria-label="Close donation form" autofocus>×</button></div>
+          <div class="zeffy__stage"><p class="checkout-loading" role="status">Loading secure checkout…</p></div>
+          <p class="donation-dialog__fallback">Form not loading? <a href="${fullUrl}" target="_blank" rel="noreferrer">Open full-screen checkout ↗</a></p>
+        </dialog>
+        <p class="donation-note">Checkout and email receipt provided by Zeffy. <a href="${fullUrl}" target="_blank" rel="noreferrer">Open full-screen checkout ↗</a></p>
+      </div>`);
+    const frame = $('#zeffyFrame'), stage = frame.querySelector('.zeffy__stage');
+    let loaded = false;
+    const load = () => {
+      if (loaded) return;
+      loaded = true;
+      const ifr = document.createElement('iframe');
+      ifr.title = 'Donate to BetterNature securely with Zeffy';
+      ifr.src = C.brand.donateEmbedUrl;
+      ifr.setAttribute('allow', 'payment');
+      ifr.referrerPolicy = 'strict-origin-when-cross-origin';
+      ifr.addEventListener('load', () => { stage.querySelector('.checkout-loading')?.remove(); });
+      stage.appendChild(ifr);
+    };
+    // Keep the modal outside animated section ancestors; native dialog supplies
+    // focus containment, Escape dismissal, and an inert background.
+    document.body.appendChild(frame);
+    const opener = $('#openDonation');
+    let previousOverflow = '';
+    opener.addEventListener('click', () => {
+      if (frame.open) return;
+      previousOverflow = document.documentElement.style.overflow;
+      document.documentElement.style.overflow = 'hidden';
+      frame.showModal(); load();
+    });
+    const restorePage = () => {
+      document.documentElement.style.overflow = previousOverflow;
+      opener.focus({preventScroll:true});
+    };
+    const closeDonation = () => { frame.close(); restorePage(); };
+    frame.querySelector('.donation-dialog__close').addEventListener('click', closeDonation);
+    frame.addEventListener('cancel', event => { event.preventDefault(); closeDonation(); });
+    frame.addEventListener('click', event => {
+      const rect = frame.getBoundingClientRect();
+      if (event.target === frame && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) closeDonation();
+    });
+    frame.addEventListener('close', () => {
+      // A queued close event can arrive after a rapid reopen.
+      if (!frame.open) restorePage();
+    });
+    document.querySelectorAll('#donateTiers .tier').forEach(tier => tier.addEventListener('click', () => {
+      document.querySelectorAll('#donateTiers .tier').forEach(t => { t.classList.toggle('is-picked', t === tier); t.setAttribute('aria-pressed', String(t === tier)); });
+      $('#zeffyPick').textContent = `Suggested gift: ${tier.dataset.amount}. You can enter this amount or choose another at checkout.`;
+      $('#donateEmbed').scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    }));
+    donateCta.hidden = true;
   }
 
-  // Alternative payment methods (PayPal Giving Fund, Venmo, Cash App, check)
   const gl = C.brand.giveLinks || {};
   const altMethods = [
     { key: 'paypal',  label: 'PayPal',   sub: 'Zero-fee via Giving Fund', href: gl.paypal,
@@ -493,27 +634,11 @@
     `);
   }
 
-  // ── NEWSLETTER ──────────────────────────────────────────────────────
-  set('#newsTitle', C.newsletter.title);
-  set('#newsBody', C.newsletter.body);
-  $('#newsEmail').placeholder = C.newsletter.placeholder;
-  $('#newsCta').textContent = C.newsletter.cta;
-  const newsForm = $('#newsForm');
-  if (C.newsletter.formAction) {
-    newsForm.action = C.newsletter.formAction;
-    newsForm.method = 'POST';
-  } else {
-    newsForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const email = $('#newsEmail').value;
-      if (!email) return;
-      const btn = $('#newsCta');
-      btn.textContent = '✓ Subscribed';
-      btn.disabled = true;
-      $('#newsEmail').value = '';
-      setTimeout(() => { btn.textContent = C.newsletter.cta; btn.disabled = false; }, 2500);
-    });
-  }
+  // ── FIELD NOTES ────────────────────────────────────────────────────
+  set('#newsTitle', 'Stories from the field.');
+  set('#newsBody', 'Updates, practical guides and perspectives from across Better Nature.');
+  set('#newsCta', 'Explore the journal ↗');
+  $('#newsCta').href = 'blog.html';
 
   // ── GET THE APP ─────────────────────────────────────────────────────
   if (C.getApp) {
@@ -535,171 +660,60 @@
     ).join(''));
   }
 
-  // ── SIGNUP ──────────────────────────────────────────────────────────
+  // ── JOIN (accounts live in the BetterNature app) ───────────────────
+  // One place to join, one sign-up flow: each card opens the matching
+  // screen in the app. The separate "Get the app" section is folded in.
   if (C.signup) {
-    set('#signupEyebrow', C.signup.eyebrow);
-    set('#signupTitle', C.signup.title);
-    set('#signupBody', C.signup.body);
-    const tracks = C.signup.tracks || [];
-    setHTML('#signupTabs', tracks.map((t, i) =>
-      `<button class="signup__tab ${i === 0 ? 'is-active' : ''}" data-track="${t.key}">${t.label}</button>`
-    ).join(''));
-    const renderField = (f) => {
-      const req = f.required ? 'required' : '';
-      if (f.type === 'textarea') {
-        return `<label><span>${f.label}${f.required ? ' *' : ''}</span><textarea name="${f.name}" rows="3" ${req}></textarea></label>`;
-      }
-      if (f.type === 'select') {
-        const opts = (f.options || []).map(o => `<option value="${o}">${o}</option>`).join('');
-        return `<label><span>${f.label}${f.required ? ' *' : ''}</span><select name="${f.name}" ${req}><option value="">Choose one…</option>${opts}</select></label>`;
-      }
-      const extra = f.minLength ? `minlength="${f.minLength}"` : '';
-      const autocomplete = f.type === 'password' ? 'autocomplete="new-password"' : '';
-      return `<label><span>${f.label}${f.required ? ' *' : ''}</span><input type="${f.type}" name="${f.name}" ${req} ${extra} ${autocomplete} /></label>`;
+    set('#signupEyebrow', 'Join the network');
+    set('#signupTitle', 'Create your account in the BetterNature app.');
+    set('#signupBody', 'One account works everywhere: on the web, on your phone, and for every chapter. Pick how you want to help.');
+    const icon = {
+      volunteer: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10z"/></svg>',
+      business: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h16l-1.5-5h-13z"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg>',
+      chapter: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
     };
-    setHTML('#signupForms', tracks.map((t, i) => `
-      <form class="signup__form ${i === 0 ? 'is-active' : ''}" data-track="${t.key}" data-mailto="${t.mailto || C.brand.email}">
-        <p class="signup__tagline">${t.tagline || ''}</p>
-        <div class="signup__fields">${(t.fields || []).map(renderField).join('')}</div>
-        <button type="submit" class="btn btn--pink btn--lg">${t.submit || 'Submit'}</button>
-        <p class="signup__status" aria-live="polite"></p>
-      </form>
-    `).join(''));
-
-    document.querySelectorAll('.signup__tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        const key = tab.dataset.track;
-        document.querySelectorAll('.signup__tab').forEach(t => t.classList.toggle('is-active', t.dataset.track === key));
-        document.querySelectorAll('.signup__form').forEach(f => f.classList.toggle('is-active', f.dataset.track === key));
-      });
-    });
-
-    // Forms POST directly to FormSubmit — no mailto, no page reload.
-    // Override endpoint via content.signup.submitEndpoint if needed.
-    const endpoint = C.signup.submitEndpoint
-      || `https://formsubmit.co/ajax/${C.brand.email}`;
-    document.querySelectorAll('.signup__form').forEach(form => {
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const status = form.querySelector('.signup__status');
-        const btn = form.querySelector('button[type="submit"]');
-        const track = form.dataset.track;
-        const data = Object.fromEntries(new FormData(form).entries());
-        const trackLabel =
-          track === 'chapter' ? 'New chapter application' :
-          track === 'volunteer' ? 'Volunteer' :
-          'Business partner';
-        const subject = `[${trackLabel}] ${data.businessName || data.fullName || 'New signup'}${data.city ? ` — ${data.city}` : ''}`;
-        // Carry the referral code (if any) into both the FormSubmit email
-        // AND the auto-created Firebase account.
-        const referralCode = (() => {
-          try { return localStorage.getItem('bn_ref') || ''; } catch { return ''; }
-        })();
-        // ── Security fix: never send password (or any credential-shaped
-        //    field) to FormSubmit. Old code did `...data` which spread
-        //    the raw password into the JSON payload that was then
-        //    emailed to info@betternatureofficial.org via FormSubmit.
-        //    That put every website signup's plaintext password in the
-        //    org's inbox, in FormSubmit's logs, and in mailbox backups.
-        //    Strip password + password confirm before spreading. Also
-        //    turned _captcha back ON — 'false' let the endpoint be
-        //    used as a spam / phishing relay for anyone who could
-        //    craft the JSON.
-        const { password: _pw, confirmPassword: _cpw, password_confirm: _pwc, ...safeData } = data;
-        const payload = {
-          _subject: subject,
-          _template: 'table',
-          _captcha: 'true',
-          track,
-          referral_code: referralCode,
-          ...safeData,
-        };
-        btn.disabled = true;
-        const originalLabel = btn.textContent;
-        btn.textContent = 'Sending…';
-        if (status) { status.textContent = ''; status.className = 'signup__status'; }
-
-        // Preflight: if the visitor gave us an email + password, check
-        // up front whether that email is already a Firebase account.
-        // Catching the duplicate here means we don't blast FormSubmit
-        // with a signup that will then error on the auth step.
-        if (data.email && data.password && window.BN_EMAIL_TAKEN) {
-          try {
-            const taken = await window.BN_EMAIL_TAKEN(data.email.trim().toLowerCase());
-            if (taken) {
-              if (status) {
-                status.className = 'signup__status is-err';
-                status.innerHTML = 'That email is already registered. <a href="https://app.betternatureofficial.org/#/login">Sign in</a> instead, or use a different email.';
-              }
-              btn.disabled = false;
-              btn.textContent = originalLabel;
-              return;
-            }
-          } catch {}
-        }
-
-        try {
-          const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          if (!res.ok) throw new Error('Submit failed: ' + res.status);
-
-          // If the visitor provided an email + password, create their BetterNature
-          // account right here so it works on the app + web app + website.
-          let accountMsg = '';
-          if (window.BN_SIGNUP && data.email && data.password) {
-            try {
-              await window.BN_SIGNUP({
-                email: data.email,
-                password: data.password,
-                name: data.fullName || data.businessName || '',
-                role: track === 'partner' ? 'partner' : 'volunteer',
-                phone: data.phone || '',
-                city: data.city || '',
-                zip: data.zip || '',
-                referralCode,
-              });
-              accountMsg = ' Your account is active — open the BetterNature app with the same email and password to finish setup.';
-            } catch (authErr) {
-              accountMsg = ` (Could not auto-create account: ${authErr.message}. Sign up in the app with the same email.)`;
-            }
-          } else if (track === 'chapter') {
-            accountMsg = '';
-          } else {
-            accountMsg = ' To finish joining the network, download the BetterNature app and sign up with the same email.';
-          }
-
-          form.reset();
-          btn.textContent = '✓ Sent';
-          if (status) {
-            const appLinks = C.brand?.appLinks || {};
-            const appCtas = [
-              appLinks.appStore && appLinks.appStore !== '#' ? `<a href="${appLinks.appStore}" target="_blank" rel="noreferrer">App Store</a>` : '',
-              appLinks.googlePlay && appLinks.googlePlay !== '#' ? `<a href="${appLinks.googlePlay}" target="_blank" rel="noreferrer">Google Play</a>` : '',
-              appLinks.webApp ? `<a href="${appLinks.webApp}" target="_blank" rel="noreferrer">Web app</a>` : '',
-            ].filter(Boolean).join(' · ');
-            status.className = 'signup__status is-ok';
-            status.innerHTML = (track === 'volunteer'
-              ? "You're in. We'll reach out within 24 hours with your chapter match."
-              : track === 'chapter'
-              ? "Application received. We'll send the chapter playbook and onboarding call invite within 48 hours."
-              : "Got it. A partner coordinator will reach out within 24 hours to schedule your 15-min call.")
-              + accountMsg
-              + (appCtas ? `<br><small style="display:block;margin-top:8px;">Get the app: ${appCtas}</small>` : '');
-          }
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = originalLabel;
-          if (status) {
-            status.className = 'signup__status is-err';
-            status.innerHTML = `Something went wrong sending that. Please email <a href="mailto:${C.brand.email}">${C.brand.email}</a> directly.`;
-          }
-        }
-      });
-    });
+    const roles = [
+      { key: 'volunteer', title: 'Volunteer', body: 'Claim pickups, plantings and cleanups that fit your week.', cta: 'Join as a volunteer' },
+      { key: 'business', title: 'Restaurant or business', body: 'Free same-day pickup for your surplus food. Tax-deductible.', cta: 'Sign up your business' },
+      { key: 'chapter', title: 'Start a chapter', body: 'Bring BetterNature to your city. Playbook within 48 hours.', cta: 'Start a chapter' },
+    ];
+    const links = (C.brand && C.brand.appLinks) || {};
+    const stores = [
+      links.appStore && links.appStore !== '#' ? `<a href="${links.appStore}" target="_blank" rel="noreferrer">App Store</a>` : '',
+      links.googlePlay && links.googlePlay !== '#' ? `<a href="${links.googlePlay}" target="_blank" rel="noreferrer">Google Play</a>` : '',
+    ].filter(Boolean).join(' · ');
+    setHTML('#signupTabs', '');
+    setHTML('#signupForms', `
+      <div class="join__grid">
+        ${roles.map((r) => `
+          <a class="join__card" data-track="${r.key}" href="${appUrl(APP_ROUTES[r.key])}">
+            <span class="join__icon join__icon--${r.key}">${icon[r.key]}</span>
+            <span class="join__title">${r.title}</span>
+            <span class="join__body">${r.body}</span>
+            <span class="join__cta">${r.cta} <span aria-hidden="true">→</span></span>
+          </a>`).join('')}
+      </div>
+      <div class="join__foot">
+        <span class="join__qr-wrap"><img class="join__qr" src="images/app-qr.svg" alt="QR code that opens the BetterNature app" width="200" height="200" loading="lazy" /><img class="join__qr-brand" src="logo.png" alt="" aria-hidden="true" width="36" height="36" /></span>
+        <p><strong>Take Better Nature with you.</strong><br>Scan to open the app on your phone${stores ? `, or get it on ${stores}` : ''}. Already a member? <a href="${appUrl(APP_ROUTES.login)}">Sign in</a><br><button type="button" class="share-app" id="shareApp"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v7h14v-7" stroke-linecap="round" stroke-linejoin="round"/></svg> Share app link</button><span class="share-status" id="shareStatus" role="status"></span></p>
+      </div>
+    `);
   }
+
+  const shareApp = $('#shareApp');
+  shareApp?.addEventListener('click', async () => {
+    const url = `${APP_BASE}/`;
+    const status = $('#shareStatus');
+    try {
+      if (navigator.share) { await navigator.share({title:'Better Nature', url}); status.textContent = ''; }
+      else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(url); status.textContent = 'Link copied'; }
+      else throw new Error('Clipboard unavailable');
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      status.replaceChildren();
+      const input = document.createElement('input'); input.readOnly = true; input.value = url; input.setAttribute('aria-label','App link to copy'); status.append(input); input.focus(); input.select();
+    }
+  });
 
   // ── FOOTER ──────────────────────────────────────────────────────────
   set('#footerTagline', C.brand.tagline);
@@ -724,27 +738,25 @@
 
   // ══════════════════════════ INTERACTIONS ══════════════════════════
 
+  // Links marked data-signup-track="business|volunteer|chapter" open the
+  // matching sign-up form tab, so one form serves every "sign up" button.
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-signup-track]');
+    if (!link) return;
+    const card = document.querySelector(`.join__card[data-track="${link.dataset.signupTrack}"]`);
+    if (!card) return;
+    card.classList.remove('is-picked');
+    void card.offsetWidth;
+    card.classList.add('is-picked');
+  });
+
   // Sticky nav shadow on scroll
   const nav = $('#nav');
   const updateNav = () => nav.classList.toggle('is-scrolled', window.scrollY > 20);
   updateNav();
   window.addEventListener('scroll', updateNav, { passive: true });
 
-  // Mobile menu toggle
-  const burger = $('#burger');
-  function setMenuOpen(open) {
-    nav.classList.toggle('is-open', open);
-    burger.setAttribute('aria-expanded', String(open));
-  }
-  burger.addEventListener('click', () => setMenuOpen(!nav.classList.contains('is-open')));
-  document.querySelectorAll('.nav__links a, .nav__ctas a').forEach(a => {
-    a.addEventListener('click', () => setMenuOpen(false));
-  });
-  nav.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !nav.classList.contains('is-open')) return;
-    setMenuOpen(false);
-    burger.focus();
-  });
+  // Mobile navigation initializes independently in appearance.js.
 
   // Scroll reveal
   const io = new IntersectionObserver((entries) => {
@@ -764,7 +776,7 @@
       if (entries.some((e) => e.isIntersecting)) {
         io3.disconnect();
         try {
-          const { mountBnMap } = await import('./bnmap.js');
+          const { mountBnMap } = await import('./bnmap.js?v=city-landmarks-1');
           mountBnMap(bnmapRoot);
         } catch (e) {
           console.warn('BN Map failed to mount', e);
@@ -775,16 +787,5 @@
     io3.observe(bnmapRoot);
   }
 
-  // Smooth scroll w/ nav offset
-  document.querySelectorAll('a[href^="#"]').forEach(a => {
-    a.addEventListener('click', (e) => {
-      const id = a.getAttribute('href');
-      if (id === '#' || id.length < 2) return;
-      const tgt = document.querySelector(id);
-      if (!tgt) return;
-      e.preventDefault();
-      const top = tgt.getBoundingClientRect().top + window.scrollY - 70;
-      window.scrollTo({ top, behavior: 'smooth' });
-    });
-  });
+  // Same-page navigation is handled early by navigation.js.
 })();

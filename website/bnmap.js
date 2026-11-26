@@ -2,19 +2,17 @@
 // two tabs (Food Insecurity / Fridges), Food Insecurity default.
 //
 //   - Food Insecurity: Robinson world choropleth + US states overlay
-//   - Fridges: Leaflet + OpenStreetMap with markers from Firestore
+//   - Fridges: 3D MapLibre map with ZIP search (see fridge-map.js)
 //
 // Loads heavy libs (d3@7, topojson-client, Leaflet) lazily so the
 // homepage's first paint stays fast.
-import { COUNTRIES_BY_NUMERIC, colorForRate } from './insecurityByCountry.js';
+import { COUNTRIES_BY_NUMERIC, topInsecure } from './insecurityByCountry.js';
 import { STATE_BY_FIPS } from './insecurityByState.js';
 
 const D3      = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
 const TOPO    = 'https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js';
 const WORLD   = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 const STATES  = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json';
-const LEAF_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-const LEAF_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 
 function loadScript(url) {
   if (window[`__bn:${url}`]) return Promise.resolve();
@@ -57,6 +55,22 @@ function robinsonRaw(lambda, phi) {
   return [lambda * dx, (phi >= 0 ? HALF_PI : -HALF_PI) * dy];
 }
 
+// Severity ramp on the dark map: brighter = worse. Muted forest for the
+// least affected, blush through Better Nature pink for the most.
+const RAMP = [
+  { min: 60, color: '#FFB3CF', label: '60%+' },
+  { min: 40, color: '#FF6FA2', label: '40' },
+  { min: 25, color: '#E5487F', label: '25' },
+  { min: 15, color: '#A9406B', label: '15' },
+  { min: 8, color: '#6E3F57', label: '8' },
+  { min: 0, color: '#3E5A4C', label: '0' },
+];
+const NO_DATA = '#24392F';
+function rampColor(rate) {
+  if (rate == null) return NO_DATA;
+  return (RAMP.find((r) => rate >= r.min) || RAMP[RAMP.length - 1]).color;
+}
+
 async function renderInsecurity(container) {
   container.innerHTML = '<div class="bnmap__loading">Loading world map…</div>';
   await loadScript(D3);
@@ -65,126 +79,119 @@ async function renderInsecurity(container) {
     fetch(WORLD).then((r) => r.json()),
     fetch(STATES).then((r) => r.json()).catch(() => null),
   ]);
+  if (!container.isConnected) return;
   const d3 = window.d3; const topojson = window.topojson;
-  container.innerHTML = '';
+  const top = topInsecure(6);
 
-  const wrapper = document.createElement('div');
-  wrapper.className = 'bnmap__svgwrap';
-  container.appendChild(wrapper);
+  container.innerHTML = `
+    <div class="imap">
+      <div class="imap__side">
+        <div class="fmap__eyebrow">Food insecurity</div>
+        <h3 class="imap__title">Where hunger runs highest</h3>
+        <p class="imap__lede">Share of people without reliable access to enough food. Hover any country, or any US state.</p>
+        <ol class="imap__top">${top.map((c, i) => `
+          <li><button type="button" data-name="${c.name}"><span class="imap__rank">${String(i + 1).padStart(2, '0')}</span><strong>${c.name}</strong><em style="color:${rampColor(c.rate)}">${c.rate}%</em></button></li>`).join('')}
+        </ol>
+      </div>
+      <div class="imap__stage">
+        <div class="bnmap__svgwrap"></div>
+        <div class="imap__tip" hidden></div>
+        <div class="imap__legend" aria-hidden="true">
+          <span>Less</span>
+          <span class="imap__ramp" style="background:linear-gradient(90deg, ${RAMP.slice().reverse().map((r) => r.color).join(', ')})"></span>
+          <span>More</span>
+          <span class="imap__nodata"><i></i>No data</span>
+        </div>
+      </div>
+    </div>`;
+
+  const wrapper = container.querySelector('.bnmap__svgwrap');
+  const stage = container.querySelector('.imap__stage');
+  const tip = container.querySelector('.imap__tip');
+  let paths = [];
+
+  function showTip(ev, kind, name, rate) {
+    const r = stage.getBoundingClientRect();
+    tip.innerHTML = rate == null
+      ? `<div class="imap__tipKind">${kind}</div><div class="imap__tipName">${name || 'Unknown'}</div><div class="imap__tipRate"><span>No data yet</span></div>`
+      : `<div class="imap__tipKind">${kind}</div><div class="imap__tipName">${name}</div><div class="imap__tipRate" style="color:${rampColor(rate)}">${rate}%<span>food insecure</span></div>`;
+    tip.style.left = `${Math.min(Math.max(ev.clientX - r.left, 100), r.width - 100)}px`;
+    tip.style.top = `${Math.max(ev.clientY - r.top, 90)}px`;
+    tip.hidden = false;
+  }
+  const hideTip = () => { tip.hidden = true; };
 
   function draw() {
     wrapper.innerHTML = '';
-    const w = wrapper.clientWidth || 960;
-    const h = Math.round(w / 1.97);
-    const projection = d3.geoProjection(robinsonRaw).fitSize([w, h], { type: 'Sphere' });
-    const path = d3.geoPath(projection);
-
-    const svg = d3.select(wrapper).append('svg')
-      .attr('viewBox', `0 0 ${w} ${h}`)
-      .style('width', '100%')
-      .style('display', 'block')
-      .style('background', '#F7F5EF')
-      .style('border-radius', '14px');
-
-    const tooltip = d3.select(wrapper).append('div').attr('class', 'bnmap__tip').style('display', 'none');
-
-    function showTip(html) {
-      tooltip.style('display', 'block').html(html);
-    }
-    function hideTip() { tooltip.style('display', 'none'); }
-
-    // Countries
+    // Fit to the inhabited world (no Antarctica, which has no data), so the
+    // countries fill the stage instead of the whole globe.
     const countries = topojson.feature(world, world.objects.countries).features;
-    svg.selectAll('path.country').data(countries).enter().append('path')
+    const land = { type: 'FeatureCollection', features: countries.filter((f) => String(f.id) !== '010') };
+    const w = wrapper.clientWidth || 900;
+    const b = d3.geoPath(d3.geoProjection(robinsonRaw)).bounds(land);
+    const h = Math.round(w / ((b[1][0] - b[0][0]) / (b[1][1] - b[0][1])));
+    const projection = d3.geoProjection(robinsonRaw).fitExtent([[2, 2], [w - 2, h - 2]], land);
+    const path = d3.geoPath(projection);
+    const svg = d3.select(wrapper).append('svg').attr('viewBox', `0 0 ${w} ${h}`).attr('role', 'img')
+      .attr('aria-label', 'World map of food insecurity rates');
+
+    // engraved globe: sphere outline + faint graticule
+    svg.append('path').datum({ type: 'Sphere' }).attr('d', path).attr('fill', '#0D1F17').attr('stroke', 'rgba(239,233,220,0.18)').attr('stroke-width', 1);
+    svg.append('path').datum(d3.geoGraticule10()).attr('d', path).attr('fill', 'none').attr('stroke', 'rgba(239,233,220,0.06)').attr('stroke-width', 0.6);
+
+    svg.selectAll('path.country').data(land.features).enter().append('path')
       .attr('class', 'country').attr('d', path)
-      .attr('fill', (f) => {
-        const id = String(f.id).padStart(3, '0');
-        const meta = COUNTRIES_BY_NUMERIC[id];
-        return colorForRate(meta?.rate);
-      })
-      .attr('stroke', '#FFFFFFA0').attr('stroke-width', 0.6)
-      .on('mouseenter', (ev, f) => {
-        const id = String(f.id).padStart(3, '0');
-        const meta = COUNTRIES_BY_NUMERIC[id];
-        if (!meta) { showTip('<em>No data yet</em>'); return; }
-        showTip(`
-          <div class="bnmap__tip-eyebrow">Country</div>
-          <div class="bnmap__tip-name">${meta.name}</div>
-          <div class="bnmap__tip-rate" style="color:${colorForRate(meta.rate)}">${meta.rate}% <span>food insecure</span></div>
-        `);
+      .attr('fill', (f) => rampColor(COUNTRIES_BY_NUMERIC[String(f.id).padStart(3, '0')]?.rate))
+      .attr('stroke', 'rgba(239,233,220,0.22)').attr('stroke-width', 0.4)
+      .attr('data-name', (f) => COUNTRIES_BY_NUMERIC[String(f.id).padStart(3, '0')]?.name || '')
+      .on('mousemove', (ev, f) => {
+        const m = COUNTRIES_BY_NUMERIC[String(f.id).padStart(3, '0')];
+        showTip(ev, 'Country', m ? m.name : (f.properties && f.properties.name), m ? m.rate : null);
       })
       .on('mouseleave', hideTip);
 
-    // US states overlay
     if (usStates && usStates.objects?.states) {
       const states = topojson.feature(usStates, usStates.objects.states).features;
       svg.selectAll('path.state').data(states).enter().append('path')
         .attr('class', 'state').attr('d', path)
-        .attr('fill', (f) => {
-          const fips = String(f.id).padStart(2, '0');
-          return colorForRate(STATE_BY_FIPS[fips]?.rate);
-        })
-        .attr('stroke', '#1B3A2D60').attr('stroke-width', 0.5)
-        .on('mouseenter', (ev, f) => {
-          const fips = String(f.id).padStart(2, '0');
-          const m = STATE_BY_FIPS[fips];
-          if (!m) return;
-          showTip(`
-            <div class="bnmap__tip-eyebrow">US state</div>
-            <div class="bnmap__tip-name">${m.name}, USA</div>
-            <div class="bnmap__tip-rate" style="color:${colorForRate(m.rate)}">${m.rate}% <span>food insecure</span></div>
-          `);
+        .attr('fill', (f) => rampColor(STATE_BY_FIPS[String(f.id).padStart(2, '0')]?.rate))
+        .attr('stroke', 'rgba(239,233,220,0.3)').attr('stroke-width', 0.35)
+        .on('mousemove', (ev, f) => {
+          const m = STATE_BY_FIPS[String(f.id).padStart(2, '0')];
+          if (m) showTip(ev, 'US state', `${m.name}, USA`, m.rate);
         })
         .on('mouseleave', hideTip);
     }
+    paths = Array.from(wrapper.querySelectorAll('path.country'));
   }
+
+  // The ranked list highlights its country on the map.
+  container.querySelectorAll('.imap__top button').forEach((b) => {
+    const on = () => {
+      container.querySelectorAll('.imap__top button').forEach((x) => x.classList.toggle('is-active', x === b));
+      paths.forEach((p) => p.classList.toggle('is-hot', p.dataset.name === b.dataset.name));
+    };
+    b.addEventListener('mouseenter', on);
+    b.addEventListener('focus', on);
+    b.addEventListener('click', on);
+  });
+
   draw();
   if (window.ResizeObserver) {
-    new ResizeObserver(() => draw()).observe(wrapper);
+    let last = 0;
+    const resize = new ResizeObserver(() => {
+      const w = wrapper.clientWidth;
+      if (Math.abs(w - last) > 4) { last = w; draw(); }
+    });
+    resize.observe(wrapper);
+    container._disposeMap = () => resize.disconnect();
   }
 }
 
+// Fridges tab: the 3D MapLibre map lives in fridge-map.js.
 async function renderFridges(container) {
-  container.innerHTML = '<div class="bnmap__loading">Loading fridge network…</div>';
-  loadCss(LEAF_CSS);
-  await loadScript(LEAF_JS);
-  const { listFridges } = await import('./firebase-fridges.js');
-  const fridges = await listFridges();
-  container.innerHTML = '';
-  const host = document.createElement('div');
-  host.style.width = '100%';
-  host.style.height = '520px';
-  host.style.borderRadius = '14px';
-  host.style.overflow = 'hidden';
-  container.appendChild(host);
-
-  const valid = fridges.filter((f) => f.lat != null && f.lng != null);
-  const center = valid.length ? [valid[0].lat, valid[0].lng] : [39.5, -98.35];
-  const map = window.L.map(host, { center, zoom: valid.length ? 11 : 4, scrollWheelZoom: true });
-  window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors', maxZoom: 19,
-  }).addTo(map);
-  const layer = window.L.layerGroup().addTo(map);
-  valid.forEach((f) => {
-    const color = f.capacity === 'low' ? '#EF4444'
-                : f.capacity === 'high' ? '#1B3A2D' : '#FF4D8D';
-    const icon = window.L.divIcon({
-      className: 'bn-fridge-marker',
-      html: `<div style="background:${color};width:18px;height:18px;border-radius:50%;border:3px solid #FFF;box-shadow:0 2px 6px rgba(0,0,0,.25)"></div>`,
-      iconSize: [18, 18], iconAnchor: [9, 9],
-    });
-    const popup = `
-      <strong>${(f.name || 'Community fridge').replace(/</g, '&lt;')}</strong>
-      ${f.address ? `<div style="font-size:12px;color:#7A766C;margin-top:4px">${f.address}</div>` : ''}
-      ${f.hours ? `<div style="font-size:12px;margin-top:6px">Hours: ${f.hours}</div>` : ''}
-      ${f.capacity ? `<div style="font-size:12px;margin-top:2px">Capacity: ${f.capacity}</div>` : ''}
-    `;
-    window.L.marker([f.lat, f.lng], { icon }).bindPopup(popup).addTo(layer);
-  });
-  if (valid.length > 0) {
-    const bounds = window.L.latLngBounds(valid.map((f) => [f.lat, f.lng]));
-    map.fitBounds(bounds.pad(0.2));
-  }
+  const { renderFridgeMap } = await import('./fridge-map.js?v=city-landmarks-1');
+  return renderFridgeMap(container);
 }
 
 export function mountBnMap(rootEl) {
@@ -201,9 +208,12 @@ export function mountBnMap(rootEl) {
   let current = null;
   function activate(name) {
     if (current === name) return;
+    surface.firstElementChild?._disposeMap?.();
+    const panel = document.createElement('div'); panel.className = 'bnmap__panel';
+    surface.replaceChildren(panel);
     current = name;
-    tabs.forEach((b) => b.classList.toggle('is-active', b.dataset.tab === name));
-    (name === 'fridges' ? renderFridges : renderInsecurity)(surface);
+    tabs.forEach((b) => { b.classList.toggle('is-active', b.dataset.tab === name); b.setAttribute('aria-pressed', String(b.dataset.tab === name)); });
+    (name === 'fridges' ? renderFridges : renderInsecurity)(panel).catch(() => { if (current === name) panel.innerHTML = '<p class="bnmap__loading">This map could not load. Please try the other view or reload.</p>'; });
   }
   tabs.forEach((b) => b.addEventListener('click', () => activate(b.dataset.tab)));
   activate('insecurity');

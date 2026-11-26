@@ -31,6 +31,7 @@ export async function fetchOrgStats() {
     const snap = await getDoc(doc(db, 'org_stats', 'global'));
     const d = snap.exists() ? snap.data() : {};
     return {
+      reporting: { live: snap.exists(), floorFields: Object.entries(BASELINE).filter(([key, value]) => value > (Number(d[key]) || 0)).map(([key]) => key) },
       meals:       Math.max(BASELINE.meals,       d.meals       || 0),
       lbs:         Math.max(BASELINE.lbs,         d.lbs         || 0),
       individuals: Math.max(BASELINE.individuals, d.individuals || 0),
@@ -45,7 +46,7 @@ export async function fetchOrgStats() {
     // Even on network failure, fall back to baseline so the ticker
     // never renders zeros. Every visible number is a real total we've
     // publicly claimed.
-    return { ...BASELINE };
+    return { ...BASELINE, reporting: { live: false, floorFields: Object.keys(BASELINE) } };
   }
 }
 
@@ -59,7 +60,9 @@ function fmt(n) {
 // the existing renderer can drop these in unchanged.
 export function statsToTicker(s) {
   return [
-    { value: fmt(s.volunteers), label: 'volunteers' },
+    // Volunteers has no public baseline, so a failed/missing read would
+    // show "0 volunteers" — only list it when there's a real count.
+    ...(s.volunteers > 0 ? [{ value: fmt(s.volunteers), label: 'volunteers' }] : []),
     { value: `${fmt(s.lbs)} lbs`, label: 'food rescued' },
     { value: fmt(s.individuals), label: 'individuals served' },
     { value: `${fmt(s.co2)} lbs`, label: 'CO₂ avoided' },
@@ -70,7 +73,7 @@ export function statsToTicker(s) {
 // Same shape as `impact.stats` in content.js.
 export function statsToImpactCards(s) {
   return [
-    { value: fmt(s.volunteers), label: 'Volunteers', sublabel: 'Active members across every chapter' },
+    ...(s.volunteers > 0 ? [{ value: fmt(s.volunteers), label: 'Volunteers', sublabel: 'Active members across every chapter' }] : []),
     { value: fmt(s.lbs), label: 'Pounds of food rescued', sublabel: 'Direct from partner kitchens to recipients' },
     { value: fmt(s.individuals), label: 'Individuals served', sublabel: 'Across our active chapters' },
     { value: fmt(s.co2), label: 'Pounds of CO₂ avoided', sublabel: 'Emissions prevented by diverting food from landfills' },
