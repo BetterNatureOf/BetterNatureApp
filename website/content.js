@@ -142,8 +142,8 @@ window.CONTENT = {
   // ── HERO ──────────────────────────────────────────────────────────────
   hero: {
     eyebrow: "Food rescue · Reforestation · Waterways",
-    headline: "Feed people. Plant forests.",
-    headlineItalic: "Protect the water.",
+    headline: "Care for people.",
+    headlineItalic: "Care for our planet.",
     subhead: "BetterNature is a youth-led nonprofit rescuing surplus food, planting native trees, and cleaning the waterways that communities depend on — three programs, one mission.",
     primaryCta: { text: "Get involved", href: "#how" },
     secondaryCta: { text: "See our impact", href: "#impact" },
@@ -395,6 +395,9 @@ window.CONTENT = {
     ],
     cta: { text: "Open full donation form", href: "https://www.zeffy.com/en-US/donation-form/betternature" },
   },
+
+  // Journal schema: only published:true posts appear. Each post needs slug, title, project, excerpt and paragraphs.
+  blog: { posts: [] },
 
   // ── NEWSLETTER ────────────────────────────────────────────────────────
   newsletter: {

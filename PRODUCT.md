@@ -13,7 +13,7 @@ Explain the mission, help people find a chapter and enter the existing app to pa
 Grounded, clear, alive. Modern minimal technology plus nature, as requested by the user. Preserve BN forest green, cream and blossom accents.
 
 ## Anti-references
-Crowded maps, generic dashboard cards, continuous decorative animation, fake statistics, oversized custom cursors and heavy glass effects.
+Crowded maps, generic dashboard cards, continuous decorative animation, fake statistics, persistent pointer glows and excessive glass effects.
 
 ## Design Principles
 - Clear routes into volunteering, donating and partnering.

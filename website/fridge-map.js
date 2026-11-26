@@ -85,19 +85,21 @@ const ICON = {
 };
 
 // ── Dark Better Nature look for the OpenFreeMap (Positron) style ─────────
-function darkenPositron(map) {
-  const C = {
-    ground: '#10241B', water: '#0A1913', green: '#14301F', line: 'rgba(226,218,200,0.22)',
-    lineMajor: 'rgba(226,218,200,0.36)', text: '#BFB8A6', halo: '#10241B', border: 'rgba(247,244,240,0.16)',
+function stylePositron(map) {
+  const light = document.documentElement.dataset.theme === 'light';
+  const C = light ? { ground:'#e9eee4', water:'#c3d7d0', green:'#cfddc8', line:'rgba(63,80,58,0.42)', lineMajor:'rgba(43,65,42,0.65)', text:'#354a39', halo:'#e9eee4', border:'rgba(43,65,42,0.26)' } : {
+    ground: '#202a24', water: '#101b18', green: '#293b2a', line: 'rgba(226,218,200,0.48)',
+    lineMajor: 'rgba(239,231,210,0.75)', text: '#BFB8A6', halo: '#10241B', border: 'rgba(247,244,240,0.16)',
   };
   for (const l of map.getStyle().layers) {
     const id = l.id;
+    if (id.startsWith('bn-route')) continue;
     const set = (k, v) => { try { map.setPaintProperty(id, k, v); } catch (e) { /* not on this layer */ } };
     if (l.type === 'background') set('background-color', C.ground);
     else if (l.type === 'fill') {
       if (/water/.test(id)) set('fill-color', C.water);
       else if (/park|wood|grass|landcover|landuse/.test(id)) { set('fill-color', C.green); set('fill-opacity', 0.6); }
-      else if (/building/.test(id)) { set('fill-color', '#163025'); set('fill-outline-color', 'rgba(226,218,200,0.28)'); }
+      else if (/building/.test(id)) { set('fill-color', light ? '#aab9a5' : '#354239'); set('fill-outline-color', 'rgba(226,218,200,0.48)'); }
       else set('fill-color', C.ground);
     } else if (l.type === 'line') {
       if (/water/.test(id)) set('line-color', '#173A2E');
@@ -107,6 +109,7 @@ function darkenPositron(map) {
     } else if (l.type === 'symbol') {
       set('text-color', C.text); set('text-halo-color', C.halo); set('text-halo-width', 1.2);
       if (/poi/.test(id)) { try { map.setLayoutProperty(id, 'visibility', 'none'); } catch (e) {} }
+    } else if (l.type === 'fill-extrusion') { set('fill-extrusion-color', light ? '#aab9a5' : '#536355');
     } else if (l.type === 'raster') {
       // natural-earth relief: a faint engraved texture at low zoom
       set('raster-saturation', -1); set('raster-opacity', 0.22); set('raster-brightness-max', 0.55);
@@ -117,7 +120,7 @@ function darkenPositron(map) {
     map.addLayer({
       id: 'bn-buildings-3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
       paint: {
-        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6], 0, '#183428', 60, '#1F4334', 150, '#28533F'],
+        'fill-extrusion-color': light ? '#aab9a5' : ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6], 0, '#39483d', 60, '#536355', 150, '#6b7b69'],
         'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.5, ['coalesce', ['get', 'render_height'], 6]],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
         'fill-extrusion-opacity': 0.9,
@@ -172,6 +175,7 @@ export async function renderFridgeMap(container) {
     return;
   }
 
+  if (!container.isConnected) return;
   container.innerHTML = `
     <div class="fmap">
       <div class="fmap__map" id="fmapCanvas" role="region" aria-label="Map of community fridges and chapters"></div>
@@ -190,6 +194,7 @@ export async function renderFridgeMap(container) {
           <button type="submit" class="fmap__go">Go</button>
         </form>
         <button type="button" class="fmap__near" id="fmapNearMe">Use my location</button>
+        <button type="button" class="fmap__overview" id="fmapOverview">View all locations</button>
         <p class="fmap__status" id="fmapStatus" aria-live="polite"></p>
       </div>
 
@@ -211,17 +216,19 @@ export async function renderFridgeMap(container) {
 
   // ── the map (guarded: WebGL can be unavailable) ──
   let map = null;
+  container._disposeMap?.();
+  container._disposeMap = () => { map?.remove(); map = null; };
   const start = fridges[0] || null;
   try {
     if (engine === 'mapbox') lib.accessToken = token;
     map = new lib.Map({
       container: $('#fmapCanvas'),
       style: engine === 'mapbox' ? MB.style : ML.style,
-      ...(engine === 'mapbox' ? { config: { basemap: { lightPreset: 'night', theme: 'monochrome', show3dObjects: true, showPointOfInterestLabels: false, showTransitLabels: false } } } : {}),
-      center: start ? [start.lng, start.lat] : [-40, 18],
-      zoom: start ? 12 : 1.6,
-      pitch: start ? 52 : 0,
-      bearing: start ? -12 : 0,
+      ...(engine === 'mapbox' ? { config: { basemap: { lightPreset: document.documentElement.dataset.theme === 'light' ? 'day' : 'night', theme: 'monochrome', show3dObjects: true, showPointOfInterestLabels: false, showTransitLabels: false } } } : {}),
+      center: start ? [start.lng, start.lat] : [-90.049, 35.149],
+      zoom: 13,
+      pitch: 42,
+      bearing: -12,
       maxPitch: 70,
       cooperativeGestures: true,
       attributionControl: { compact: true },
@@ -236,8 +243,15 @@ export async function renderFridgeMap(container) {
         renderFridgeMap(container);
       }
     });
+    const updateAppearance = () => {
+      if (!map?.isStyleLoaded()) return;
+      if (engine === 'maplibre') stylePositron(map);
+      else { try { map.setConfigProperty('basemap', 'lightPreset', document.documentElement.dataset.theme === 'light' ? 'day' : 'night'); } catch {} }
+    };
+    window.addEventListener('bn:appearance', updateAppearance);
+    map.on('remove', () => window.removeEventListener('bn:appearance', updateAppearance));
     map.on('load', () => {
-      if (engine === 'maplibre') darkenPositron(map);
+      if (engine === 'maplibre') stylePositron(map);
       map.addSource('bn-route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       map.addLayer({ id: 'bn-route-glow', type: 'line', source: 'bn-route', paint: { 'line-color': '#FF4D8D', 'line-width': 10, 'line-opacity': 0.25, 'line-blur': 6 } });
       map.addLayer({ id: 'bn-route', type: 'line', source: 'bn-route', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#FF7AAB', 'line-width': 3.5, 'line-dasharray': [0.1, 2] } });
@@ -261,7 +275,7 @@ export async function renderFridgeMap(container) {
       el.setAttribute('aria-label', `${pad(p.n)}: ${p.data.name || 'Community fridge'}${cap ? `, ${cap.label}` : ''}`);
     } else {
       el.className = 'cpin';
-      el.innerHTML = `<span class="cpin__badge">${ICON.blossom}</span><span class="cpin__label">${esc(p.data.city || p.data.name || '')}</span>`;
+      el.innerHTML = `<span class="cpin__dot"></span><span class="cpin__label">${esc(p.data.city || p.data.name || '')}</span>`;
       el.setAttribute('aria-label', `${p.data.city || p.data.name} chapter`);
     }
     el.addEventListener('click', (e) => { e.stopPropagation(); select(p, true); });
@@ -282,7 +296,7 @@ export async function renderFridgeMap(container) {
         ? (p.data.address || [p.data.city, p.data.state].filter(Boolean).join(', '))
         : [p.data.state, countryName(p.data.country)].filter(Boolean).join(' · ');
       return `<li><button type="button" class="fmap__stop fmap__stop--${p.kind}${p === selected ? ' is-active' : ''}" data-key="${p.kind}-${p.n}">
-        <span class="fmap__thumb">${p.kind === 'fridge' ? (p.data.photo_url ? `<img src="${esc(p.data.photo_url)}" alt="" loading="lazy" />` : ICON.fridge) : ICON.blossom}<i>${p.kind === 'fridge' ? pad(p.n) : '✿'}</i></span>
+        <span class="fmap__thumb">${p.kind === 'fridge' ? (p.data.photo_url ? `<img src="${esc(p.data.photo_url)}" alt="" loading="lazy" />` : ICON.fridge) : ICON.pin}${p.kind === 'fridge' ? `<i>${pad(p.n)}</i>` : ''}</span>
         <span class="fmap__stopText"><strong>${esc(title)}</strong><small>${esc(sub)}</small>${d != null ? `<em>${fmtMi(d)} away</em>` : ''}</span>
       </button></li>`;
     }).join('') : `<li class="fmap__empty">${fridges.length ? 'Nothing to show. Turn a layer back on.' : 'No fridges are listed yet; chapters add them as they open.'}</li>`;
@@ -326,13 +340,13 @@ export async function renderFridgeMap(container) {
       const members = typeof c.member_count === 'number' ? c.member_count : null;
       card.innerHTML = `
         <button type="button" class="fmap__close" aria-label="Close">×</button>
-        <div class="fmap__cardMedia fmap__cardMedia--chapter"><span class="fmap__cardIcon">${ICON.blossom}</span></div>
+        <div class="fmap__cardMedia fmap__cardMedia--chapter"><span class="fmap__cardIcon">${ICON.pin}</span></div>
         <div class="fmap__cardBody">
           <h4>${esc(c.city || c.name)} chapter</h4>
           <p>${esc([c.state, countryName(c.country)].filter(Boolean).join(' · '))}</p>
           <ul class="fmap__facts">
             ${c.president_name ? `<li>${ICON.pin}Led by ${esc(c.president_name)}</li>` : ''}
-            ${members ? `<li>✿ ${members} member${members === 1 ? '' : 's'}</li>` : ''}
+            ${members ? `<li>${members} member${members === 1 ? '' : 's'}</li>` : ''}
             ${d != null ? `<li>${ICON.arrow}${fmtMi(d)}</li>` : ''}
           </ul>
         </div>
@@ -347,7 +361,7 @@ export async function renderFridgeMap(container) {
         const b = new lib.LngLatBounds([origin.lng, origin.lat], [origin.lng, origin.lat]).extend([p.lng, p.lat]);
         map.fitBounds(b, { padding: { top: 160, bottom: 230, left: 80, right: 80 }, pitch: 50, maxZoom: 16, duration: 1100 });
       } else {
-        map.flyTo({ center: [p.lng, p.lat], zoom: p.kind === 'fridge' ? 16 : 11.5, pitch: 58, bearing: -18, speed: 1.2, essential: true });
+        map.flyTo({ center: [p.lng, p.lat], zoom: p.kind === 'fridge' ? 16 : 11.5, pitch: 58, bearing: -18, speed: 1.2, essential: false });
       }
     }
   }
@@ -387,7 +401,7 @@ export async function renderFridgeMap(container) {
     } else {
       status.textContent = `No fridges listed near ${label} yet.`;
       renderStrip();
-      if (map) map.flyTo({ center: [lng, lat], zoom: 13, pitch: 55, essential: true });
+      if (map) map.flyTo({ center: [lng, lat], zoom: 13, pitch: 55, essential: false });
     }
   }
 
@@ -430,15 +444,28 @@ export async function renderFridgeMap(container) {
   });
 
   renderStrip();
-  if (map) map.once('load', fitAll);
+  $('#fmapOverview').addEventListener('click', fitAll);
+  if (!fridges.length) status.textContent = 'No community fridges are listed yet. Showing Memphis streets; chapter locations can be explored below.';
+  if (map) {
+    const resize = new ResizeObserver(() => map?.resize()); resize.observe(root);
+    map.on('remove', () => resize.disconnect());
+    requestAnimationFrame(() => map?.resize());
+    const mapReady = setTimeout(() => {
+      if (!root.isConnected || !map || map.loaded()) return;
+      status.textContent = 'Map tiles are taking longer than expected. You can still browse the locations below.';
+    }, 12000);
+    map.once('idle', () => clearTimeout(mapReady));
+    map.on('remove', () => clearTimeout(mapReady));
+  }
 
   // Chapters appear as they're located (cached after the first visit).
   let cn = 0;
   locateChapters(chapters, (ch) => {
+    if (!root.isConnected) return;
     const p = { kind: 'chapter', n: ++cn, data: ch, lat: ch.lat, lng: ch.lng };
     places.push(p);
     makeMarker(p);
     if (!show.chapter && p.el) p.el.hidden = true;
     renderStrip();
-  }).then(() => { if (!selected && !origin) fitAll(); });
+  });
 }

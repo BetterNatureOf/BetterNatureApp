@@ -67,8 +67,10 @@
 
   // ── HERO ────────────────────────────────────────────────────────────
   set('#heroEyebrow', C.hero.eyebrow);
-  set('#heroHeadline', C.hero.headline + ' ');
-  set('#heroHeadlineItalic', C.hero.headlineItalic);
+  // Migrate the previous cached CMS tagline without blocking future copy edits.
+  const previousTagline = C.hero.headline?.trim() === 'Feed people. Plant forests.' && C.hero.headlineItalic?.trim() === 'Protect the water.';
+  set('#heroHeadline', previousTagline ? 'Care for people.' : C.hero.headline);
+  set('#heroHeadlineItalic', previousTagline ? 'Care for our planet.' : C.hero.headlineItalic);
   set('#heroSub', C.hero.subhead);
   const heroCta1 = $('#heroCta1');
   heroCta1.textContent = C.hero.primaryCta.text;
@@ -83,10 +85,16 @@
   ).join('');
   setHTML('#tickerTrack', tickerItems + tickerItems);
 
-  // Hero media collage (trees, fresh water, produce crates)
+  // Preserve CMS edits, but serve the three existing hero photos locally for reliable loading.
+  const heroImages = {
+    '1710092784814-4a6f158913b8': 'images/iris-community.jpg',
+    '1777150895644-2ca253ee1c93': 'images/native-trees.jpg',
+    '1758599669008-fb6f8eda6f53': 'images/waterway-cleanup.jpg',
+  };
+  const heroSource = src => Object.entries(heroImages).find(([id]) => src?.includes(id))?.[1] || src;
   if (C.hero.media && C.hero.media.length) {
     setHTML('#heroMedia', C.hero.media.map((m, i) =>
-      `<figure class="hero__tile hero__tile--${i + 1}${m.program ? ` hero__tile--${m.program}` : ''}"><img src="${m.src}" alt="${m.alt || ''}" ${i === 0 ? 'fetchpriority="high"' : 'loading="lazy"'} />${m.label ? `<figcaption class="hero__tag">${m.label}</figcaption>` : ''}</figure>`
+      `<figure class="hero__tile hero__tile--${i + 1}${m.program ? ` hero__tile--${m.program}` : ''}"><img src="${heroSource(m.src)}" alt="${m.alt || ''}" ${i === 0 ? 'fetchpriority="high"' : 'loading="eager"'} />${m.label ? `<figcaption class="hero__tag">${m.label}</figcaption>` : ''}</figure>`
     ).join(''));
   }
 
@@ -141,7 +149,7 @@
     // status words like "Launching" or "Memphis" so nothing repeats.
     const stats = (Array.isArray(p?.stats) ? p.stats : []).filter((s) => s && !/\d/.test(String(s.value ?? '')));
     const cta  = p?.cta && p.cta.href
-      ? `<a href="${p.cta.href}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>`
+      ? `<a href="${appUrl('')}" class="btn btn--forest">${p.cta.text || 'Learn more'}</a>`
       : '';
     return `
     <div class="program reveal ${i % 2 === 1 ? 'program--reverse' : ''}" data-program="${key}">
@@ -163,7 +171,7 @@
         <!-- Real project logo. Falls back gracefully to the SVG icon
              beneath it if the PNG isn't deployed yet. -->
         <img
-          src="projects/${key}.svg"
+          src="identity/${key}.svg"
           alt="${title}"
           class="program__logo"
           onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='block');"
@@ -182,6 +190,7 @@
   const howContent = $('#howContent');
   const renderTrack = (idx) => {
     const t = C.howItWorks.tracks[idx];
+    howContent.setAttribute('role', 'tabpanel'); howContent.setAttribute('aria-labelledby', `how-tab-${idx}`);
     howContent.innerHTML = `
       <div class="how__tagline">${t.tagline}</div>
       <div class="how__steps">
@@ -197,13 +206,21 @@
     `;
     howTabs.querySelectorAll('.how__tab').forEach((tab, i) => {
       tab.classList.toggle('is-active', i === idx);
+      tab.setAttribute('aria-selected', String(i === idx)); tab.tabIndex = i === idx ? 0 : -1;
     });
   };
+  howTabs.setAttribute('role', 'tablist'); howTabs.setAttribute('aria-label', 'How to get involved');
   howTabs.innerHTML = C.howItWorks.tracks.map((t, i) =>
-    `<button class="how__tab ${i === 0 ? 'is-active' : ''}" data-idx="${i}">${t.label}</button>`
+    `<button type="button" role="tab" id="how-tab-${i}" aria-controls="howContent" class="how__tab ${i === 0 ? 'is-active' : ''}" data-idx="${i}">${t.label}</button>`
   ).join('');
   howTabs.querySelectorAll('.how__tab').forEach((tab, i) => {
     tab.addEventListener('click', () => renderTrack(i));
+    tab.addEventListener('keydown', event => {
+      const tabs = [...howTabs.querySelectorAll('.how__tab')];
+      const next = event.key === 'ArrowRight' ? (i + 1) % tabs.length : event.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+      if (next === null) return;
+      event.preventDefault(); renderTrack(next); tabs[next].focus();
+    });
   });
   renderTrack(0);
 
@@ -518,7 +535,12 @@
       ? `<a class="partner-logo is-link" href="${href}" target="_blank" rel="noreferrer">${inner}${igBadge}</a>`
       : `<span class="partner-logo">${inner}</span>`;
   }).join('');
-  setHTML('#partnerLogos', partnerLogos + partnerLogos);
+  setHTML('#partnerLogos', partnerLogos);
+  const partnerRail = $('#partnerLogos').closest('.logo-marquee');
+  partnerRail.hidden = !partnerLogos.trim();
+  $('#partners').classList.toggle('partners--empty', !partnerLogos.trim());
+  const partnerLink = document.createElement('a'); partnerLink.className = 'btn btn--forest partner-action'; partnerLink.href = appUrl(''); partnerLink.textContent = 'Become a food partner ↗';
+  $('#partnersBody').after(partnerLink);
 
   set('#pitchTitle', C.partners.pitch.title);
   set('#pitchBody', C.partners.pitch.body);
@@ -603,66 +625,40 @@
   donateCta.textContent = C.donate.cta.text;
   donateCta.href = C.donate.cta.href;
 
-  // Inline Zeffy form — give right here, never leave the page.
-  // Zeffy has no API for pre-filling an amount, so picking a tier shows the
-  // amount to enter and brings the form into view. The iframe only loads
-  // as the visitor nears the section, behind a placeholder, and a direct
-  // link appears if it hasn't loaded after 12 seconds (e.g. blocked).
+  // Compact, opt-in checkout. The provider owns the payment fields.
   if (C.brand.donateEmbedUrl) {
     const fullUrl = C.brand.donateUrl || C.donate.cta.href;
     setHTML('#donateEmbed', `
-      <div class="zeffy" id="zeffyFrame">
-        <div class="zeffy__bar">
-          <span class="zeffy__pick" id="zeffyPick" aria-live="polite">Choose an amount above, or enter any amount below.</span>
-          <span class="zeffy__secure"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg> Secure checkout by Zeffy</span>
-        </div>
-        <div class="zeffy__stage">
-          <div class="zeffy__skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-          <p class="zeffy__fallback" hidden>The form is taking a while. <a href="${fullUrl}" target="_blank" rel="noreferrer">Open the donation form ↗</a></p>
-        </div>
-        <ul class="zeffy__trust">
-          <li>100% reaches BetterNature: no platform fees</li>
-          <li>Tax-deductible${C.brand.ein ? ` · EIN ${C.brand.ein}` : ''}</li>
-          <li>Receipt sent by email</li>
-        </ul>
-      </div>
-    `);
-    const frame = $('#zeffyFrame');
-    const stage = frame.querySelector('.zeffy__stage');
+      <div class="donation-panel">
+        <div><h3>Your support, put to work.</h3><p id="zeffyPick" aria-live="polite">Choose a suggested amount, or give what works for you.</p></div>
+        <a class="btn btn--pink" href="${fullUrl}" target="_blank" rel="noreferrer">Donate securely <span aria-hidden="true">↗</span></a>
+        <details class="donation-checkout" id="zeffyFrame"><summary>Prefer to give here? Open the secure form</summary>
+          <div class="zeffy__stage"><p class="checkout-loading" role="status">Loading secure checkout…</p></div>
+        </details>
+        <p class="donation-note">Checkout and email receipt provided by Zeffy. <a href="${fullUrl}" target="_blank" rel="noreferrer">Open full-screen checkout ↗</a></p>
+      </div>`);
+    const frame = $('#zeffyFrame'), stage = frame.querySelector('.zeffy__stage');
     let loaded = false;
     const load = () => {
       if (loaded) return;
       loaded = true;
       const ifr = document.createElement('iframe');
-      ifr.title = 'Donate to BetterNature';
+      ifr.title = 'Donate to BetterNature securely with Zeffy';
       ifr.src = C.brand.donateEmbedUrl;
-      ifr.setAttribute('allowpaymentrequest', 'true');
-      ifr.setAttribute('allowtransparency', 'true');
-      ifr.referrerPolicy = 'no-referrer-when-downgrade';
-      ifr.addEventListener('load', () => frame.classList.add('is-loaded'));
+      ifr.setAttribute('allow', 'payment');
+      ifr.referrerPolicy = 'strict-origin-when-cross-origin';
+      ifr.addEventListener('load', () => { stage.querySelector('.checkout-loading')?.remove(); });
       stage.appendChild(ifr);
-      setTimeout(() => {
-        if (!frame.classList.contains('is-loaded')) stage.querySelector('.zeffy__fallback').hidden = false;
-      }, 12000);
     };
-    if ('IntersectionObserver' in window) {
-      const zio = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { load(); zio.disconnect(); } }, { rootMargin: '800px 0px' });
-      zio.observe(frame);
-    } else load();
-
-    document.querySelectorAll('#donateTiers .tier').forEach((tier) => tier.addEventListener('click', () => {
-      document.querySelectorAll('#donateTiers .tier').forEach((t) => {
-        t.classList.toggle('is-picked', t === tier);
-        t.setAttribute('aria-pressed', String(t === tier));
-      });
-      load();
-      const pick = $('#zeffyPick');
-      if (pick) pick.innerHTML = `Enter <strong>${tier.dataset.amount}</strong> in the form below, monthly or one time.`;
-      frame.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
+    frame.addEventListener('toggle', () => { if (frame.open) load(); });
+    document.querySelectorAll('#donateTiers .tier').forEach(tier => tier.addEventListener('click', () => {
+      document.querySelectorAll('#donateTiers .tier').forEach(t => { t.classList.toggle('is-picked', t === tier); t.setAttribute('aria-pressed', String(t === tier)); });
+      $('#zeffyPick').textContent = `Suggested gift: ${tier.dataset.amount}. You can enter this amount or choose another at checkout.`;
+      $('#donateEmbed').scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
     }));
+    donateCta.hidden = true;
   }
 
-  // Alternative payment methods (PayPal Giving Fund, Venmo, Cash App, check)
   const gl = C.brand.giveLinks || {};
   const altMethods = [
     { key: 'paypal',  label: 'PayPal',   sub: 'Zero-fee via Giving Fund', href: gl.paypal,
@@ -687,27 +683,11 @@
     `);
   }
 
-  // ── NEWSLETTER ──────────────────────────────────────────────────────
-  set('#newsTitle', C.newsletter.title);
-  set('#newsBody', C.newsletter.body);
-  $('#newsEmail').placeholder = C.newsletter.placeholder;
-  $('#newsCta').textContent = C.newsletter.cta;
-  const newsForm = $('#newsForm');
-  if (C.newsletter.formAction) {
-    newsForm.action = C.newsletter.formAction;
-    newsForm.method = 'POST';
-  } else {
-    newsForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const email = $('#newsEmail').value;
-      if (!email) return;
-      const btn = $('#newsCta');
-      btn.textContent = '✓ Subscribed';
-      btn.disabled = true;
-      $('#newsEmail').value = '';
-      setTimeout(() => { btn.textContent = C.newsletter.cta; btn.disabled = false; }, 2500);
-    });
-  }
+  // ── FIELD NOTES ────────────────────────────────────────────────────
+  set('#newsTitle', 'Stories from the field.');
+  set('#newsBody', 'Updates, practical guides and perspectives from across Better Nature.');
+  set('#newsCta', 'Explore the journal ↗');
+  $('#newsCta').href = 'blog.html';
 
   // ── GET THE APP ─────────────────────────────────────────────────────
   if (C.getApp) {
@@ -763,8 +743,8 @@
           </a>`).join('')}
       </div>
       <div class="join__foot">
-        <img class="join__qr" src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=6&data=${encodeURIComponent(APP_BASE)}" alt="QR code that opens the BetterNature app" width="80" height="80" loading="lazy" />
-        <p>Scan to open the app on your phone${stores ? `, or get it on ${stores}` : ''}. Already a member? <a href="${appUrl(APP_ROUTES.login)}">Sign in</a></p>
+        <img class="join__qr" src="images/app-qr.svg" alt="QR code that opens the BetterNature app" width="176" height="176" loading="lazy" />
+        <p><strong>Take Better Nature with you.</strong><br>Scan to open the app on your phone${stores ? `, or get it on ${stores}` : ''}. Already a member? <a href="${appUrl(APP_ROUTES.login)}">Sign in</a></p>
       </div>
     `);
   }
@@ -841,16 +821,5 @@
     io3.observe(bnmapRoot);
   }
 
-  // Smooth scroll w/ nav offset
-  document.querySelectorAll('a[href^="#"]').forEach(a => {
-    a.addEventListener('click', (e) => {
-      const id = a.getAttribute('href');
-      if (id === '#' || id.length < 2) return;
-      const tgt = document.querySelector(id);
-      if (!tgt) return;
-      e.preventDefault();
-      const top = tgt.getBoundingClientRect().top + window.scrollY - 70;
-      window.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-    });
-  });
+  // Same-page navigation is handled early by navigation.js.
 })();

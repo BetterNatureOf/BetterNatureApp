@@ -44,7 +44,7 @@ const server = http.createServer((req, res) => {
         assert.match(await page.locator('#networkSummary').innerText(), /no member count/);
         await page.locator('#networkMetric').selectOption('chapters');
         const region = await page.locator('#networkRegions button').first().innerText();
-        await page.locator('#networkRegions button').first().click();
+        await page.locator('#chapterFilters button').filter({hasText:region}).first().click();
         assert.equal(await page.locator('#chapterFilters [aria-pressed="true"]').getAttribute('data-region'), region);
         const downloadPromise = page.waitForEvent('download');
         await page.locator('#networkExport').click();

@@ -10,3 +10,6 @@
 /donate         /#donate         302
 /signup         /#signup         302
 /map            /#bnmap          302
+
+/blog           /blog.html      302
+/journal        /blog.html      302

@@ -6,6 +6,8 @@
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#f8faf6" />
   <script src="appearance.js"></script>
+  <script defer src="navigation.js"></script>
+  <script defer src="pointer.js"></script>
   <title>BetterNature — Rescue. Restore. Protect.</title>
   <meta name="description" content="Youth-led nonprofit: three programs, one mission. We rescue surplus food, plant native forests, and clean the waterways communities depend on. 38 cities." />
   <meta property="og:title" content="BetterNature — Rescue. Restore. Protect." />
@@ -34,8 +36,8 @@
     <a href="#mission">Mission</a>
     <a href="#programs">Programs</a>
     <a href="#impact">Impact</a>
-    <a href="#how">Get involved</a>
-    <a href="#chapters">Chapters</a>
+    <a href="#how">How it works</a>
+    <a href="#chapters">Find a chapter</a>
     <div class="nav__more">
       <button class="nav__moreBtn" id="navMoreBtn" type="button" aria-expanded="false" aria-controls="navMore">
         More <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -43,6 +45,7 @@
       <div class="nav__moreMenu" id="navMore">
         <a href="#bnmap">Food-insecurity map</a>
         <a href="#partners">Partner with us</a>
+        <a href="blog.html">Journal</a>
         <a href="#press">Press</a>
         <a href="https://app.betternatureofficial.org/">Open the web app ↗</a>
       </div>
@@ -94,16 +97,6 @@
   </div>
 </section>
 
-<!-- ══════════════════════════ IMPACT -->
-<section class="impact" id="impact" data-reveal>
-  <div class="container">
-    <div class="eyebrow eyebrow--light" id="impactEyebrow"></div>
-    <h2 class="impact__title" id="impactTitle"></h2>
-    <div class="impact__grid" id="impactGrid" data-reveal-stagger></div>
-    <details class="impact-method"><summary>Where these numbers come from</summary><p id="impactSource">Published Better Nature totals. Live reporting is being checked.</p><p>Food weight, service counts and environmental estimates are different measures and must not be added together. Service counts do not establish a count of unique people. Environmental figures are reported estimates, not direct measurements; a published calculation method is not yet available here.</p></details>
-  </div>
-</section>
-
 <!-- ══════════════════════════ PROGRAMS -->
 <section class="programs" id="programs" data-reveal>
   <div class="container">
@@ -115,24 +108,15 @@
   </div>
 </section>
 
-<!-- ══════════════════════════ IMPACT MAP -->
-<!-- ══════════════════════════ BN MAP -->
-<section class="bnmap" id="bnmap">
+<!-- ══════════════════════════ IMPACT -->
+<section class="impact" id="impact" data-reveal>
   <div class="container">
-    <div class="bnmap__head">
-      <div class="eyebrow eyebrow--pink">BN Map</div>
-      <h2 class="bnmap__title">Where we work. Where we don't.</h2>
-      <p class="bnmap__body">
-        Two views on the same fight, worldwide. Hover any country (or US state) on the food-insecurity map; switch to the fridge tab to see every drop-off in the network.
-      </p>
-    </div>
-    <div class="bnmap__root" id="bnmapRoot"></div>
+    <div class="eyebrow eyebrow--light" id="impactEyebrow"></div>
+    <h2 class="impact__title" id="impactTitle"></h2>
+    <div class="impact__grid" id="impactGrid" data-reveal-stagger></div>
+    <details class="impact-method"><summary>Where these numbers come from</summary><p id="impactSource">Published Better Nature totals. Live reporting is being checked.</p><p>Food weight, service counts and environmental estimates are different measures and must not be added together. Service counts do not establish a count of unique people. Environmental figures are reported estimates, not direct measurements; a published calculation method is not yet available here.</p></details>
   </div>
 </section>
-
-<!-- Impact Map section removed — BN Map (above) is the replacement.
-     Old impactmap JS is now a no-op because none of these IDs exist
-     on the page anymore. -->
 
 <!-- ══════════════════════════ HOW IT WORKS -->
 <section class="how" id="how">
@@ -188,6 +172,25 @@
     <div class="chapters__grid" id="chaptersGrid"></div>
   </div>
 </section>
+
+<!-- ══════════════════════════ IMPACT MAP -->
+<!-- ══════════════════════════ BN MAP -->
+<section class="bnmap" id="bnmap">
+  <div class="container">
+    <div class="bnmap__head">
+      <div class="eyebrow eyebrow--pink">BN Map</div>
+      <h2 class="bnmap__title">Where we work. Where we don't.</h2>
+      <p class="bnmap__body">
+        Two views on the same fight, worldwide. Hover any country (or US state) on the food-insecurity map; switch to the fridge tab to see every drop-off in the network.
+      </p>
+    </div>
+    <div class="bnmap__root" id="bnmapRoot"></div>
+  </div>
+</section>
+
+<!-- Impact Map section removed — BN Map (above) is the replacement.
+     Old impactmap JS is now a no-op because none of these IDs exist
+     on the page anymore. -->
 
 <!-- ══════════════════════════ PARTNERS -->
 <section class="partners" id="partners">
@@ -303,10 +306,7 @@
       <h2 id="newsTitle"></h2>
       <p id="newsBody"></p>
     </div>
-    <form class="newsletter__form" id="newsForm">
-      <input type="email" id="newsEmail" required />
-      <button type="submit" class="btn btn--pink" id="newsCta"></button>
-    </form>
+    <a class="btn btn--forest" id="newsCta" href="blog.html">Explore the journal ↗</a>
   </div>
 </section>
 

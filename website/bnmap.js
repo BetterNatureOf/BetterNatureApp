@@ -79,6 +79,7 @@ async function renderInsecurity(container) {
     fetch(WORLD).then((r) => r.json()),
     fetch(STATES).then((r) => r.json()).catch(() => null),
   ]);
+  if (!container.isConnected) return;
   const d3 = window.d3; const topojson = window.topojson;
   const top = topInsecure(6);
 
@@ -178,10 +179,12 @@ async function renderInsecurity(container) {
   draw();
   if (window.ResizeObserver) {
     let last = 0;
-    new ResizeObserver(() => {
+    const resize = new ResizeObserver(() => {
       const w = wrapper.clientWidth;
       if (Math.abs(w - last) > 4) { last = w; draw(); }
-    }).observe(wrapper);
+    });
+    resize.observe(wrapper);
+    container._disposeMap = () => resize.disconnect();
   }
 }
 
@@ -205,9 +208,12 @@ export function mountBnMap(rootEl) {
   let current = null;
   function activate(name) {
     if (current === name) return;
+    surface.firstElementChild?._disposeMap?.();
+    const panel = document.createElement('div'); panel.className = 'bnmap__panel';
+    surface.replaceChildren(panel);
     current = name;
-    tabs.forEach((b) => b.classList.toggle('is-active', b.dataset.tab === name));
-    (name === 'fridges' ? renderFridges : renderInsecurity)(surface);
+    tabs.forEach((b) => { b.classList.toggle('is-active', b.dataset.tab === name); b.setAttribute('aria-pressed', String(b.dataset.tab === name)); });
+    (name === 'fridges' ? renderFridges : renderInsecurity)(panel).catch(() => { if (current === name) panel.innerHTML = '<p class="bnmap__loading">This map could not load. Please try the other view or reload.</p>'; });
   }
   tabs.forEach((b) => b.addEventListener('click', () => activate(b.dataset.tab)));
   activate('insecurity');
