@@ -232,3 +232,9 @@ Moved chapter creation out of the horizontal directory rail into a persistent se
 The desktop navigation now fills its available space with 15–17px labels and 44px targets. Below 1000px it uses the full menu while retaining both account actions, instead of shrinking labels to fit. Browser zoom is respected; no forced page zoom or counter-scaling is applied. Long founder names wrap safely. Added Rishik’s supplied LinkedIn link and the supplied fourth-founder link, and changed the fourth founder’s display name to the exact spelling confirmed by Satvik: Punarchithsaireddy Vanamareddy.
 
 Validation: the 28 viewport/theme regression passed. Focused checks cover nine effective layout widths equivalent to 50–400% browser zoom on a 1286px browser, account visibility, header overlap, name clipping, chapter creation after empty searches, referral preservation, both profile links and the confirmed display name.
+
+## Menu control regression fix
+
+Removed outdated hamburger-span background/transform rules that painted a white rectangle behind the Menu label over dark sections. The control now uses an SVG hamburger/close icon with synchronized Menu / Close text and Open menu / Close menu accessible labels. Flattened the obsolete nested More menu so every enabled destination appears in the expanded navigation instead of reserving invisible grid space.
+
+Validation: focused menu regression at 320, 390, 1044 and 1286px in light/dark modes, including dark-section background, all destinations, menu height, stable document scroll, keyboard entry, Escape and link dismissal, plus scoped accessibility. All 28 viewport/theme cases also pass. Owner explicitly requested publication after this fix.

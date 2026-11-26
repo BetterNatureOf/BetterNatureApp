@@ -32,6 +32,14 @@
     const burger = document.querySelector('#burger');
     if (!nav || !burger) return;
     const links = nav.querySelector('#navLinks');
+    const syncMenuButton = () => {
+      const open = burger.getAttribute('aria-expanded') === 'true';
+      burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      const label = burger.querySelector('.nav__menuLabel');
+      if (label) label.textContent = open ? 'Close' : 'Menu';
+    };
+    new MutationObserver(syncMenuButton).observe(burger, {attributes:true,attributeFilter:['aria-expanded']});
+    syncMenuButton();
     let drawerMotion;
     const setOpen = open => {
       const wasOpen = nav.classList.contains('is-open');
@@ -40,6 +48,7 @@
       const from = {opacity: current ? current.opacity : '0', transform: current ? current.transform : 'translateY(-5px)'};
       drawerMotion?.cancel(); drawerMotion = null;
       burger.setAttribute('aria-expanded', String(open));
+      syncMenuButton();
       if (open) nav.classList.add('is-open');
       if (!links || !matchMedia('(max-width:1120px)').matches || matchMedia('(prefers-reduced-motion:reduce)').matches) {
         nav.classList.toggle('is-open', open); return;

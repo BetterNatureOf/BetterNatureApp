@@ -318,7 +318,7 @@ header.nav.nav.is-scrolled { top: 8px; border-bottom: 1px solid var(--glass-edge
 /* Adaptive: over the dark sections the glass tints dark and text goes light */
 header.nav.nav.nav--on-dark { background-color: rgba(16, 36, 27, 0.22); border-color: rgba(255, 255, 255, 0.22); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
 .nav--on-dark .nav__name, .nav--on-dark .nav__links > a, .nav--on-dark .nav__moreBtn, .nav--on-dark .nav__join { color: #F7F4F0; }
-.nav--on-dark .nav__burger span { background: #F7F4F0; }
+
 .nav__links > a, .nav__moreBtn, .nav__name, .nav__join { transition: color .3s var(--ease); text-shadow: 0 1px 8px rgba(253, 251, 248, 0.6); }
 .nav--on-dark .nav__links > a, .nav--on-dark .nav__moreBtn, .nav--on-dark .nav__name, .nav--on-dark .nav__join { text-shadow: 0 1px 8px rgba(16, 36, 27, 0.6); }
 .nav__logo { width: 32px; height: 32px; }
