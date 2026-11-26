@@ -194,9 +194,6 @@ export async function renderFridgeMap(container) {
   if (!container.isConnected) return;
   container.innerHTML = `
     <div class="fmap">
-      <div class="fmap__map" id="fmapCanvas" role="region" aria-label="Map of community fridges and chapters"></div>
-      <div class="fmap__shade" aria-hidden="true"></div>
-
       <div class="fmap__head">
         <div class="fmap__eyebrow">Community fridge network</div>
         <h3 class="fmap__title"><span id="fmapTitle">Fridges</span></h3>
@@ -214,8 +211,12 @@ export async function renderFridgeMap(container) {
         <p class="fmap__status" id="fmapStatus" aria-live="polite"></p>
       </div>
 
+      <div class="fmap__stage">
+      <div class="fmap__map" id="fmapCanvas" role="region" aria-label="Map of community fridges and chapters"></div>
+      <div class="fmap__shade" aria-hidden="true"></div>
       <ol class="fmap__strip" id="fmapStrip" aria-label="Places on the map"></ol>
       <article class="fmap__card" id="fmapCard" hidden aria-live="polite"></article>
+      </div>
     </div>`;
 
   const $ = (s) => container.querySelector(s);
@@ -466,7 +467,7 @@ export async function renderFridgeMap(container) {
 
   renderStrip();
   $('#fmapOverview').addEventListener('click', fitAll);
-  if (!fridges.length) status.textContent = 'No community fridges are listed yet. Showing Memphis streets; chapter locations can be explored below.';
+  if (!fridges.length) status.textContent = 'No community fridges are listed yet. Explore the chapter locations on the map.';
   if (map) {
     const resize = new ResizeObserver(() => map?.resize()); resize.observe(root);
     map.on('remove', () => resize.disconnect());

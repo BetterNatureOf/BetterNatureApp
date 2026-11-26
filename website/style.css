@@ -1866,7 +1866,7 @@ a { color: inherit; text-decoration: none; }
   .program__title { font-size: 24px !important; }
   .program__body { font-size: 14px !important; }
   .program__stats { grid-template-columns: 1fr 1fr; gap: 12px; }
-  .program__visual { display: none; }
+
 
   /* How it works tabs — smaller, wrap */
   .how__tabs { flex-wrap: wrap; gap: 6px; }
@@ -1877,7 +1877,7 @@ a { color: inherit; text-decoration: none; }
   .how__step-body { font-size: 13px; }
 
   /* Chapters grid — one column, tighter card */
-  .chapters__grid { grid-template-columns: 1fr !important; gap: 12px; }
+  .chapters__grid { gap: 12px; }
   .chapter { padding: 20px !important; }
   .chapter__city { font-size: 22px; }
   .chapter__state { font-size: 12px; }

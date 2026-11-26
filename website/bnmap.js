@@ -190,7 +190,7 @@ async function renderInsecurity(container) {
 
 // Fridges tab: the 3D MapLibre map lives in fridge-map.js.
 async function renderFridges(container) {
-  const { renderFridgeMap } = await import('./fridge-map.js?v=city-landmarks-1');
+  const { renderFridgeMap } = await import('./fridge-map.js?v=mobile-layout-1');
   return renderFridgeMap(container);
 }
 

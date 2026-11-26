@@ -772,7 +772,7 @@
       if (entries.some((e) => e.isIntersecting)) {
         io3.disconnect();
         try {
-          const { mountBnMap } = await import('./bnmap.js?v=city-landmarks-1');
+          const { mountBnMap } = await import('./bnmap.js?v=mobile-layout-1');
           mountBnMap(bnmapRoot);
         } catch (e) {
           console.warn('BN Map failed to mount', e);

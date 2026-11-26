@@ -11,7 +11,8 @@
     "test:donation": "node scripts/verify-donation.cjs",
     "test:homepage": "node scripts/verify-homepage.cjs",
     "test:ratios": "node scripts/verify-ratios.cjs",
-    "test:menu": "node scripts/verify-menu.cjs"
+    "test:menu": "node scripts/verify-menu.cjs",
+    "test:mobile": "node scripts/verify-mobile-layout.cjs"
   },
   "dependencies": {
     "animejs": "4.2.2",
