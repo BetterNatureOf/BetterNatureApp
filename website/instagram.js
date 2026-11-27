@@ -4,7 +4,7 @@ if (root) {
   const mount = root.querySelector('#instagramEmbed');
   const status = root.querySelector('#instagramStatus');
   const retry = root.querySelector('#instagramRetry');
-  let busy = false, complete = false, scriptPromise, attempt = 0;
+  let busy = false, complete = false, scriptPromise, attempt = 0, cleanupFrame;
   function profileURL() {
     try {
       const value = new URL(window.CONTENT?.brand?.instagram || 'https://www.instagram.com/official.better.nature/');
@@ -24,10 +24,31 @@ if (root) {
     });
     return scriptPromise;
   }
+  function fitFrame(frame) {
+    // Instagram's profile layout needs 326px. Scale its complete viewport on
+    // narrower phones, and reserve the scaled height instead of cropping posts.
+    const fit = () => {
+      const width = mount.clientWidth;
+      if (!width) return;
+      const logicalWidth = Math.max(326, width);
+      const scale = width / logicalWidth;
+      mount.style.setProperty('--instagram-width', `${logicalWidth}px`);
+      mount.style.setProperty('--instagram-scale', String(scale));
+      if (frame.offsetHeight > 1) {
+        mount.dataset.frameReady = 'true';
+        mount.style.height = `${frame.offsetHeight * scale}px`;
+        const placeholder = mount.querySelector('blockquote');
+        if (placeholder) placeholder.hidden = true;
+      }
+    };
+    const resize = new ResizeObserver(fit);
+    resize.observe(mount); resize.observe(frame); fit();
+    return () => resize.disconnect();
+  }
   async function load() {
     if (busy || complete) return;
     const run = ++attempt; let frameObserver;
-    busy = true; retry.hidden = true; status.textContent = 'Loading Instagram posts…'; mount.replaceChildren();
+    busy = true; retry.hidden = true; status.textContent = 'Loading Instagram posts…'; cleanupFrame?.(); mount.replaceChildren(); mount.style.removeProperty('height'); delete mount.dataset.frameReady;
     const profile = profileURL();
     root.querySelectorAll('.instagram-profile').forEach(link => { link.href = profile.href; link.textContent = `@${profile.pathname.split('/')[1]} ↗`; });
     try {
@@ -39,7 +60,7 @@ if (root) {
       frameObserver = new MutationObserver(() => {
         const frame = mount.querySelector('iframe');
         if (!frame) return;
-        frameObserver.disconnect(); frame.title = 'BetterNature posts on Instagram';
+        frameObserver.disconnect(); frame.title = 'BetterNature posts on Instagram'; cleanupFrame = fitFrame(frame);
         frame.addEventListener('load', () => { if (run !== attempt) return; status.textContent = ''; complete = true; busy = false; }, {once:true});
       });
       frameObserver.observe(mount, {childList:true,subtree:true});

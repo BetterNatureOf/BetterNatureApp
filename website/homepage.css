@@ -465,17 +465,29 @@ header.nav.nav.is-open { display:grid; grid-template-columns:auto minmax(0,1fr) 
 .chapters__insights > summary,.join__qrDisclosure > summary,.join__copy--mobile,.join__open { display:none; }
 .chapters__insights { min-width:0; }
 .join__qrDisclosure { flex:none; }
-/* Instagram is the platform's own profile embed, with an ordinary link fallback. */
-.impact-social { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,540px); gap:clamp(28px,5vw,72px); align-items:start; margin-top:64px; padding-top:48px; border-top:1px solid #d9f0e12e; }
-.impact-social h3 { color:#f2f7ee; font:500 clamp(30px,3.5vw,46px)/1.12 var(--sans); letter-spacing:-.04em; margin:18px 0; }
-.impact-social__intro > p { color:#c4d7ca; font-size:16px; line-height:1.7; }
-.instagram-profile,.instagram__retry { display:inline-flex; align-items:center; min-height:44px; margin-top:20px; padding:10px 16px; border:1px solid #d9f0e14d; border-radius:999px; color:#f4a2bd; font-size:14px; }
+/* A single branded composition frames Instagram without altering post colors. */
+.impact-social { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,420px); gap:clamp(32px,6vw,88px); align-items:center; margin-top:64px; padding:clamp(28px,4.5vw,64px); border:1px solid #c6dfcf30; border-radius:28px; background:#1b3b2d; box-shadow:inset 0 1px 0 #e6f3e80a; }
+.impact-social__intro { min-width:0; }
+.impact-social .eyebrow { color:#c2d6c9; font-size:11px; letter-spacing:.13em; margin:0 0 28px; }
+.impact-social h3 { color:#f2f7ee; font:400 clamp(44px,5.5vw,76px)/.98 'Instrument Serif',Georgia,serif; letter-spacing:-.035em; margin:0 0 28px; }
+.impact-social h3 em { color:#f4a2bd; font-weight:400; }
+.impact-social__intro > p { color:#c4d7ca; font-size:16px; line-height:1.7; max-width:27ch; margin:0; }
 .instagram__panel,.instagram__embed { min-width:0; }
-.impact-social .instagram-media { width:100% !important; min-width:0 !important; max-width:540px !important; margin:0 !important; border-radius:18px !important; background:#fff; overflow:hidden; }
-.instagram__embed > blockquote { display:grid; place-items:center; min-height:220px; padding:24px; }
+.instagram__embed { position:relative; }
+.instagram__embed[data-frame-ready] > iframe { position:absolute !important; top:0; left:0; }
+.instagram__embed > iframe { transform:scale(var(--instagram-scale,1)); transform-origin:top left; transition:none !important; }
+.instagram__panel { width:100%; max-width:420px; justify-self:end; }
+.instagram__window { padding:8px; border:1px solid #e5ede3; border-radius:22px; background:#f4f7ef; overflow:hidden; }
+.impact-social .instagram-media { width:var(--instagram-width,100%) !important; min-width:0 !important; max-width:none !important; margin:0 !important; border:0 !important; border-radius:14px !important; box-shadow:none !important; background:#fff; }
+.instagram__embed > blockquote[hidden] { display:none; }
+.instagram__embed > blockquote { display:grid; place-items:center; min-height:360px; padding:24px; }
 .instagram__embed > blockquote a { color:#1b3a2d; text-decoration:underline; font-size:15px; }
-.instagram__status { color:#c4d7ca; font-size:14px; line-height:1.6; }
+.instagram-profile { display:flex; align-items:center; justify-content:space-between; min-height:52px; padding:16px 2px 0; color:#f4a2bd; font:500 13px/1.5 var(--sans); text-decoration:none; text-underline-offset:5px; }
+.instagram-profile:hover { text-decoration:underline; }
+.instagram-profile:active { opacity:.75; }
+.instagram__status { color:#c4d7ca; font-size:13px; line-height:1.6; margin:12px 0 0; }
 .instagram__status:empty { display:none; }
+.instagram__retry { display:inline-flex; align-items:center; min-height:44px; margin-top:12px; padding:10px 16px; border:1px solid #d9f0e14d; border-radius:999px; color:#f4a2bd; font-size:14px; }
 .instagram__retry[hidden] { display:none; }
 @media(max-width:767px) {
  :root { --home-gutter:24px; --home-space:80px; }
@@ -553,14 +565,19 @@ header.nav.nav.is-open { display:grid; grid-template-columns:auto minmax(0,1fr) 
  #signup .share-app { width:100%; min-height:48px; margin-top:12px; font-size:14px; }
  .join__qrDisclosure { order:2; width:100%; }
  .join__qrDisclosure .join__qr-wrap { margin:20px auto 0; }
- .impact-social { grid-template-columns:1fr; gap:28px; margin-top:44px; padding-top:36px; }
- .impact-social h3 { font-size:32px; }
- .instagram-profile { margin-top:16px; }
- .instagram__status { font-size:14px; }
+ .impact-social { grid-template-columns:1fr; gap:28px; margin-top:44px; padding:28px 0 0; border:0; border-top:1px solid #c6dfcf30; border-radius:0; background:none; box-shadow:none; }
+ .impact-social .eyebrow { margin-bottom:20px; }
+ .impact-social h3 { font-size:clamp(44px,12vw,60px); margin-bottom:18px; }
+ .impact-social h3 br { display:none; }
+ .impact-social__intro > p { max-width:32ch; }
+ .instagram__panel { max-width:420px; justify-self:center; }
+ .instagram__window { padding:6px; border-radius:18px; }
+ .instagram-profile { font-size:13px; }
+ .instagram__status { font-size:13px; }
  .footer { padding-top:60px; }
  .footer__grid { gap:36px; }
 }
-@media(max-width:374px) { .impact-social .instagram__panel { margin-inline:-24px; width:calc(100% + 48px); } .impact-social .instagram__status,.impact-social .instagram__retry { margin-inline:24px; } }
+@media(max-width:374px) { .instagram__window { padding:4px; } }
 
 @media(max-width:767px) {
  .team .member__name { font-size:clamp(22px,6.2vw,24px); }

@@ -254,3 +254,9 @@ Preserved the laptop layout and added phone spacing, readable stacked impact met
 Impact now lazy-loads Instagram's official public profile embed for @official.better.nature, with a permanent profile link, timeout message and retry. No private account credentials, copied post data or remote HTML injection are used. This is a public profile embed, not an authenticated custom media feed. Instagram/browser restrictions can prevent loading; the profile link remains available.
 
 Validation: 11 unit tests, 28 viewport/theme cases, six homepage/accessibility cases and the focused mobile chapter/logo/map checks passed. Real Instagram rendering and fallback checks are performed separately because third-party availability varies.
+
+## Integrated Instagram composition
+
+Replaced the loose side-by-side embed with one forest-green composition, an editorial serif heading with a pink accent, and a cream frame that follows the feed's actual height. On phones, the section stacks inside the existing page gutters. A resize observer preserves Instagram's 326px layout viewport on narrower screens and scales the entire feed proportionally, reserving the scaled height so posts are neither cropped nor followed by a blank gap. Post colors remain unchanged. Retry, profile link and lazy loading are retained.
+
+Validation: actual profile rendering inspected at 320, 390 and 1286px; focused checks at 320/390/768/1286px cover blocked loading, retry, accessible frame naming, proportional width/height, and document overflow.
