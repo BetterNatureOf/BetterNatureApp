@@ -25,6 +25,13 @@ const assert=require('node:assert/strict');
       await page.waitForFunction(()=>document.querySelector('#instagramStatus').textContent==='');
       assert.equal(await page.locator('#instagramEmbed iframe').getAttribute('title'),'BetterNature posts on Instagram');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`overflow at ${width}`);
+      await page.waitForFunction(() => document.querySelector('#instagramEmbed').dataset.frameReady === 'true');
+      const fit = await page.locator('#instagramEmbed').evaluate(el => {
+        const frame = el.querySelector('iframe');
+        return {width:el.clientWidth,frameWidth:frame.getBoundingClientRect().width,height:el.getBoundingClientRect().height,frameHeight:frame.getBoundingClientRect().height};
+      });
+      assert.ok(Math.abs(fit.width-fit.frameWidth)<2, 'feed width does not fit its frame');
+      assert.ok(Math.abs(fit.height-fit.frameHeight)<2, `feed has blank space or clipped height: ${JSON.stringify(fit)}`);
       assert.equal(await page.locator('.chapters__insights').evaluate(e=>e.open),width>767);
       if(width<768){await page.locator('.chapters__insights > summary').click();assert.equal(await page.locator('.chapters__insights').evaluate(e=>e.open),true);}
       await page.close();console.log(`${width}px: lazy load, blocked embed, retry, accessible frame and overflow checks passed`);
