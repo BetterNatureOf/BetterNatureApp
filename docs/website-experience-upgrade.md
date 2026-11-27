@@ -260,3 +260,9 @@ Validation: 11 unit tests, 28 viewport/theme cases, six homepage/accessibility c
 Replaced the loose side-by-side embed with one forest-green composition, an editorial serif heading with a pink accent, and a cream frame that follows the feed's actual height. On phones, the section stacks inside the existing page gutters. A resize observer preserves Instagram's 326px layout viewport on narrower screens and scales the entire feed proportionally, reserving the scaled height so posts are neither cropped nor followed by a blank gap. Post colors remain unchanged. Retry, profile link and lazy loading are retained.
 
 Validation: actual profile rendering inspected at 320, 390 and 1286px; focused checks at 320/390/768/1286px cover blocked loading, retry, accessible frame naming, proportional width/height, and document overflow.
+
+## Horizontal Instagram section
+
+Removed the oversized split composition and placed a compact heading row above a full-width feed. Desktop/tablet use a shallow landscape viewport (2.8:1 preferred, 280–400px high) with a visible scroll hint and keyboard-focusable region so all native posts remain reachable. Phones retain the full proportional feed without nested scrolling. Instagram's native three-column post layout and post colors remain intact.
+
+Validation: focused 320/390/768/1286px checks cover frame fit, horizontal desktop proportions, reachable remaining posts, no nested phone scroll, retry and page overflow. The real official profile was visually inspected in the wider layout.
