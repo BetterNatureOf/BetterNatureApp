@@ -466,22 +466,25 @@ header.nav.nav.is-open { display:grid; grid-template-columns:auto minmax(0,1fr) 
 .chapters__insights { min-width:0; }
 .join__qrDisclosure { flex:none; }
 /* A single branded composition frames Instagram without altering post colors. */
-.impact-social { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,420px); gap:clamp(32px,6vw,88px); align-items:center; margin-top:64px; padding:clamp(28px,4.5vw,64px); border:1px solid #c6dfcf30; border-radius:28px; background:#1b3b2d; box-shadow:inset 0 1px 0 #e6f3e80a; }
-.impact-social__intro { min-width:0; }
-.impact-social .eyebrow { color:#c2d6c9; font-size:11px; letter-spacing:.13em; margin:0 0 28px; }
-.impact-social h3 { color:#f2f7ee; font:400 clamp(44px,5.5vw,76px)/.98 'Instrument Serif',Georgia,serif; letter-spacing:-.035em; margin:0 0 28px; }
+.impact-social { display:grid; grid-template-columns:minmax(0,1fr); gap:24px; align-items:start; margin-top:44px; padding:clamp(20px,2.5vw,32px); border:1px solid #c6dfcf30; border-radius:28px; background:#1b3b2d; box-shadow:inset 0 1px 0 #e6f3e80a; }
+.impact-social__intro { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:12px 24px; }
+.impact-social .eyebrow { color:#c2d6c9; font-size:11px; letter-spacing:.13em; margin:0; grid-column:1 / -1; }
+.impact-social h3 { color:#f2f7ee; font:400 clamp(36px,4vw,52px)/1.05 'Instrument Serif',Georgia,serif; letter-spacing:-.035em; margin:0; }
+.impact-social h3 br { display:none; }
 .impact-social h3 em { color:#f4a2bd; font-weight:400; }
-.impact-social__intro > p { color:#c4d7ca; font-size:16px; line-height:1.7; max-width:27ch; margin:0; }
+.impact-social__intro > p { color:#c4d7ca; font-size:16px; line-height:1.7; max-width:34ch; margin:0; }
 .instagram__panel,.instagram__embed { min-width:0; }
 .instagram__embed { position:relative; }
 .instagram__embed[data-frame-ready] > iframe { position:absolute !important; top:0; left:0; }
 .instagram__embed > iframe { transform:scale(var(--instagram-scale,1)); transform-origin:top left; transition:none !important; }
-.instagram__panel { width:100%; max-width:420px; justify-self:end; }
-.instagram__window { padding:8px; border:1px solid #e5ede3; border-radius:22px; background:#f4f7ef; overflow:hidden; }
+.instagram__panel { width:100%; max-width:none; justify-self:stretch; }
+.instagram__window { aspect-ratio:2.8; min-height:280px; max-height:400px; overflow-y:auto !important; scrollbar-color:#bd6886 #e9eee6; scrollbar-width:thin; padding:8px; border:1px solid #e5ede3; border-radius:22px; background:#f4f7ef; overflow:hidden; }
 .impact-social .instagram-media { width:var(--instagram-width,100%) !important; min-width:0 !important; max-width:none !important; margin:0 !important; border:0 !important; border-radius:14px !important; box-shadow:none !important; background:#fff; }
 .instagram__embed > blockquote[hidden] { display:none; }
 .instagram__embed > blockquote { display:grid; place-items:center; min-height:360px; padding:24px; }
 .instagram__embed > blockquote a { color:#1b3a2d; text-decoration:underline; font-size:15px; }
+.instagram__browse { display:flex; align-items:baseline; justify-content:space-between; gap:20px; }
+.instagram__hint { color:#c4d7ca; font-size:12px; margin:0; white-space:nowrap; }
 .instagram-profile { display:flex; align-items:center; justify-content:space-between; min-height:52px; padding:16px 2px 0; color:#f4a2bd; font:500 13px/1.5 var(--sans); text-decoration:none; text-underline-offset:5px; }
 .instagram-profile:hover { text-decoration:underline; }
 .instagram-profile:active { opacity:.75; }
@@ -570,8 +573,10 @@ header.nav.nav.is-open { display:grid; grid-template-columns:auto minmax(0,1fr) 
  .impact-social h3 { font-size:clamp(44px,12vw,60px); margin-bottom:18px; }
  .impact-social h3 br { display:none; }
  .impact-social__intro > p { max-width:32ch; }
+ .impact-social__intro { grid-template-columns:1fr; gap:16px; }
  .instagram__panel { max-width:420px; justify-self:center; }
- .instagram__window { padding:6px; border-radius:18px; }
+ .instagram__window { aspect-ratio:auto; min-height:0; max-height:none; overflow-y:visible !important; padding:6px; border-radius:18px; }
+ .instagram__hint { display:none; }
  .instagram-profile { font-size:13px; }
  .instagram__status { font-size:13px; }
  .footer { padding-top:60px; }

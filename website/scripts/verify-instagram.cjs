@@ -12,7 +12,7 @@ const assert=require('node:assert/strict');
       await page.route('https://www.instagram.com/embed.js',route=>{
         requests++;
         if(blocked) return route.abort();
-        return route.fulfill({contentType:'text/javascript',body:`window.instgrm={Embeds:{process(){const q=document.querySelector('blockquote.instagram-media');if(!q)return;const f=document.createElement('iframe');f.className='instagram-media';f.srcdoc='<p>Instagram profile fixture</p>';f.style.height='400px';q.replaceWith(f);}}};`});
+        return route.fulfill({contentType:'text/javascript',body:`window.instgrm={Embeds:{process(){const q=document.querySelector('blockquote.instagram-media');if(!q)return;const f=document.createElement('iframe');f.className='instagram-media';f.srcdoc='<p>Instagram profile fixture</p>';f.style.height='650px';q.replaceWith(f);}}};`});
       });
       await page.goto(base,{waitUntil:'domcontentloaded'});
       await page.waitForTimeout(500);
@@ -32,6 +32,14 @@ const assert=require('node:assert/strict');
       });
       assert.ok(Math.abs(fit.width-fit.frameWidth)<2, 'feed width does not fit its frame');
       assert.ok(Math.abs(fit.height-fit.frameHeight)<2, `feed has blank space or clipped height: ${JSON.stringify(fit)}`);
+      const windowFit = await page.locator('.instagram__window').evaluate(el => {
+        el.scrollTop = el.scrollHeight;
+        return {width:el.clientWidth,height:el.clientHeight,scrollTop:el.scrollTop,scrollHeight:el.scrollHeight};
+      });
+      if (width >= 768) {
+        assert.ok(windowFit.width > windowFit.height * 1.5, 'desktop feed is not horizontal');
+        assert.ok(windowFit.scrollTop > 0, 'remaining posts cannot be reached');
+      } else assert.ok(windowFit.scrollHeight <= windowFit.height+2, 'phone feed creates a nested scroll');
       assert.equal(await page.locator('.chapters__insights').evaluate(e=>e.open),width>767);
       if(width<768){await page.locator('.chapters__insights > summary').click();assert.equal(await page.locator('.chapters__insights').evaluate(e=>e.open),true);}
       await page.close();console.log(`${width}px: lazy load, blocked embed, retry, accessible frame and overflow checks passed`);
